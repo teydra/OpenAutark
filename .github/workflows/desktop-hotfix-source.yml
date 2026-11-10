@@ -1,0 +1,89 @@
+name: Scoped desktop hotfix draft
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing unpublished vX.Y.Z release
+        type: string
+        required: true
+      payload:
+        description: Integrity-bound source ZIP in that draft
+        type: string
+        required: true
+      sha256:
+        description: SHA256 of the exact source ZIP
+        type: string
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: scoped-hotfix-${{ inputs.tag }}
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  RELEASE_PAYLOAD: ${{ inputs.payload }}
+  RELEASE_SHA256: ${{ inputs.sha256 }}
+jobs:
+  windows:
+    if: github.repository == 'teydra/OpenAutark'
+    runs-on: windows-2025
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.22.2'
+      - name: Verify and extract the unpublished source snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid release tag' }
+          if ($env:RELEASE_PAYLOAD -notmatch '^source-hotfix-[a-zA-Z0-9._-]+\.zip$') { throw 'Invalid snapshot name' }
+          if ($env:RELEASE_SHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid digest' }
+          $draft = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -or -not $draft.isDraft) { throw 'Builds affect unpublished drafts only' }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $env:RELEASE_PAYLOAD --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE) { throw 'Snapshot download failed' }
+          $zip = Join-Path $env:RUNNER_TEMP $env:RELEASE_PAYLOAD
+          if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:RELEASE_SHA256) { throw 'Snapshot digest mismatch' }
+          Expand-Archive -LiteralPath $zip -DestinationPath source
+          $p = Get-Content source/apps/desktop/package.json -Raw | ConvertFrom-Json
+          if ($p.version -ne $env:RELEASE_TAG.Substring(1) -or $p.name -ne 'autark') { throw 'Snapshot version mismatch' }
+      - name: Install pinned dependencies
+        working-directory: source/apps/desktop
+        run: |
+          npm ci --no-fund --no-audit
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node node_modules/electron/install.js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Typecheck the exact release snapshot
+        working-directory: source/apps/desktop
+        run: npm run typecheck
+      - name: Check causal return and adjacent regressions
+        working-directory: source/apps/desktop
+        run: node --test --test-concurrency=1 test/unit/agents/*.test.ts test/unit/tasks/*.test.ts
+      - name: Build and package the scoped Windows candidate
+        working-directory: source/apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run package -- --win --x64
+      - name: Verify the packaged runtime and desktop
+        working-directory: source/apps/desktop
+        run: node scripts/native-release-check.cjs
+      - name: Upload verified candidate, never publish it
+        working-directory: source/apps/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $draft = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -or -not $draft.isDraft) { throw 'Draft changed during build' }
+          $files = @(Get-ChildItem -LiteralPath dist -File | Where-Object { $_.Name -match '\.exe(\.blockmap)?$|^latest\.yml$' })
+          $files += @(Get-ChildItem -Path test-results/native-* -File)
+          if (-not ($files.Name -contains 'autark-windows-x64.exe')) { throw 'Installer missing' }
+          $files | ForEach-Object { Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 } | ConvertTo-Json | Set-Content test-results/hotfix-ci-hashes.json
+          $files += Get-Item test-results/hotfix-ci-hashes.json
+          $upload = @('release', 'upload', $env:RELEASE_TAG, '--repo', $env:GITHUB_REPOSITORY, '--clobber') + @($files.FullName)
+          & gh @upload
+          if ($LASTEXITCODE) { throw 'Candidate upload failed' }
