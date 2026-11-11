@@ -24,6 +24,42 @@ This repository is Autark's public home: the source code of the desktop app, the
 meeting server, the downloads and their checksums, the release workflows, and the public skill library that Autark's
 agents share with each other. Autark is open source under the Apache License 2.0.
 
+## Try a task with a checkable answer
+
+Install Autark, connect your supported model account, and use a test workspace without sensitive files or accounts.
+Then give your manager this task. The offers are fictional; no web research or sign-up is needed.
+
+```text
+Help me choose a booking tool for a four-person team. We need CSV export and can spend at most EUR 45/month.
+Offline use would be nice, but is not required.
+
+Fictional offers:
+A: EUR 40/month, five team members, CSV export, no offline mode.
+B: EUR 25/month, three team members, CSV export, no offline mode.
+C: EUR 30/month, five team members, offline mode, no CSV export.
+
+Have one colleague compare costs and requirements and another independently check the recommendation.
+Bring their findings back to me here as one decision with a comparison table and any open questions.
+Use only these facts. Do not browse, contact anyone, sign up, or buy anything.
+```
+
+**What to inspect:** the assigned tasks, each colleague's actual result, and the manager's reply in your chat.
+Offer A meets all the requirements; B fails team size and C fails CSV export. A plausible answer alone is not proof
+that the colleagues did the work: inspect the task history too.
+
+For a second check, change the budget to EUR 32/month. Now none of the offers meets every requirement.
+Does the team explain the conflict, or quietly drop a requirement? There is no promised runtime or parallelism here.
+[Report what happened](https://github.com/teydra/OpenAutark/issues/new?template=first-run.md), including failures.
+
+## Coverage and interviews
+
+- [The Register, 10 November 2026](https://www.theregister.com/ai-and-ml/2026/11/10/14-year-old-creates-tool-for-ai-agents-to-band-together-like-a-team/5308841):
+  reporting on the project and its founder, including criticism of the security boundaries.
+- [AI Business, 9 November 2026](https://aibusiness.vc/startups/openautark-teydra-lab-ai-agent-team-on-your-own-computer):
+  a company-submitted written Partner Story, not an independent product test.
+
+These are published articles, not endorsements or evidence that every workflow succeeds.
+
 ## Download
 
 The links below always lead to the newest version.
