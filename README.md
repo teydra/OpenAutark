@@ -1,9 +1,24 @@
 # OpenAutark
 
-**Autark** is a desktop app that runs a small AI company for you: a personal manager as your right hand, teams of agents,
-chats and tasks, "My Day" with your calendar, a browser beside the chat, your phone, and your other PCs as one. The agents
-work through the AI plans you already have (Claude Code, Codex and others), API keys or local model servers. Everything
-runs on your own PC; nothing goes through a service of ours except the meeting point that connects your devices.
+## Give a manager a goal. See the team, the tasks, and the result.
+
+**Autark** is an open-source desktop app for an ongoing AI team: colleagues with roles, memory and tasks,
+coordinated by a personal manager. Chat with the manager, follow the work, and inspect what comes back.
+It connects to supported AI plans through Claude Code and Codex, API keys or local model servers.
+
+Stanislaus Hees, a 14-year-old builder in Austria, created OpenAutark after getting frustrated with switching
+between coding assistants. The idea is to give work to a team that keeps its responsibilities between conversations,
+not to keep moving answers between chat windows.
+
+**Start here:** [Product and how it works](https://openautark.com/product/) ·
+[Downloads](https://openautark.com/download/) · [Installation instructions](#installing) ·
+[Model access, permissions and data](https://openautark.com/access/).
+Bring your own supported model access. Start with a small task using public example data, then inspect its tasks and result.
+Cloud models receive the prompts sent to them; running the app on your PC does not make cloud inference local.
+Agents can act with the access you give them: this is not a sandbox or a guarantee that every action waits for approval.
+
+Downloads and repository source are separate artifacts. Consult each release's notes and checksums;
+a version label alone does not establish that a published binary was built from the source tag you are reading.
 
 This repository is Autark's public home: the source code of the desktop app, the Android app, the website and the
 meeting server, the downloads and their checksums, the release workflows, and the public skill library that Autark's
