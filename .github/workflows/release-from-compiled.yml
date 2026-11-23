@@ -75,7 +75,9 @@ jobs:
           if ((Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version -ne $env:RELEASE_TAG.Substring(1)) { throw 'Package and draft versions differ' }
       - name: Add the release CI check script (release tooling, not product source)
         shell: bash
-        run: cp ../../.github/release-ci/native-release-check.cjs scripts/native-release-check.cjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/contents/.github/release-ci/native-release-check.cjs?ref=$GITHUB_SHA" -H 'Accept: application/vnd.github.raw' > scripts/native-release-check.cjs && test -s scripts/native-release-check.cjs
       - name: Install the pinned package dependencies
         run: npm ci --no-fund --no-audit
       - name: Prepare both macOS native architectures
