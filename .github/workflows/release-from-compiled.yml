@@ -73,6 +73,9 @@ jobs:
           /usr/bin/diff -rq $x apps/desktop
           if ($LASTEXITCODE) { throw 'Payload differs from the tag tree apps/desktop' }
           if ((Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version -ne $env:RELEASE_TAG.Substring(1)) { throw 'Package and draft versions differ' }
+      - name: Add the release CI check script (release tooling, not product source)
+        shell: bash
+        run: cp ../../.github/release-ci/native-release-check.cjs scripts/native-release-check.cjs
       - name: Install the pinned package dependencies
         run: npm ci --no-fund --no-audit
       - name: Prepare both macOS native architectures
