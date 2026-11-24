@@ -178,6 +178,7 @@ namespace AutarkBroker
         static readonly string[] OptionNames = { "Anmeldeoptionen", "Sign-in options" };
         static readonly string[] PasswordWords = { "Kennwort", "Passwort", "Password" };
         static readonly string[] WrongWords = { "falsch", "nicht korrekt", "incorrect", "is wrong" };
+        static readonly string[] PinWords = { "PIN" };
 
         /// `submitted`: this run already pressed Submit (it never does twice). `users`: the account and display names of the broker's user.
         public static SignInStep Next(IList<UiNode> nodes, ICollection<string> users, bool submitted)
@@ -185,12 +186,14 @@ namespace AutarkBroker
             foreach (UiNode node in nodes)
                 if ((node.Role == "text" || node.Role == "pane") && Contains(node.Name, WrongWords) && Contains(node.Name, PasswordWords))
                     return new SignInStep(SignInAction.WrongPassword, node);
-            UiNode field = null, submit = null, options = null, provider = null, curtain = null;
+            UiNode field = null, pin = null, submit = null, options = null, provider = null, curtain = null;
             List<UiNode> tiles = new List<UiNode>();
             foreach (UiNode node in nodes)
             {
                 if (!node.Enabled) continue;
-                if (node.Role == "edit" && node.IsPassword && field == null) field = node;
+                // Windows Hello's PIN box is a password box too (24.11.2026, teydra-server after a restart): never our password.
+                if (node.Role == "edit" && node.IsPassword && IsPin(node) && pin == null) pin = node;
+                else if (node.Role == "edit" && node.IsPassword && field == null) field = node;
                 else if (node.Role == "button" && (node.AutomationId == "SubmitButton" || Equal(node.Name, SubmitNames)) && submit == null) submit = node;
                 else if ((node.Role == "hyperlink" || node.Role == "button") && Equal(node.Name, OptionNames)) options = node;
                 else if (node.Role == "button" && Contains(node.Name, PasswordWords) && provider == null) provider = node;
@@ -198,22 +201,51 @@ namespace AutarkBroker
                 else if (node.Role == "listitem") tiles.Add(node);
             }
             if (submitted) return new SignInStep(SignInAction.Wait, null);
-            if (curtain != null && field == null) return new SignInStep(SignInAction.Reveal, curtain);
-            if (tiles.Count > 1 && field == null)
+            if (curtain != null && field == null && pin == null) return new SignInStep(SignInAction.Reveal, curtain);
+            if (tiles.Count > 1 && field == null && pin == null)
             {
                 foreach (UiNode tile in tiles) if (Equal(tile.Name, users)) return new SignInStep(SignInAction.PickUser, tile);
                 return new SignInStep(SignInAction.Unknown, null); // other users only: never type our password into their tile
             }
-            if (field != null)
+            if (field != null && submit != null)
             {
-                if (submit == null) return new SignInStep(SignInAction.Unknown, field);
                 SignInStep fill = new SignInStep(SignInAction.Fill, field);
                 fill.Submit = submit;
                 return fill;
             }
+            // PIN (or a password box without Submit): switch to the password provider through the sign-in options.
             if (provider != null) return new SignInStep(SignInAction.PasswordProvider, provider);
             if (options != null) return new SignInStep(SignInAction.Options, options);
+            if (field != null || pin != null) return new SignInStep(SignInAction.Unknown, field ?? pin);
             return new SignInStep(SignInAction.Wait, null);
+        }
+
+        /// A PIN box: its name or id says PIN and not password.
+        static bool IsPin(UiNode node)
+        {
+            return (Contains(node.Name, PinWords) || Contains(node.AutomationId, PinWords)) && !Contains(node.Name, PasswordWords);
+        }
+
+        /// What the screen shows, for broker.log: role#id'name' per element (names cut at 40, at most 40 elements). It never
+        /// reads a field's value – UiNode holds none.
+        public static string Describe(IList<UiNode> nodes)
+        {
+            System.Text.StringBuilder text = new System.Text.StringBuilder();
+            text.Append(nodes.Count).Append(" elements");
+            int shown = 0;
+            foreach (UiNode node in nodes)
+            {
+                if (node.Role != "button" && node.Role != "edit" && node.Role != "hyperlink" && node.Role != "listitem" && node.Role != "text" && node.AutomationId != "InvokableLockContentControl") continue;
+                if (shown++ == 40) { text.Append(" …"); break; }
+                string name = (node.Name ?? "").Replace('\r', ' ').Replace('\n', ' ');
+                if (name.Length > 40) name = name.Substring(0, 40) + "…";
+                text.Append(shown == 1 ? ": " : "; ").Append(node.Role);
+                if (node.AutomationId.Length > 0) text.Append('#').Append(node.AutomationId);
+                text.Append(" '").Append(name).Append('\'');
+                if (node.IsPassword) text.Append(" (password)");
+                if (!node.Enabled) text.Append(" (hidden)");
+            }
+            return text.ToString();
         }
 
         static bool Equal(string text, ICollection<string> words)
@@ -551,7 +583,14 @@ namespace AutarkBroker
     /// the console session belongs to the user. Its exit code is the result (SignInResults).
     public static class SignInRunner
     {
-        static readonly TimeSpan Budget = TimeSpan.FromSeconds(150);
+        /// 10 min (Konrad 24.11.2026: a slow boot under memory pressure showed the sign-in screen late; 150 s ran out at 07:46).
+        static readonly TimeSpan Budget = TimeSpan.FromMinutes(10);
+        /// A screen the planner does not know is looked at again after this, not given up on.
+        static readonly TimeSpan Retry = TimeSpan.FromSeconds(30);
+        /// Clicks on the way (curtain, options, provider, tile) in the whole run; Submit stays once.
+        const int MaxActions = 40;
+        static string lastScreen = "";
+        static DateTime lastScreenLog = DateTime.MinValue;
 
         public static int Run(string userSid)
         {
@@ -571,18 +610,36 @@ namespace AutarkBroker
             if (!string.IsNullOrEmpty(full)) users.Add(full);
             Stopwatch clock = Stopwatch.StartNew();
             bool submitted = false;
-            int actions = 0;
+            int actions = 0, unknown = 0;
             while (clock.Elapsed < Budget)
             {
                 if (SignInFacts.ConsoleUser().Length > 0)
                     return submitted && string.Equals(SignInFacts.ConsoleUser(), account[1], StringComparison.OrdinalIgnoreCase) ? SignInResults.SignedIn : SignInResults.UserPresent;
                 string outcome = OnInputDesktop(() => Step(users, submitted, ref actions));
                 if (outcome == "submitted") submitted = true;
+                else if (outcome == SignInResults.UnknownScreen)
+                {
+                    // Not a final answer: the screen may still be building, or a toast covers it. Look again in 30 s.
+                    unknown++;
+                    Thread.Sleep(Retry);
+                    continue;
+                }
                 else if (outcome != null) return outcome;
-                if (actions > 12) return SignInResults.UnknownScreen;
+                if (actions > MaxActions) { Program.Log("sign-in: " + actions + " clicks without a password field"); return SignInResults.UnknownScreen; }
                 Thread.Sleep(1500);
             }
+            Program.Log("sign-in: gave up after " + (int)clock.Elapsed.TotalSeconds + " s (" + unknown + " unknown screens, " + actions + " clicks, submitted " + submitted + ")");
             return submitted ? SignInResults.Timeout : SignInResults.UnknownScreen;
+        }
+
+        /// broker.log gets what the screen shows when it changes, and at most once a minute while it stays (no values).
+        static void LogScreen(List<UiNode> nodes, SignInAction action)
+        {
+            string screen = SignInPlanner.Describe(nodes);
+            if (screen == lastScreen && DateTime.UtcNow - lastScreenLog < TimeSpan.FromMinutes(1)) return;
+            lastScreen = screen;
+            lastScreenLog = DateTime.UtcNow;
+            Program.Log("sign-in sees (" + action + "): " + screen);
         }
 
         /// One look and at most one action: null = go on, "submitted", or a final result.
@@ -590,6 +647,7 @@ namespace AutarkBroker
         {
             List<UiNode> nodes = Read();
             SignInStep step = SignInPlanner.Next(nodes, users, submitted);
+            LogScreen(nodes, step.Action);
             switch (step.Action)
             {
                 case SignInAction.Wait: return null;
@@ -686,8 +744,12 @@ namespace AutarkBroker
             Thread thread = new Thread(() =>
             {
                 IntPtr handle = OpenInputDesktop(0, false, 0x01FF);
-                if (handle == IntPtr.Zero) return;
-                try { if (SetThreadDesktop(handle)) answer = work(); }
+                if (handle == IntPtr.Zero) { LogOnce("sign-in: input desktop not open (error " + Marshal.GetLastWin32Error() + ")"); return; }
+                try
+                {
+                    if (SetThreadDesktop(handle)) answer = work();
+                    else LogOnce("sign-in: input desktop not entered (error " + Marshal.GetLastWin32Error() + ")");
+                }
                 catch (Exception e) { Program.Log("sign-in step failed: " + e.GetType().Name); }
                 finally { CloseDesktop(handle); }
             });
@@ -696,6 +758,9 @@ namespace AutarkBroker
             thread.Join();
             return answer;
         }
+
+        static readonly HashSet<string> logged = new HashSet<string>();
+        static void LogOnce(string line) { lock (logged) { if (logged.Add(line)) Program.Log(line); } }
 
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
         [DllImport("user32.dll", SetLastError = true)] static extern bool SetThreadDesktop(IntPtr desktop);

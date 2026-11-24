@@ -125,6 +125,29 @@ namespace AutarkBroker
                 Expect(SignInPlanner.Next(new List<UiNode> { N("listitem", "Gast"), N("listitem", "Anna") }, Users, false).Action, SignInAction.Unknown, "action"));
             Case("planner: a password field without a Submit button is not filled", () =>
                 Expect(SignInPlanner.Next(new List<UiNode> { N("edit", "Kennwort", "", true) }, Users, false).Action, SignInAction.Unknown, "action"));
+            // After a restart (24.11.2026, unknown_screen at 07:46): Windows Hello's PIN box is a password box too.
+            Case("planner: a PIN password box is never filled – it opens the sign-in options", () =>
+                Expect(SignInPlanner.Next(new List<UiNode> { N("edit", "PIN", "PinEntry", true), N("hyperlink", "Anmeldeoptionen") }, Users, false).Action, SignInAction.Options, "action"));
+            Case("planner: a PIN box with a Submit button is still not filled", () =>
+                Expect(SignInPlanner.Next(new List<UiNode> { N("edit", "PIN", "", true), N("button", "Übermitteln"), N("hyperlink", "Sign-in options") }, Users, false).Action, SignInAction.Options, "action"));
+            Case("planner: PIN box and the providers shown: it picks the password provider", () =>
+                Expect(SignInPlanner.Next(new List<UiNode> { N("edit", "PIN", "", true), N("hyperlink", "Anmeldeoptionen"), N("button", "PIN (Windows Hello)"), N("button", "Kennwort für Microsoft-Konto") }, Users, false).Action, SignInAction.PasswordProvider, "action"));
+            Case("planner: the curtain over a PIN box is not clicked again", () =>
+                Expect(SignInPlanner.Next(new List<UiNode> { N("pane", "Sperrbildschirm", "InvokableLockContentControl"), N("edit", "PIN", "", true), N("hyperlink", "Anmeldeoptionen") }, Users, false).Action, SignInAction.Options, "action"));
+            Case("planner: a PIN box alone is an unknown screen (never filled)", () =>
+                Expect(SignInPlanner.Next(new List<UiNode> { N("edit", "PIN", "", true) }, Users, false).Action, SignInAction.Unknown, "action"));
+            Case("planner: a password box named 'Kennwort oder PIN' is a password box", () =>
+                Expect(SignInPlanner.Next(new List<UiNode> { N("edit", "Kennwort oder PIN", "", true), N("button", "Übermitteln") }, Users, false).Action, SignInAction.Fill, "action"));
+            Case("describe: roles, ids and names for broker.log, cut, never more than 40", () =>
+            {
+                List<UiNode> nodes = new List<UiNode> { N("pane", "Sperrbildschirm", "InvokableLockContentControl"), N("edit", "PIN", "PinEntry", true), N("group", "ignored") };
+                for (int i = 0; i < 50; i++) nodes.Add(N("button", "Taste " + i + " mit einem sehr langen Namen, der gekürzt wird"));
+                string text = SignInPlanner.Describe(nodes);
+                return Expect(text.StartsWith("53 elements: pane#InvokableLockContentControl 'Sperrbildschirm'; edit#PinEntry 'PIN' (password); button 'Taste 0 mit"), true, "start: " + text)
+                    ?? Expect(text.Contains("ignored"), false, "group shown")
+                    ?? Expect(text.EndsWith(" …"), true, "cut at 40")
+                    ?? Expect(text.Contains("gekürzt wird"), false, "names cut");
+            });
             Case("planner: an empty screen (still booting) waits", () =>
                 Expect(SignInPlanner.Next(new List<UiNode>(), Users, false).Action, SignInAction.Wait, "action"));
 
