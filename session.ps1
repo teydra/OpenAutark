@@ -90,7 +90,7 @@ function Shot([string]$name,[switch]$Print){
   try {
     $g.CopyFromScreen($b.Left,$b.Top,0,0,$b.Size)
     $sample=@(foreach($x in 1..7){foreach($y in 1..7){$bmp.GetPixel([int](($b.Width-1)*$x/8),[int](($b.Height-1)*$y/8)).ToArgb()}})
-    $blank=(@($sample | Sort-Object -Unique).Count -le 2)
+    $blank=(@($sample | Sort-Object -Unique).Count -le 1)
     $bmp.Save((Join-Path $out $name),[Drawing.Imaging.ImageFormat]::Png)
   } finally { $g.Dispose(); $bmp.Dispose() }
   Log "shot $name $($b.Width)x$($b.Height) blank=$blank"
@@ -338,11 +338,11 @@ try {
     Start-Sleep -Seconds 2
     try {
       $list=Invoke-RestMethod -Uri 'http://127.0.0.1:9222/json/list' -TimeoutSec 3
-      $target=@($list | Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl -and $_.url -notmatch '^devtools:' }) | Select-Object -First 1
+      $target=@($list | Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl -and $_.url -notmatch '^devtools:' -and $_.url -notmatch '/float' }) | Select-Object -First 1
     } catch { $target=$null }
   } while(!$target -and (Get-Date) -lt $until)
   if (!$target) { Dbg 'no-cdp'; throw 'App UI not reachable through the debugging port.' }
-  Log "page target: title='$($target.title)'"
+  Log "page target: title='$($target.title)' url=$($target.url) all=$((@($list | ForEach-Object { $_.type + ':' + $_.url }) -join ' ; '))"
   Log ("prompt umlaut check: " + ('Prioritätenliste').Contains([string][char]0xE4))
   CdpConnect $target.webSocketDebuggerUrl
   [void](Cdp 'Runtime.enable')
