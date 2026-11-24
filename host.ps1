@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows' -or $env:GITHUB_REPOSITORY -ne 'teydra/OpenAutark') { throw 'Hosted Windows fixture only.' }
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 $root='C:\dnpro'; $out="$root\out"
@@ -34,22 +34,9 @@ try {
   @{url=$uri;sha256=$hash;authenticode=[string]$sig.Status;issuer=$sig.SignerCertificate.Issuer;timestamped=[bool]$sig.TimeStamperCertificate;length=(Get-Item $installer).Length} | ConvertTo-Json | Set-Content "$out\installer-verification.json"
   Say 'Public 0.3.18 digest and Authenticode: PASS.'
 
-  # Small local model server (llama.cpp, CPU) on 127.0.0.1:8080 - no key, no account
-  $tag='b12669'
-  $llamaZip="$root\llama.zip"
-  curl.exe --fail --silent --show-error --location "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-win-cpu-x64.zip" --output $llamaZip
-  if ($LASTEXITCODE) { throw 'llama.cpp download failed.' }
-  Expand-Archive -LiteralPath $llamaZip -DestinationPath "$root\llama" -Force
-  $model="$root\model.gguf"
-  curl.exe --fail --silent --show-error --location --retry 3 'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf' --output $model
-  if ($LASTEXITCODE) { throw 'Model download failed.' }
-  $server=(Get-ChildItem "$root\llama" -Recurse -Filter llama-server.exe | Select-Object -First 1).FullName
-  if (!$server) { throw 'llama-server.exe missing.' }
-  $srv=Start-Process -FilePath $server -ArgumentList @('-m',$model,'--alias','qwen2.5-3b-instruct','--host','127.0.0.1','--port','8080','-c','32768','-np','1','--jinja','-t','4') -WindowStyle Hidden -PassThru -RedirectStandardOutput "$out\llama-out.log" -RedirectStandardError "$out\llama-err.log"
-  $ready=$false
-  foreach($i in 1..90){ Start-Sleep -Seconds 2; try { if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8080/health -TimeoutSec 3).StatusCode -eq 200) { $ready=$true; break } } catch {} }
-  if (!$ready) { throw 'Local model server did not become ready.' }
-  Say 'Local model server ready on 127.0.0.1:8080.'
+  # Hosted model: OpenRouter key from the repository secret, handed to the test user's session as a one-time file
+  if (!$env:DNPRO_OPENROUTER_KEY -or $env:DNPRO_OPENROUTER_KEY.Length -lt 20) { throw 'Missing OpenRouter key secret.' }
+  Write-Host "::add-mask::$($env:DNPRO_OPENROUTER_KEY)"
 
   # Remote Desktop loopback: a 1920x1080 session for a local test user
   Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
@@ -69,6 +56,7 @@ try {
   Log "UAC policy before: EnableLUA=$($uac.EnableLUA) ConsentPromptBehaviorAdmin=$($uac.ConsentPromptBehaviorAdmin) ConsentPromptBehaviorUser=$($uac.ConsentPromptBehaviorUser) PromptOnSecureDesktop=$($uac.PromptOnSecureDesktop) FilterAdministratorToken=$($uac.FilterAdministratorToken)"
   icacls $root /grant 'Users:(OI)(CI)M' /T /Q | Out-Null
   Copy-Item "$PSScriptRoot\session.ps1" "$root\session.ps1" -Force
+  [IO.File]::WriteAllText("$root\or.key",$env:DNPRO_OPENROUTER_KEY)
   Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name DnproSession -Value 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\dnpro\session.ps1'
   $tsk='HKCU:\Software\Microsoft\Terminal Server Client'
   New-Item $tsk -Force | Out-Null

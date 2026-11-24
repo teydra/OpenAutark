@@ -381,30 +381,57 @@ try {
   Start-Sleep -Seconds 2
   Dump 'ai-card'
   Dbg 'ai-card'
-  if (!(ClickText 'Local server')) { throw 'Local server button not clickable.' }
+  if (!(ClickText 'API key' 20 'exact')) { throw 'API key button not clickable.' }
   Start-Sleep -Seconds 2
-  Dump 'local-form'
-  # the form starts on Ollama: pick llama.cpp (the server on this runner), which fills its own address
-  if (!(ClickText 'Ollama' 10 'exact')) { throw 'Provider list not clickable.' }
+  Dump 'api-form'
+  # the form starts on OpenAI: pick OpenRouter (fills its own address)
+  if (!(ClickText 'OpenAI' 10 'exact')) { throw 'Provider list not clickable.' }
   Start-Sleep -Seconds 1
   Dump 'provider-list'
-  if (!(ClickText 'llama.cpp' 10 'start')) { throw 'llama.cpp not in the provider list.' }
+  if (!(ClickText 'OpenRouter' 10 'start')) { throw 'OpenRouter not in the provider list.' }
   Start-Sleep -Seconds 1
   Log ('form url now: ' + (Js '(document.querySelector("input[type=url]")||{}).value'))
-  if (!(ClickText 'Test')) { throw 'Test button not clickable.' }
-  $ok=WaitText 'qwen2.5' 60
-  Log "test found model text: $ok"
+  # the key comes from a one-time file the host wrote for this user; it is typed, never logged
+  $keyFile="$root\or.key"
+  if (!(Test-Path -LiteralPath $keyFile)) { throw 'No key file for this session.' }
+  $orKey=(Get-Content -LiteralPath $keyFile -Raw).Trim()
+  Remove-Item -LiteralPath $keyFile -Force
+  if ($orKey.Length -lt 20) { throw 'Key file is empty.' }
+  if (!(TypeInto 'API key' $orKey)) { throw 'API key field not found.' }
+  $orKey=$null
   Start-Sleep -Seconds 1
-  Dump 'local-form-tested'
+  Log ('key field length: ' + (Js '(document.querySelector("input[type=password]")||{}).value.length'))
+  if (!(ClickText 'Test')) { throw 'Test button not clickable.' }
+  $ok=WaitText ' models' 60
+  Log "test found model list: $ok"
+  Start-Sleep -Seconds 1
+  Dump 'api-form-tested'
   Shot '04-ki-auswahl.png' -Print
-  $phases['ai-local-server-test']=$(if($ok){'PASS'}else{'FAIL'})
-  if (!(ClickText 'Add')) { throw 'Add button not clickable.' }
+  $phases['ai-api-key-test']=$(if($ok){'PASS'}else{'FAIL'})
+  if (!(ClickText 'Add' 10 'exact')) { throw 'Add button not clickable.' }
   Start-Sleep -Seconds 3
-  Dump 'local-added'
-  Dbg 'local-added'
+  Dump 'api-added'
+  Dbg 'api-added'
   Shot '04b-ki-verbunden.png' -Print
-  $phases['ai-local-server-added']='PASS'
-
+  $phases['ai-api-key-added']='PASS'
+  # the model for this run: set the Work and Decisions uses through the app's own command line, as Settings' selects do
+  $wf=@(Get-ChildItem -Path "$env:APPDATA\Autark Companies" -Recurse -Depth 3 -Filter wf.cmd -ErrorAction SilentlyContinue | Select-Object -First 1)
+  Log "wf: $($wf.FullName)"
+  if (!$wf.Count) { throw 'wf.cmd not found.' }
+  $want='deepseek/deepseek-v4.1-flash'
+  $ml=(& $wf[0].FullName call models.list 2>&1 | Out-String)
+  try {
+    $parsed=$ml | ConvertFrom-Json
+    $items=@(if($parsed.models){$parsed.models}else{$parsed})
+    $hit=@($items | Where-Object { $_.id -like "*$want" })
+    Log "models.list: $($items.Count) models; matching: $((@($hit | ForEach-Object id)) -join ', ')"
+    $modelId=if($hit.Count){[string]$hit[0].id}else{"openrouter:$want"}
+  } catch { Log "models.list not parsed: $($ml.Substring(0,[Math]::Min(300,$ml.Length)))"; $modelId="openrouter:$want" }
+  foreach($u in 'work','decision'){
+    $r=(& $wf[0].FullName call models.setUse (@{use=$u;value=$modelId} | ConvertTo-Json -Compress) 2>&1 | Out-String)
+    Log "setUse $u -> $modelId : $($r.Substring(0,[Math]::Min(400,$r.Length)).Replace("`n",' '))"
+  }
+  $phases['model-set']=$modelId
   }
   # ---------- About you -> Start ----------
   Step 'about' {

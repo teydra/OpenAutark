@@ -13,8 +13,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Public installer, local model, 1920x1080 Remote Desktop session
+      - name: Public installer, OpenRouter model, 1920x1080 Remote Desktop session
         shell: pwsh
+        env:
+          DNPRO_OPENROUTER_KEY: ${{ secrets.DNPRO_OPENROUTER_KEY }}
         run: ./host.ps1
       - name: Encrypt captures before transfer
         if: always()
