@@ -19,6 +19,7 @@ import { useState } from 'preact/hooks';
 import type { Account, ModelInfo } from '../../shared/model/providers.ts';
 import { isPlanProvider } from '../../shared/model/plan-roles.ts';
 import { creditsPossible } from '../../shared/model/charge.ts';
+import { isDashScopeBaseUrl } from '../../shared/model/dashscope-host.ts';
 import { askText, confirm } from '../lib/dialog.tsx';
 import { limitSlots, nextCredit, otherWindows, PLAN_SLOTS, resetButtonLabel, resetClock, resetConfirmText, resetCount, resetExpiryText, resetOutcomeText } from '../lib/limits.ts';
 import type { MenuItem, MenuSection } from '../lib/popover.tsx';
@@ -39,7 +40,7 @@ const OWN_HOMES: ReadonlySet<string> = new Set(['codex', 'claude', 'kimi-cli']);
 /** B-083: the "Plan credits" switch's hint – routing spends them like a plan and before any paying key (accounts/candidates.ts,
  *  routing/pool.ts), not before a plan with quota left. */
 const CREDITS_HINT = 'Prepaid credits from a plan – used like a plan, before paying keys; they expire monthly';
-/** 24.11.2026: a compatible key's plan credits are a subscription such as Alibaba's Qwen Token Plan, which runs here only as an agent tool. */
+/** 24.11.2026: a compatible key's plan credits are a subscription such as Alibaba's Qwen Token Plan, which runs here only as an agent tool – shown only for a DashScope address (dashscope-host.ts). */
 const COMPATIBLE_CREDITS_NOTE = 'Alibaba Qwen Token Plan covers agent tools such as Autark; direct API calls are excluded from its Personal plan';
 
 /** The two fixed bars of a plan (5-hour limit, Weekly); other windows in the tooltip. */
@@ -191,7 +192,7 @@ export function AccountRow(props: { account: Account; siblings: readonly Account
       hint={<>
         <div class="account-hint" title={hint}>{hint}</div>
         {credits && <div class="account-credits-hint">{CREDITS_HINT}</div>}
-        {credits && account.provider === 'compatible' && <div class="account-credits-hint">{COMPATIBLE_CREDITS_NOTE}</div>}
+        {credits && account.provider === 'compatible' && isDashScopeBaseUrl(account.baseUrl) && <div class="account-credits-hint">{COMPATIBLE_CREDITS_NOTE}</div>}
         {plan && <LimitBars account={account} />}
         {showModels && listed.length > 0 && <div class="account-models">{listed.map((model) => shortModelName(model.name) || model.model).join(' · ')}</div>}
         {extra && (
