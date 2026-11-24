@@ -6,8 +6,9 @@
 // then shows "edited"); Remember why… (own text messages) opens its one-field dialog (RememberWhy.tsx); Delete asks
 // first, the runtime leaves a "Message deleted" tombstone.
 // F30 (owner 16.11.2026: "man soll unten drunter ein Copy-Symbol haben", "antworten können … auf dem PC unten drunter
-// Buttons"): Copy takes the mouse selection inside the message when there is one, else the whole message; on touch the
-// menu adds "Select text" (SelectText.tsx). MessageTools puts Copy and Reply as two small icons into the message's meta
+// Buttons"): Copy takes the mouse selection inside the message when there is one, else the whole message. On touch a long press on
+// the text is the phone's own selection with its own copy bar (FCMWSYY3, owner 23.11.2026: "einfach das ganz normale
+// System mit dem ganz normalen Menü" – no sheet of ours any more). MessageTools puts Copy and Reply as two small icons into the message's meta
 // row. Which text Copy takes and how a message is answered (reply(), also the phone's swipe): message-tools.ts.
 // 16.11.2026: with a piece of the message marked, "Save as secret" stores it and puts its handle there (message-keys.ts).
 // Owns: the menu entries, the meta row's two tools and the inline editor. Never: decides who may edit (the runtime
@@ -61,9 +62,9 @@ function fileItems(message: Message): MenuItem[] {
 
 /**
  * The message's menu: its files first (B-080), then Reply, Start/Open thread, Copy (F30: the mouse selection inside the
- * message when there is one), Select text (touch), Edit, Remember why…, Delete – each only where it applies.
+ * message when there is one), Edit, Remember why…, Delete – each only where it applies.
  */
-export function messageMenu(message: Message, open: MenuOpen, actions: { edit: () => void; selectText: () => void }): MenuSection[] {
+export function messageMenu(message: Message, open: MenuOpen, actions: { edit: () => void }): MenuSection[] {
   const files = fileItems(message);
   const items: MenuItem[] = [];
   if (canReply(message)) items.push({ label: 'Reply', onSelect: () => { reply(message); } });
@@ -76,7 +77,6 @@ export function messageMenu(message: Message, open: MenuOpen, actions: { edit: (
   if (message.body && message.state !== 'streaming') items.push({ label: 'Copy', onSelect: () => void copy(copyText(message.body, selected)) });
   const secret = markedSecret(message, selected);
   if (secret) items.push({ label: 'Save as secret', onSelect: () => void saveAsSecret(message, secret) });
-  if (open.touch && copyable(message)) items.push({ label: 'Select text', onSelect: actions.selectText });
   if (canEdit(message)) items.push({ label: 'Edit', onSelect: actions.edit });
   if (can('references.remember') && offersRemember(message, HUMAN_ID)) items.push({ label: 'Remember why…', onSelect: () => { rememberTarget.value = message; } });
   if (canDelete(message)) items.push({ label: 'Delete', danger: true, onSelect: () => void remove(message) });

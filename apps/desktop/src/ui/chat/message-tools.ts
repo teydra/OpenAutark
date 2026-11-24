@@ -1,8 +1,8 @@
 // What a message's Copy and Reply do (F30, owner 16.11.2026: "vielleicht will ich ja nur den Teil kopieren", "außerdem
 // möchte ich antworten können"). Copy takes the text the person selected with the mouse where the selection touches
 // this message, else the whole message (its raw text, as before). A touch long press selects one word by itself – the
-// browser's pick, not the person's (lib/context-menu.tsx drops it) – so on touch Copy takes the whole message and the
-// menu offers "Select text" (SelectText.tsx), where the phone's own handles choose the part. reply() is the one way the
+// browser's pick, not the person's (lib/context-menu.tsx drops it) – so on touch Copy takes the whole message, and
+// a part is chosen with the phone's own handles and copied with its own copy bar (FCMWSYY3: no sheet of ours). reply() is the one way the
 // menu entry, the meta row's Reply icon (MessageActions.tsx) and the phone's swipe (shell/MobileShell.tsx) answer a
 // message: the composer's draft gets the reply (composer/draft.ts setReply), and the composer shows the quote and takes
 // the focus.

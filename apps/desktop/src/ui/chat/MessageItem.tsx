@@ -13,7 +13,7 @@
 // 13.11.2026: only real messages are here – who works shows in the live bar above the composer (LiveBar.tsx); a row an
 // older version left (meta.live / meta.lines, a stopped or streaming state) renders as its body.
 // Right-click (long press) opens the message's menu (MessageActions.tsx: Reply, Copy, Select text on touch, Edit,
-// Delete); Edit swaps the body for the inline editor, Select text opens its sheet (SelectText.tsx). F30: the meta row
+// Delete); Edit swaps the body for the inline editor; a finger's long press selects text natively (FCMWSYY3). F30: the meta row
 // also holds Copy and Reply as two small icons (MessageTools) – after the time on the left, before the markers in the own
 // bubble, so the time keeps its edge. A reply shows its quote line above the body (ReplyQuote). B-078: a message with
 // a thread shows one quiet line under it ("3 replies · Mara", threads.ts) that opens or closes the thread in the side panel.
@@ -41,7 +41,6 @@ import { openTaskDetail } from '../tasks/jump.ts';
 import { AttachmentList } from './Attachments.tsx';
 import { SecretAttachments } from './SecretAttachments.tsx';
 import { InlineEdit, MessageTools, messageMenu } from './MessageActions.tsx';
-import { SelectText } from './SelectText.tsx';
 import { useContextMenu } from '../lib/context-menu.tsx';
 import type { MenuOpen } from '../lib/context-menu.tsx';
 import type { MenuSection } from '../lib/popover.tsx';
@@ -134,8 +133,7 @@ function ThreadLink(props: { message: Message }) {
 function MessageItemInner(props: { message: Message }) {
   const { message } = props;
   const [editing, setEditing] = useState(false);
-  const [selecting, setSelecting] = useState(false); // F30: the Select text sheet (touch)
-  const build = (open: MenuOpen) => messageMenu(message, open, { edit: () => setEditing(true), selectText: () => setSelecting(true) });
+  const build = (open: MenuOpen) => messageMenu(message, open, { edit: () => setEditing(true) });
   const menu = useContextMenu(build, { touchByButton: true }); // 17.11.2026: a finger's long press selects text natively; the menu is the "More" button
   const [shown, setShown] = useState(false); // a key in the text shows only when the person asks
   const keys = useMemo(() => keysIn(message), [message.body, message.kind]);
@@ -173,7 +171,6 @@ function MessageItemInner(props: { message: Message }) {
       {(message.state === 'failed' || message.state === 'stopped') && <Failure message={message} />}
       <Actions message={message} own={human} menu={build} />
       <ThreadLink message={message} />
-      {selecting && <SelectText message={message} onClose={() => setSelecting(false)} />}
     </article>
   );
 }
