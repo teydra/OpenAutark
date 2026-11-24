@@ -1,22 +1,22 @@
-name: dotnetpro public installer acceptance
+name: dotnetpro 1920x1080 capture
 on:
   push:
-    branches: [ci/dotnetpro-first-install-0316]
+    branches: [ci/dotnetpro-capture-0318]
 permissions:
   contents: read
 jobs:
-  first-install:
+  capture:
     if: github.repository == 'teydra/OpenAutark'
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Download and run the public signed installer interactively
-        shell: powershell
-        run: ./first-install.ps1
-      - name: Encrypt screenshots before transfer
+      - name: Public installer, local model, 1920x1080 Remote Desktop session
+        shell: pwsh
+        run: ./host.ps1
+      - name: Encrypt captures before transfer
         if: always()
         shell: pwsh
         run: ./seal-captures.ps1
