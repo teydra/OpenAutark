@@ -1,6 +1,6 @@
 // Owns: the app's WebView as MainActivity uses it – its settings (JavaScript and DOM storage on, no file access, content://
 // for the document picker, no mixed content, media without a second tap for a call's voice – B-084 decision 5, the
-// AutarkAndroid/<version> (Android <release>; <maker> <model>) user agent, first-party cookies only), its navigation (PhoneNavigation), downloads of the PC's
+// AutarkAndroid/<version> (Android <release>; <maker> <model>) user agent, first-party cookies only), pictures the keyboard hands over (KeyboardContent), its navigation (PhoneNavigation), downloads of the PC's
 // /files/ links to the phone (PhoneDownloads), and wiping one company's origin when the phone forgets it (its web storage
 // and gate cookie; other companies' origins stay). Never: a JavaScript interface, debugging in release, or another origin's data.
 package com.teydralab.autark.android;
@@ -20,8 +20,8 @@ final class PhoneWeb {
     private PhoneWeb() {}
 
     @SuppressLint("SetJavaScriptEnabled")
-    static WebView create(Activity activity, Supplier<String> origin, PhoneNavigation.Host host) {
-        WebView web = new WebView(activity);
+    static WebView create(Activity activity, Supplier<String> origin, PhoneNavigation.Host host, KeyboardContent.Sink pictures) {
+        WebView web = KeyboardContent.webView(activity, pictures); // a picture from the keyboard's clipboard row lands (FCMWSZNH)
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);

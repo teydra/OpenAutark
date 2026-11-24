@@ -151,7 +151,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     }
 
     private void createWebView() {
-        web = PhoneWeb.create(this, () -> origin, this);
+        web = PhoneWeb.create(this, () -> origin, this, (name, mime, data) -> port.paste(name, mime, data));
         chrome = new PhoneChrome(this, web, () -> origin);
         web.setWebChromeClient(chrome);
     }

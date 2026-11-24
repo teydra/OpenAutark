@@ -19,7 +19,8 @@
 // (the phone hears dictation itself): the page's 'hear' {id, data (base64), mime, language} – a dictation piece – goes to
 // the person's ChatGPT plan from here (phoneuse/PlanHearing over the company's UseLink, on a thread of its own) and is
 // answered 'heard' {id, text} or {id, error} (the page then sends it to the PC as before); 'status' says hear:true so
-// the page knows. Never: addJavascriptInterface, a second port, a message from another origin, a picture of anything but
+// the page knows. FCMWSZNH 24.11.2026: 'paste' {name, mime, data (base64)} – a picture from the keyboard's clipboard
+// row (KeyboardContent) – goes to the page, which pastes it into its focused field. Never: addJavascriptInterface, a second port, a message from another origin, a picture of anything but
 // the app's window, or the plan login to the page.
 package com.teydralab.autark.android;
 
@@ -158,6 +159,11 @@ final class NativePort {
     /** Shared into Autark: the text (or null) and how many files wait for the page's next file chooser. */
     void share(String text, int files) {
         try { JSONObject out = new JSONObject().put("t", "share").put("files", files); if (text != null) out.put("text", text); send(out); } catch (JSONException ignored) { /* never for these values */ }
+    }
+
+    /** FCMWSZNH: a picture the keyboard handed over (KeyboardContent) – the page pastes it into its focused field. Any thread. */
+    void paste(String name, String mime, String base64) {
+        try { send(new JSONObject().put("t", "paste").put("name", name).put("mime", mime).put("data", base64)); } catch (JSONException ignored) { /* never for strings */ }
     }
 
     /** W: how the wake of PC `id` went – null: woken, else the sentence why not. Any thread. */

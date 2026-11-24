@@ -15,6 +15,7 @@ import { rpc } from '../lib/rpc.ts';
 import { settings } from '../lib/store.ts';
 import { hasNativePort, onNative, sendNative } from './native-port.ts';
 import { startShare } from './share.ts';
+import { startKeyboardPaste } from './keyboard-paste.ts';
 
 export interface PhoneCompany { id: string; name: string; avatar?: string; current: boolean; pc?: string }
 export interface PhoneStatus { pc?: string; connected: boolean }
@@ -124,6 +125,7 @@ export function startPhoneShell(): void {
   onNative('companies', (msg) => { phoneCompanies.value = parseCompanies(msg); });
   onNative('status', (msg) => { phoneStatus.value = parseStatus(msg); });
   startShare();
+  startKeyboardPaste(); // FCMWSZNH: a picture from the keyboard's clipboard row
   let card = '';
   const sendCard = (force: boolean) => {
     const profile = settings.peek()?.profile;
