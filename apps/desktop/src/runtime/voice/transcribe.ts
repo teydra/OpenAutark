@@ -7,7 +7,8 @@
 //      at its OpenAI-compatible /audio/transcriptions (transcribe-endpoint.ts), with the learned words as prompt;
 //   3. else a listening model on a free or plan account (listen-transcribe.ts);
 //   4. else the local model's reason, or "not set up" (the composer keeps the recording).
-// A dictation the recognizer heard no words in is empty text ({ text: '' }), not a failure (SM9); agent hearing
+// A dictation the recognizer heard no words in is empty text ({ text: '' }), not a failure (SM9); a WAV dictation piece
+// without voice (shared/voice/voiced.ts, 24.11.2026) is that text before any recognizer hears it; agent hearing
 // keeps the "no usable text" error. A service or a listener gets no English hint on a PC whose OS speaks another
 // language (local/service.ts serviceLanguage: it detects). A decode hears a recording's first 20 minutes: such a
 // result is `partial`, and an agent transcript then starts with partialNote's line. A heard dictation take (the
@@ -39,6 +40,7 @@ import type { VoiceApi } from '../rpc/extras.ts';
 import type { Account } from '../../shared/model/providers.ts';
 import { WorkforceError } from '../../shared/errors.ts';
 import { vocabularyPrompt } from '../../shared/voice/vocabulary.ts';
+import { wavHasVoice } from '../../shared/voice/voiced.ts';
 import { markUncertainWords, spansFromInline, type SpanMark } from '../../shared/voice/marks.ts';
 import { endpointFor } from '../engines/http/common.ts';
 import { reclaimerOf } from '../files/cleanup.ts';
@@ -63,6 +65,8 @@ export type { FetchFn, Heard, HeardPart } from './transcribe-endpoint.ts';
 /** Providers without an OpenAI-compatible /audio/transcriptions (plans, CLIs, media-only APIs). */
 const NO_TRANSCRIPTION = new Set(['codex', 'claude', 'anthropic', 'gemini-cli', 'copilot', 'kimi-cli', 'elevenlabs', 'fal']);
 const NOT_SET_UP = 'Speech to text is not set up yet: this PC downloads its speech model by itself (Settings › Models › Speech to text), or connect an OpenAI or OpenAI-compatible account with a transcription model.';
+/** A WAV up to this size is checked for voice before it is heard (a minute of 16 kHz PCM16 is 1.9 MB). */
+export const VOICE_CHECK_MAX_BYTES = 32 * 1024 * 1024;
 /** A dictation transcribes the take it uploaded just before (the run itself takes ≤ 120 s) … */
 export const FRESH_TAKE_MS = 5 * 60_000;
 /** … and its heard take waits this long for the clean-up (a client whose connection dropped attaches it meanwhile). */
@@ -118,11 +122,33 @@ export class Transcriber implements VoiceApi, SpeechToText {
    * whether the answer arrived – and only the caller's fresh upload (a chat device may name any file here). The
    * clean-up keeps what a draft or a message uses; a failed take stays: the composer may attach it.
    */
-  async transcribe(input: TranscribeInput): Promise<Heard & { marks?: SpanMark[]; by: HeardBy; planMissed?: true }> {
+  async transcribe(input: TranscribeInput): Promise<Heard & { marks?: SpanMark[]; by?: HeardBy; planMissed?: true }> {
+    if (await this.voiceless(input.fileId)) { // heard by nobody: no `by`
+      try { this.release(input.fileId); } catch { /* the clean-up logs its own failures */ }
+      return { text: '' };
+    }
     const heard = await this.run(input, true);
     try { this.release(input.fileId); } catch { /* the clean-up logs its own failures */ }
     const { text, marks } = spansFromInline(heard.text); // B-082: plain text, the unsure places beside it
     return { ...heard, text, ...(marks?.uncertain && !input.live ? { marks: marks.uncertain } : {}) };
+  }
+
+  /**
+   * 24.11.2026: a WAV take without voice (shared/voice/voiced.ts – the pause before Stop, a tap, room noise) goes to no
+   * recognizer: one wrote the ChatGPT login's name ("Colearning Salzburg") for such a piece. False when it holds voice,
+   * is no WAV (a compressed piece: the page checked it before encoding) or cannot be read – then it is heard as before.
+   */
+  private async voiceless(fileId: string): Promise<boolean> {
+    try {
+      const s = this.deps.services();
+      const ref = s.files.get(fileId);
+      if (!ref?.size || ref.size > VOICE_CHECK_MAX_BYTES || audioExtension(ref.mime, ref.name) !== 'wav') return false;
+      const quiet = wavHasVoice(await s.files.read(ref.id)) === false;
+      if (quiet) s.log?.info('dictation piece without voice', { bytes: ref.size }); // never the audio
+      return quiet;
+    } catch {
+      return false;
+    }
   }
 
   /** Queues the caller's fresh take for the blob clean-up, due after HEARD_TAKE_HOLD_MS (see transcribe). */
