@@ -160,7 +160,7 @@ namespace AutarkBroker
         }
     }
 
-    public enum SignInAction { Wait, Reveal, PickUser, Options, PasswordProvider, Fill, Submit, WrongPassword, Unknown }
+    public enum SignInAction { Wait, Reveal, RevealKey, PickUser, Options, PasswordProvider, Fill, Submit, WrongPassword, Unknown }
 
     public sealed class SignInStep
     {
@@ -187,9 +187,12 @@ namespace AutarkBroker
                 if ((node.Role == "text" || node.Role == "pane") && Contains(node.Name, WrongWords) && Contains(node.Name, PasswordWords))
                     return new SignInStep(SignInAction.WrongPassword, node);
             UiNode field = null, pin = null, submit = null, options = null, provider = null, curtain = null;
+            bool clock = false;
             List<UiNode> tiles = new List<UiNode>();
             foreach (UiNode node in nodes)
             {
+                // The lock screen's clock and date (24.11.2026 15:40, teydra-server): the curtain is down even when no element offers to open it.
+                if (node.Role == "text" && (node.AutomationId == "TimeText" || node.AutomationId == "DayOfWeekText")) clock = true;
                 if (!node.Enabled) continue;
                 // Windows Hello's PIN box is a password box too (24.11.2026, teydra-server after a restart): never our password.
                 if (node.Role == "edit" && node.IsPassword && IsPin(node) && pin == null) pin = node;
@@ -202,6 +205,9 @@ namespace AutarkBroker
             }
             if (submitted) return new SignInStep(SignInAction.Wait, null);
             if (curtain != null && field == null && pin == null) return new SignInStep(SignInAction.Reveal, curtain);
+            // Only the clock: nothing to invoke, so a key lifts the curtain, as a person would do.
+            if (clock && field == null && pin == null && options == null && provider == null && submit == null && tiles.Count == 0)
+                return new SignInStep(SignInAction.RevealKey, null);
             if (tiles.Count > 1 && field == null && pin == null)
             {
                 foreach (UiNode tile in tiles) if (Equal(tile.Name, users)) return new SignInStep(SignInAction.PickUser, tile);
@@ -235,7 +241,7 @@ namespace AutarkBroker
             int shown = 0;
             foreach (UiNode node in nodes)
             {
-                if (node.Role != "button" && node.Role != "edit" && node.Role != "hyperlink" && node.Role != "listitem" && node.Role != "text" && node.AutomationId != "InvokableLockContentControl") continue;
+                if (node.Role != "button" && node.Role != "edit" && node.Role != "hyperlink" && node.Role != "listitem" && node.Role != "text" && string.IsNullOrEmpty(node.AutomationId)) continue;
                 if (shown++ == 40) { text.Append(" …"); break; }
                 string name = (node.Name ?? "").Replace('\r', ' ').Replace('\n', ' ');
                 if (name.Length > 40) name = name.Substring(0, 40) + "…";
@@ -587,7 +593,7 @@ namespace AutarkBroker
         static readonly TimeSpan Budget = TimeSpan.FromMinutes(10);
         /// A screen the planner does not know is looked at again after this, not given up on.
         static readonly TimeSpan Retry = TimeSpan.FromSeconds(30);
-        /// Clicks on the way (curtain, options, provider, tile) in the whole run; Submit stays once.
+        /// Clicks and keys on the way (curtain, options, provider, tile) in the whole run; Submit stays once.
         const int MaxActions = 40;
         static string lastScreen = "";
         static DateTime lastScreenLog = DateTime.MinValue;
@@ -653,6 +659,10 @@ namespace AutarkBroker
                 case SignInAction.Wait: return null;
                 case SignInAction.WrongPassword: return SignInResults.WrongPassword;
                 case SignInAction.Unknown: return SignInResults.UnknownScreen;
+                case SignInAction.RevealKey:
+                    actions++;
+                    PressSpace();
+                    return null;
                 case SignInAction.Fill:
                     string password = SignInVault.Retrieve();
                     if (password == null) return SignInResults.NoSecret;
@@ -711,6 +721,14 @@ namespace AutarkBroker
             throw new InvalidOperationException("not invokable");
         }
 
+        /// One Space on the input desktop: lifts the lock screen's curtain. Fill replaces the field's whole value, so a Space that
+        /// lands in a field is never part of the password.
+        static void PressSpace()
+        {
+            keybd_event(0x20, 0x39, 0, UIntPtr.Zero);
+            keybd_event(0x20, 0x39, 2, UIntPtr.Zero);
+        }
+
         static void Value(System.Windows.Automation.AutomationElement element, string text)
         {
             object pattern;
@@ -765,6 +783,7 @@ namespace AutarkBroker
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
         [DllImport("user32.dll", SetLastError = true)] static extern bool SetThreadDesktop(IntPtr desktop);
         [DllImport("user32.dll", SetLastError = true)] static extern bool CloseDesktop(IntPtr desktop);
+        [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
         [DllImport("netapi32.dll", CharSet = CharSet.Unicode)] static extern int NetUserGetInfo(string server, string user, int level, out IntPtr buffer);
         [DllImport("netapi32.dll")] static extern int NetApiBufferFree(IntPtr buffer);
     }

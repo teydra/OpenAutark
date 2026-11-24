@@ -151,6 +151,52 @@ namespace AutarkBroker
             Case("planner: an empty screen (still booting) waits", () =>
                 Expect(SignInPlanner.Next(new List<UiNode>(), Users, false).Action, SignInAction.Wait, "action"));
 
+            // After a restart (24.11.2026 15:40, gave up at 15:51): the lock screen showed only its clock, no curtain element.
+            Func<List<UiNode>> lockClock = () =>
+            {
+                UiNode lost = N("text", "", "SecureLockLostModeText"); lost.Enabled = false;
+                return new List<UiNode> { lost, N("text", "15:40", "TimeText"), N("text", "Dienstag, 24. November", "DayOfWeekText"), N("pane", "") };
+            };
+            Case("planner: only the lock screen's clock – a key lifts the curtain", () =>
+                Expect(SignInPlanner.Next(lockClock(), Users, false).Action, SignInAction.RevealKey, "action"));
+            Case("planner: a hidden clock is the curtain too", () =>
+            {
+                List<UiNode> nodes = lockClock();
+                foreach (UiNode node in nodes) node.Enabled = false;
+                return Expect(SignInPlanner.Next(nodes, Users, false).Action, SignInAction.RevealKey, "action");
+            });
+            Case("planner: clock and a curtain element – the element is invoked, no key", () =>
+            {
+                List<UiNode> nodes = lockClock();
+                nodes.Add(N("pane", "Sperrbildschirm", "InvokableLockContentControl"));
+                return Expect(SignInPlanner.Next(nodes, Users, false).Action, SignInAction.Reveal, "action");
+            });
+            Case("planner: clock over a PIN box – no key, it opens the sign-in options", () =>
+            {
+                List<UiNode> nodes = lockClock();
+                nodes.Add(N("edit", "PIN", "PinEntry", true)); nodes.Add(N("hyperlink", "Anmeldeoptionen"));
+                return Expect(SignInPlanner.Next(nodes, Users, false).Action, SignInAction.Options, "action");
+            });
+            Case("planner: clock over the password box – it fills, no key", () =>
+            {
+                List<UiNode> nodes = lockClock();
+                nodes.Add(N("edit", "Kennwort", "PasswordBox", true)); nodes.Add(N("button", "Übermitteln", "SubmitButton"));
+                return Expect(SignInPlanner.Next(nodes, Users, false).Action, SignInAction.Fill, "action");
+            });
+            Case("planner: clock with other users' tiles – no key", () =>
+            {
+                List<UiNode> nodes = lockClock();
+                nodes.Add(N("listitem", "Gast")); nodes.Add(N("listitem", "Andere"));
+                return Expect(SignInPlanner.Next(nodes, Users, false).Action == SignInAction.RevealKey, false, "key");
+            });
+            Case("planner: after Submit the clock never brings a key", () =>
+                Expect(SignInPlanner.Next(lockClock(), Users, true).Action, SignInAction.Wait, "action"));
+            Case("describe: elements with an id are shown whatever their role", () =>
+            {
+                string text = SignInPlanner.Describe(new List<UiNode> { N("pane", "Anmeldung", "LockAppHost"), N("group", "ignored") });
+                return Expect(text.Contains("pane#LockAppHost 'Anmeldung'"), true, text) ?? Expect(text.Contains("ignored"), false, "group shown");
+            });
+
             Console.WriteLine(failed == 0 ? "ALL PASS" : failed + " FAILED");
             return failed == 0 ? 0 : 1;
         }
