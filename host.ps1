@@ -67,11 +67,6 @@ try {
   $pol='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
   $uac=Get-ItemProperty $pol
   Log "UAC policy before: EnableLUA=$($uac.EnableLUA) ConsentPromptBehaviorAdmin=$($uac.ConsentPromptBehaviorAdmin) ConsentPromptBehaviorUser=$($uac.ConsentPromptBehaviorUser) PromptOnSecureDesktop=$($uac.PromptOnSecureDesktop) FilterAdministratorToken=$($uac.FilterAdministratorToken)"
-  if ($uac.EnableLUA -eq 1) {
-    # Windows' own prompt stays, but is shown on the visible desktop so it can be answered and photographed
-    Set-ItemProperty $pol -Name ConsentPromptBehaviorAdmin -Value 5 -Type DWord
-    Set-ItemProperty $pol -Name PromptOnSecureDesktop -Value 0 -Type DWord
-  }
   icacls $root /grant 'Users:(OI)(CI)M' /T /Q | Out-Null
   Copy-Item "$PSScriptRoot\session.ps1" "$root\session.ps1" -Force
   Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name DnproSession -Value 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\dnpro\session.ps1'

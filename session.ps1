@@ -212,6 +212,11 @@ function WindowFor([string]$name) {
   foreach($p in (Get-Process -Name $name -ErrorAction SilentlyContinue)) { if ($p.MainWindowHandle -ne [IntPtr]::Zero) { return $p.MainWindowHandle } }
   [IntPtr]::Zero
 }
+function Step([string]$name,[scriptblock]$body){
+  Stage $name
+  try { . $body; if (-not $phases.Contains($name)) { $phases[$name]='PASS' } }
+  catch { Log "STEP $name FAILED: $($_.Exception.Message)"; $phases[$name]="FAIL: $($_.Exception.Message)"; try { Dump "$name-fail"; Dbg "$name-fail" } catch {} }
+}
 function FinishAll([string]$result){ Set-Content -LiteralPath "$out\phases.json" -Value ($phases | ConvertTo-Json); Set-Content -LiteralPath "$out\session.done" -Value $result; exit 0 }
 
 try {
@@ -288,14 +293,14 @@ try {
     }
     if (!$began -and ([DateTime]::UtcNow-$lastProgress).TotalSeconds -gt 240) { throw "No recognized wizard action. shown=$shown scope=$scope next=$next." }
     $consent=@(Get-Process consent -ErrorAction SilentlyContinue)
-    if ($consent.Count) {
+    if ($consent.Count -and $script:uacShots -lt 3) {
       $script:uacShots++
       Log "UAC consent prompt visible (consent.exe x$($consent.Count))"
       try { Start-Sleep -Milliseconds 800; Shot ("uac-{0:00}-prompt.png" -f $script:uacShots) } catch { Log "uac shot failed: $($_.Exception.Message)" }
       [Windows.Forms.SendKeys]::SendWait('%y'); Log 'sent Alt+Y to the consent prompt'
       Start-Sleep -Seconds 3
     }
-    if (!$began -and ([DateTime]::UtcNow-$lastProgress).TotalSeconds -gt 8 -and (([int]([DateTime]::UtcNow-$lastProgress).TotalSeconds) % 10) -lt 1) { Dbg 'wizard-wait'; Log "foreground: $([W]::Title([W]::GetForegroundWindow()))" }
+    if (!$began -and ([DateTime]::UtcNow-$lastProgress).TotalSeconds -gt 8 -and (([int]([DateTime]::UtcNow-$lastProgress).TotalSeconds) % 10) -lt 1) { if (!$script:progressShot) { $script:progressShot=$true; try { Shot '02-installation-laeuft.png' -Print } catch { Log "progress shot failed: $($_.Exception.Message)" } } else { Dbg 'wizard-wait' }; Log "foreground: $([W]::Title([W]::GetForegroundWindow()))" }
     Start-Sleep -Milliseconds 500
     $setup.Refresh()
   } while (!$setup.HasExited -and [DateTime]::UtcNow -lt $deadline)
@@ -345,7 +350,7 @@ try {
   $phases['first-start']='PASS'
 
   # ---------- AI choice ----------
-  Stage 'ai'
+  Step 'ai' {
   [void](ClickText 'Set up a new company')
   Start-Sleep -Seconds 3
   Dbg 'after-setup-click'
@@ -377,8 +382,9 @@ try {
   Shot '04b-ki-verbunden.png' -Print
   $phases['ai-local-server-added']='PASS'
 
+  }
   # ---------- About you -> Start ----------
-  Stage 'about'
+  Step 'about' {
   if (!(ClickText 'Continue' 40)) { throw 'Continue not clickable.' }
   Start-Sleep -Seconds 3
   [void](TypeInto 'Your name' 'Testperson')
@@ -389,7 +395,8 @@ try {
   Start-Sleep -Milliseconds 800
   Dbg 'about-filled'
   if (!(ClickText 'Start' 20 'exact')) { throw 'Start not clickable.' }
-  Stage 'manager'
+  }
+  Step 'manager' {
   Start-Sleep -Seconds 8
   Dump 'after-start'
   Dbg 'after-start'
@@ -407,8 +414,9 @@ try {
   Dump 'manager-settled'
   Dbg 'manager-settled'
 
+  }
   # ---------- first task ----------
-  Stage 'task'
+  Step 'task' {
   $prompt='Erstelle aus diesen drei frei erfundenen Arbeitsständen eine kurze Prioritätenliste mit Begründung: Anleitung fertig; Testexport blockiert durch fehlende Beispieldatei; Farben fürs Demo-Dashboard noch offen. Arbeite nur mit diesen Angaben, ohne Werkzeuge oder Internet.'
   $box=Js @'
 (() => { const vis=e=>{const r=e.getBoundingClientRect();return r.width>40&&r.height>10};
@@ -433,12 +441,13 @@ try {
     if ($n -ge 2 -and $stable -ge 3) { $answered=$true; break }
   }
   Dump 'task-end'
-  if (!$answered) { Dbg 'task-no-answer'; $phases['first-task']='FAIL'; throw 'No settled answer to the first task.' }
+  if (!$answered) { throw 'No settled answer to the first task.' }
   Start-Sleep -Seconds 2
   Shot '05-erster-auftrag.png' -Print
-  $phases['first-task']='PASS'
+  }
   Stage 'done'
-  FinishAll 'OK'
+  $bad=@($phases.Keys | Where-Object { [string]$phases[$_] -like 'FAIL*' })
+  if ($bad.Count) { FinishAll ('FAIL steps: ' + ($bad -join ',')) } else { FinishAll 'OK' }
 } catch {
   Log "SESSION FAILED: $($_.Exception.Message)"
   Log ($_.ScriptStackTrace)
