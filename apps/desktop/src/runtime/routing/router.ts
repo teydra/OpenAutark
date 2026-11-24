@@ -167,7 +167,10 @@ export class RouterImpl implements Router {
       if (only) return undefined;
       const unsuitable = why && why !== 'unavailable' ? why : undefined;
       if (pinned && !unsuitable) failedPrice ??= listPrice(pinned); // B-080: it cannot run now (not: unfit for this work)
-      fallbackReason ??= unsuitable ? `pinned model unsuitable (${pinProblem(unsuitable, category)})` : 'pinned model unavailable';
+      // 24.11.2026 (feedback 96AFD12B): a pin that only a pay-per-use key could run says so – the route line was silent on why.
+      const paidOnly = pinned && !why && accountsFor(pinned).length > 0;
+      fallbackReason ??= unsuitable ? `pinned model unsuitable (${pinProblem(unsuitable, category)})`
+        : paidOnly ? `pinned model unavailable (${pinned.name}: only a pay-per-use key runs it)` : 'pinned model unavailable';
       return undefined;
     };
     const startPin = () => (policy.pin ? tryPin(policy.pin, false) : undefined);

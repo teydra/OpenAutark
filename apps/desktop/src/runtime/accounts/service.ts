@@ -235,7 +235,7 @@ export class AccountServiceImpl implements AccountServiceContract {
     if (typeof patch.priority === 'number' && Number.isFinite(patch.priority)) next.priority = Math.round(patch.priority);
     if (patch.credits === true) {
       // a mark elsewhere would book real pay-per-use spend as "plan, no charge"
-      if (!creditsPossible(account)) throw new WorkforceError('bad_request', 'Plan credits come with an Anthropic or OpenAI key.');
+      if (!creditsPossible(account)) throw new WorkforceError('bad_request', 'Plan credits come with an Anthropic, OpenAI or OpenAI-compatible key (a subscription such as Qwen Token Plan).');
       next.credits = true;
     } else if (patch.credits === false) delete next.credits;
     // 17.11.2026: a plan may go on past its limit on the provider's extra usage (billed by the provider) – the person's switch, off by default

@@ -15,9 +15,11 @@ export type AccountCharge = 'paid' | 'plan' | 'free';
 export const LOCAL_PROVIDER_IDS: ReadonlySet<string> = new Set(['ollama', 'lmstudio', 'llamacpp', 'vllm']);
 const PAID_AUTH: ReadonlySet<string> = new Set(['api_key', 'env']);
 /** B-083: providers whose plans include monthly API credits (Claude Max/Ultra, ChatGPT Pro/Business); a Codex login with a key
- *  spends none. Claude Code with a Console key joins once its engine reports "Credit balance is too low" as a limit (today a
+ *  spends none. 24.11.2026 (feedback D032C4C3): `compatible` joins – a subscription with an OpenAI-compatible key (Qwen Token
+ *  Plan: a monthly fee, prepaid credits that expire with the month, the service pauses at its quota) is a plan, and only the
+ *  person's own switch says so; without it such a key stays pay-per-use. Claude Code with a Console key joins once its engine reports "Credit balance is too low" as a limit (today a
  *  plain failure, so a used-up login would never cool and stay the routed work plan). */
-const CREDIT_PROVIDERS: ReadonlySet<string> = new Set(['anthropic', 'openai']);
+const CREDIT_PROVIDERS: ReadonlySet<string> = new Set(['anthropic', 'openai', 'compatible']);
 
 export function accountCharge(account: Pick<Account, 'auth' | 'provider' | 'plan' | 'credits'> | undefined): AccountCharge {
   if (!account) return 'plan';
@@ -27,7 +29,7 @@ export function accountCharge(account: Pick<Account, 'auth' | 'provider' | 'plan
   return 'free';
 }
 
-/** B-083: a pay-per-use account that can hold a plan's API credits – an Anthropic or OpenAI key (API or environment key). */
+/** B-083: a pay-per-use account that can hold a plan's API credits – an Anthropic, OpenAI or OpenAI-compatible key (API or environment key). */
 export function creditsPossible(account: Pick<Account, 'auth' | 'provider' | 'plan'>): boolean {
   return CREDIT_PROVIDERS.has(account.provider) && accountCharge({ auth: account.auth, provider: account.provider, plan: account.plan }) === 'paid';
 }

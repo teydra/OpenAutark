@@ -184,3 +184,11 @@ test('store: a mark on an account without plan credits is refused, so real pay-p
   }
   assert.equal(accountCharge(h.service.get('acc_router')), 'paid');
 });
+
+test('store: a subscription key of an OpenAI-compatible endpoint (Qwen Token Plan) can be marked as a plan – feedback D032C4C3', () => {
+  const h = harness();
+  h.repo.save(row('acc_qwen', { provider: 'compatible', auth: 'api_key' }));
+  assert.equal(accountCharge(h.service.get('acc_qwen')), 'paid', 'unmarked: pay per use, as before');
+  assert.equal(h.service.update('acc_qwen', { credits: true }).credits, true);
+  assert.equal(accountCharge(h.service.get('acc_qwen')), 'plan');
+});
