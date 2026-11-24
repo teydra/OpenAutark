@@ -207,6 +207,50 @@ function TypeInto([string]$labelText,[string]$value){
   return $true
 }
 
+
+# ---------- the model of this run: Work and Decisions use the hosted model ----------
+$script:wantModel='deepseek/deepseek-v4.1-flash'
+function FindWf {
+  foreach($base in @("$env:APPDATA\Autark Companies","$env:APPDATA","$env:LOCALAPPDATA\Programs\Autark")) {
+    $f=Get-ChildItem -Path $base -Recurse -Depth 4 -Filter wf.cmd -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($f) { return $f.FullName }
+  }
+  return $null
+}
+function EnsureModel {
+  $want=$script:wantModel
+  $tree=@(Get-ChildItem -Path "$env:APPDATA\Autark Companies" -Recurse -Depth 2 -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'Cache|Partitions|Storage|blob|GPU|Shader|DIPS|Network|Dictionary' } | ForEach-Object { $_.FullName.Replace("$env:APPDATA\",'') })
+  Log "data folders: $($tree -join ' | ')"
+  $wf=FindWf
+  Log "wf: $wf"
+  $modelId="openrouter:$want"
+  if ($wf) {
+    $ml=(& $wf call models.list 2>&1 | Out-String)
+    try {
+      $parsed=$ml | ConvertFrom-Json
+      $items=@(if($parsed.models){$parsed.models}else{$parsed})
+      $hit=@($items | Where-Object { $_.id -like "*$want" })
+      Log "models.list: $($items.Count) models; matching: $((@($hit | ForEach-Object id)) -join ', ')"
+      if ($hit.Count) { $modelId=[string]$hit[0].id }
+    } catch { Log "models.list not parsed: $($ml.Substring(0,[Math]::Min(300,$ml.Length)))" }
+    foreach($u in 'work','decision'){
+      $r=(& $wf call models.setUse (@{use=$u;value=$modelId} | ConvertTo-Json -Compress) 2>&1 | Out-String)
+      Log "setUse $u -> $modelId : $($r.Substring(0,[Math]::Min(500,$r.Length)).Replace("`n",' '))"
+    }
+    $phases['model-set']="wf $modelId"
+    return
+  }
+  $files=@(Get-ChildItem -Path "$env:APPDATA\Autark Companies" -Recurse -Depth 3 -Filter settings.json -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'Cache|Partitions|Storage' })
+  Log "settings.json: $(($files | ForEach-Object FullName) -join ' | ')"
+  if (!$files.Count) { throw 'Neither wf nor settings.json found.' }
+  foreach($f in $files) {
+    $t=[IO.File]::ReadAllText($f.FullName)
+    $n=[regex]::Replace($t,'("(?:work|decision)"\s*:\s*)"auto"',('$1"'+$modelId+'"'))
+    if ($n -ne $t) { [IO.File]::WriteAllText($f.FullName,$n); Log "patched routing in $($f.FullName)" } else { Log "no auto routing in $($f.FullName)" }
+  }
+  $phases['model-set']="settings.json $modelId"
+}
+
 # ---------- installer ----------
 function WindowFor([string]$name) {
   foreach($p in (Get-Process -Name $name -ErrorAction SilentlyContinue)) { if ($p.MainWindowHandle -ne [IntPtr]::Zero) { return $p.MainWindowHandle } }
@@ -414,24 +458,7 @@ try {
   Dbg 'api-added'
   Shot '04b-ki-verbunden.png' -Print
   $phases['ai-api-key-added']='PASS'
-  # the model for this run: set the Work and Decisions uses through the app's own command line, as Settings' selects do
-  $wf=@(Get-ChildItem -Path "$env:APPDATA\Autark Companies" -Recurse -Depth 3 -Filter wf.cmd -ErrorAction SilentlyContinue | Select-Object -First 1)
-  Log "wf: $($wf.FullName)"
-  if (!$wf.Count) { throw 'wf.cmd not found.' }
-  $want='deepseek/deepseek-v4.1-flash'
-  $ml=(& $wf[0].FullName call models.list 2>&1 | Out-String)
-  try {
-    $parsed=$ml | ConvertFrom-Json
-    $items=@(if($parsed.models){$parsed.models}else{$parsed})
-    $hit=@($items | Where-Object { $_.id -like "*$want" })
-    Log "models.list: $($items.Count) models; matching: $((@($hit | ForEach-Object id)) -join ', ')"
-    $modelId=if($hit.Count){[string]$hit[0].id}else{"openrouter:$want"}
-  } catch { Log "models.list not parsed: $($ml.Substring(0,[Math]::Min(300,$ml.Length)))"; $modelId="openrouter:$want" }
-  foreach($u in 'work','decision'){
-    $r=(& $wf[0].FullName call models.setUse (@{use=$u;value=$modelId} | ConvertTo-Json -Compress) 2>&1 | Out-String)
-    Log "setUse $u -> $modelId : $($r.Substring(0,[Math]::Min(400,$r.Length)).Replace("`n",' '))"
-  }
-  $phases['model-set']=$modelId
+  EnsureModel
   }
   # ---------- About you -> Start ----------
   Step 'about' {
@@ -467,6 +494,9 @@ try {
   }
   # ---------- first task ----------
   Step 'task' {
+  $label=[string](Js '(()=>{const e=[...document.querySelectorAll("button")].find(b=>/^Auto /.test((b.innerText||"").trim())||/deepseek/i.test(b.innerText||""));return e?e.innerText:""})()')
+  Log "composer model label: $label"
+  if ($label -notmatch 'deepseek') { try { EnsureModel; Start-Sleep -Seconds 4; Log ('composer model label after: ' + [string](Js '(()=>{const e=[...document.querySelectorAll("button")].find(b=>/deepseek|Auto /.test(b.innerText||""));return e?e.innerText:""})()')) } catch { Log "EnsureModel failed: $($_.Exception.Message)" } }
   $prompt='Erstelle aus diesen drei frei erfundenen Arbeitsständen eine kurze Prioritätenliste mit Begründung: Anleitung fertig; Testexport blockiert durch fehlende Beispieldatei; Farben fürs Demo-Dashboard noch offen. Arbeite nur mit diesen Angaben, ohne Werkzeuge oder Internet.'
   $box=Js @'
 (() => { const vis=e=>{const r=e.getBoundingClientRect();return r.width>40&&r.height>10};
