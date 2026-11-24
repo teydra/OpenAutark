@@ -454,16 +454,17 @@ try {
   Key 'Enter' 13
   Log 'prompt sent'
   $sentAt=Get-Date
+  Start-Sleep -Seconds 4
+  $lenAtSend=(PageText).Length
   $prev=''; $stable=0; $answered=$false; $tick=0; $sawWorking=$false
-  while(((Get-Date)-$sentAt).TotalMinutes -lt 14) {
+  while(((Get-Date)-$sentAt).TotalMinutes -lt 40) {
     Start-Sleep -Seconds 6
     $t=PageText
     $busy=[bool](Js '[...document.querySelectorAll("button")].some(b=>(b.innerText||"").trim()==="Stop")') -or $t.Contains('Working')
     if ($busy) { $sawWorking=$true }
     if ($t -eq $prev) { $stable++ } else { $stable=0; $prev=$t }
     $tick++; if (($tick % 10) -eq 0) { Dbg 'task-progress' }
-    $n=([regex]::Matches($t,'Anleitung')).Count
-    if (-not $busy -and $stable -ge 3 -and $n -ge 3 -and ($sawWorking -or ((Get-Date)-$sentAt).TotalSeconds -gt 90)) { $answered=$true; break }
+    if (-not $busy -and $stable -ge 3 -and $t.Length -gt ($lenAtSend + 300) -and ($sawWorking -or ((Get-Date)-$sentAt).TotalSeconds -gt 90)) { $answered=$true; break }
   }
   Dump 'task-end'
   if (!$answered) { throw 'No settled answer to the first task.' }
