@@ -1,5 +1,6 @@
 // The dispatcher's home gate (devices/sync/home.ts): an agent whose home is another of the CEO's PCs starts no turn
-// here – its wakes stay queued for the hand-over; one homed here, on an employee's PC or on a removed PC runs here.
+// here – its wakes stay queued for the hand-over; one homed here or on a removed PC runs here; one homed on an
+// employee's PC runs there only (Konrad 24.11.2026: one PC at a time).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,7 +32,8 @@ test('only agents whose home is this PC (or no CEO PC) start turns here', async 
   for (const item of Object.values(agents)) h.wakes.wake({ agentId: item.id, reason: 'manual' });
   await flush();
   const started = h.executor.calls.map((call) => call.request.agentId).sort();
-  assert.deepEqual(started, ['ag_here', 'ag_none', 'ag_old', 'ag_staff']);
+  assert.deepEqual(started, ['ag_here', 'ag_none', 'ag_old'], 'Konrad 24.11.2026: one moved to an employee\'s PC runs there only, never here too');
+  assert.equal(h.wakes.pending('ag_staff'), 1, 'no turn here (the row sync voids its wakes, rows.ts handOver)');
   assert.equal(h.wakes.pending('ag_away'), 1, 'its wake waits, unclaimed, for the hand-over to its home');
   assert.equal(h.wakes.pending('ag_unknown'), 1);
 

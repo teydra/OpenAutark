@@ -5,9 +5,10 @@
 // Link kinds: 'ceo' – one of the CEO's own PCs (full sync both ways, turns follow the home); 'employee' – the other
 // PC joined this one as an employee (it gets that person's chats and tasks; only the person's own lines and task
 // changes come back, employee.ts); 'employer' – this PC joined the other one as an employee (it receives those and
-// sends back only its person's own part). An agent homed on a PC linked here that
-// is no 'ceo' link (an employee's PC, a removed PC) keeps its turns here, only its device tools go there; one homed
-// on a PC this PC never linked runs on the CEO PC that knows it. A schedule fires on one PC only (firesHere).
+// sends back only its person's own part). Konrad 24.11.2026 (ORENDA): a company agent runs on one PC at a time – one
+// moved to an employee's PC linked here runs there and no longer here (before, both ran it: that PC stores its own id
+// as NULL, "here"); one homed on a removed PC keeps its turns here; one homed on a PC this PC never linked runs on the
+// CEO PC that knows it. A schedule fires on one PC only (firesHere).
 // Umzug 21.11.2026: goesOn / standIn – which PC goes on with an agent whose PC is gone (takeover.ts acts on it; firesHere
 // arms the agent's schedules there): only one of the PCs the agent is at home on (Agent.homes), and this PC only when it
 // held the agent's complete, settled record when the contact broke (settledHere – kv 'sync.settled', kept by
@@ -56,9 +57,10 @@ export function selfId(db: RuntimeServices['db']): string {
 
 /**
  * The home of an agent whose turns do not run here, else undefined. They run here without a home, with this PC as
- * home, or with a home linked here that is no 'ceo' link (an employee's PC, a removed PC). A home this PC never
- * linked is another CEO PC's link (its turns run there) – unless this PC has no CEO link at all. 21.11.2026: an agent of
- * the company this PC is an employee of (employee.ts fromEmployer) never runs here.
+ * home, or with a home that is no PC linked here any more (a removed, half-paired PC). A home this PC never linked is
+ * another CEO PC's link (its turns run there) – unless this PC has no CEO link at all. 21.11.2026: an agent of the
+ * company this PC is an employee of (employee.ts fromEmployer) runs on the company's PCs – here only when the company
+ * moved it here (its row names this PC). Konrad 24.11.2026: one homed on an employee's PC linked here runs there only.
  */
 export function homeElsewhere(services: Pick<RuntimeServices, 'db' | 'org'>, agentId: string): string | undefined {
   let home: string | undefined;
@@ -66,7 +68,7 @@ export function homeElsewhere(services: Pick<RuntimeServices, 'db' | 'org'>, age
   if (!home) return undefined;
   if (fromEmployer(services.db, agentId)) return home; // 21.11.2026: my employer's agent runs on the company's PCs only
   const record = new DevicesRepo(services.db).get(home);
-  if (record) return linkOf(record)?.kind === 'ceo' ? home : undefined;
+  if (record) { const kind = linkOf(record)?.kind; return kind === 'ceo' || kind === 'employee' ? home : undefined; } // 24.11.2026: never on both PCs
   return links(services.db).some(({ link }) => link.kind === 'ceo') ? home : undefined;
 }
 

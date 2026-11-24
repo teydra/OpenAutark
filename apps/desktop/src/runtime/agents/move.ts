@@ -31,7 +31,7 @@ import { clockText, profileZone } from '../context/time.ts';
 import { DevicesRepo } from '../devices/repo.ts';
 import type { PeerHandler } from '../devices/rpc-peer.ts';
 import type { LinkKind } from '../devices/mesh.ts';
-import { homeElsewhere, isCeoPc, liveHomes, selfId } from '../devices/sync/home.ts';
+import { homeElsewhere, isCeoPc, linkOf, liveHomes, selfId } from '../devices/sync/home.ts';
 import { becameWriter, fetchOriginals, flushLedger } from '../devices/sync/ledger.ts';
 import { dropSessions } from '../devices/sync/ledger-branch.ts';
 import { shareNow } from '../devices/sync/share.ts';
@@ -182,9 +182,13 @@ export async function arriveHere(s: RuntimeServices, agentId: string, from: stri
   try {
     dropSessions(s.db, agentId);
     becameWriter(s, agentId);
-    const reachable = isCeoPc(s.db, from) && s.devices.online(from);
-    noteMove(s, agentId, reachable
-      ? `Since ${clockText(s.clock.now(), profileZone(s))} I run on ${pcName(s, selfId(s.db))}, moved from ${pcName(s, from)}; my record came with me.`
+    const ceo = isCeoPc(s.db, from);
+    const reachable = ceo && s.devices.online(from);
+    const since = `Since ${clockText(s.clock.now(), profileZone(s))} I run on ${pcName(s, selfId(s.db))}, moved from ${pcName(s, from)}`;
+    // Konrad 24.11.2026: a company agent may move between the company's PC and an employee's PC – no record travels on that link.
+    const linked = !ceo && Boolean(linkOf(new DevicesRepo(s.db).get(from)));
+    noteMove(s, agentId, reachable ? `${since}; my record came with me.`
+      : linked ? `${since}; my record did not come with me – what I did on ${pcName(s, from)} stays there.`
       : goneLine(s, from), 'arrival');
     s.log.info('agent moved here', { agentId, from });
     if (reachable) {
