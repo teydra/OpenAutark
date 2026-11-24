@@ -40,6 +40,14 @@ export function isCeoPc(db: RuntimeServices['db'], id: string): boolean {
   return linkOf(new DevicesRepo(db).get(id))?.kind === 'ceo';
 }
 
+/**
+ * Konrad 24.11.2026: whether `id` is an employee's PC linked here – a company agent moved there runs there only; no wake
+ * travels on that link and nothing the agent writes there comes back, so a wake for it here is void (rows.ts handOver).
+ */
+export function onEmployeePc(db: RuntimeServices['db'], id: string): boolean {
+  return linkOf(new DevicesRepo(db).get(id))?.kind === 'employee';
+}
+
 /** Every linked PC with what its link carries. */
 export function links(db: RuntimeServices['db']): Array<{ record: DeviceRecord; link: Link }> {
   const out: Array<{ record: DeviceRecord; link: Link }> = [];
