@@ -28,6 +28,14 @@ try {
       asyncAvailable: await safeStorage.isAsyncEncryptionAvailable(),
       backend: safeStorage.getSelectedStorageBackend(),
       appImageEnv: Boolean(process.env.APPIMAGE),
+      // synthetic value only: does the real OS call work, and can it be read back?
+      asyncRoundTrip: await (async () => {
+        try {
+          const cipher = await safeStorage.encryptStringAsync('synthetic-probe-value');
+          const back = await safeStorage.decryptStringAsync(cipher);
+          return back.result === 'synthetic-probe-value' ? 'ok' : 'mismatch';
+        } catch (error) { return 'error: ' + String(error.message).slice(0, 120); }
+      })(),
     }));
     console.log(`PROBE ${label}: ${JSON.stringify({ args, noBus, ...seen })}`);
     // what the person sees: the headline of the first window (a repair card or the normal shell)
