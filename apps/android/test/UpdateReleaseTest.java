@@ -132,10 +132,22 @@ public final class UpdateReleaseTest {
         check(!playBranch.contains("present("));
         check(body(updateCheck, "static boolean canInstall(").contains("canRequestPackageInstalls()"));
         String upgrade = read(root, "app/src/main/java/com/teydralab/autark/android/PhoneUseUpgrade.java");
+        // Owner/Konrad 24.11.2026 (#821): the request is an ongoing notification on every AI ask (no throttle, nothing downloads
+        // silently) and, with the app in front, the large card; the card's button and the tap go through begin().
         String prompt = body(upgrade, "public static void prompt(");
-        check(prompt.contains("MAIN.post(") && prompt.contains("UpdateCheck.canInstall(shown)") && prompt.contains("start(shown, shown.updates()::step)") && prompt.contains("notifyPerson(app)"));
-        check(!upgrade.contains("AlertDialog") && body(upgrade, "static void start(").contains("install(activity, progress)"));
-        check(read(root, "app/src/main/java/com/teydralab/autark/android/MainActivity.java").contains("PhoneUseUpgrade.start(this, updates::step)"));
+        check(prompt.contains("PhoneUseAsk.builder(app)") && prompt.contains("PhoneUseAsk.post(app, ID, notification)") && prompt.contains("PhoneUseAsk.card(app, PhoneUseAskRule.Kind.LITE)"));
+        check(!prompt.contains("install(") && !prompt.contains("start(") && !upgrade.contains("AGAIN_MS") && !upgrade.contains("shownAt"));
+        String begin = body(upgrade, "static void begin(");
+        check(begin.contains("ACTION_MANAGE_UNKNOWN_APP_SOURCES") && begin.contains("allowInstallFirst(UpdateCheck.canInstall(activity))") && body(upgrade, "private static void start(").contains("install(activity, progress)"));
+        check(body(upgrade, "static void resumed(").contains("UpdateCheck.canInstall(activity)"));
+        String main = read(root, "app/src/main/java/com/teydralab/autark/android/MainActivity.java");
+        check(main.contains("PhoneUseUpgrade.begin(this, updates::step)") && main.contains("PhoneUseUpgrade.resumed(this, updates::step)") && main.contains("PhoneUseAsk.settle(this)") && main.contains("PhoneUseCard.close()"));
+        String ask = read(root, "app/src/main/java/com/teydralab/autark/android/PhoneUseAsk.java");
+        check(ask.contains("\"phone-use-ask\"") && ask.contains("IMPORTANCE_HIGH") && ask.contains(".setOngoing(true)") && ask.contains(".setOnlyAlertOnce(true)") && !ask.contains("CATEGORY_CALL"));
+        String full = read(root, "app/src/main/java/com/teydralab/autark/android/phoneuse/EnablePrompt.java");
+        check(full.contains("PhoneUseAsk.builder(app)") && full.contains("PhoneUseAsk.card(app, PhoneUseAskRule.Kind.FULL)") && !full.contains("AGAIN_MS") && !full.contains("shownAt"));
+        String card = read(root, "app/src/main/java/com/teydralab/autark/android/PhoneUseCard.java");
+        check(card.contains("new Intent(activity, UseDisclosure.class)") && !card.contains("ACTION_ACCESSIBILITY_SETTINGS") && card.contains("PhoneUseUpgrade.begin(activity"));
         String again = body(updateCheck, "static void again(");
         check(again.contains("forget(") && again.contains("look("));
     }

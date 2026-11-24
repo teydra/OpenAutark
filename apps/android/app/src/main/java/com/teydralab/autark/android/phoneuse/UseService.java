@@ -112,7 +112,7 @@ public final class UseService extends AccessibilityService {
         if (!UseConsent.agreed(this)) {
             try { startActivity(new Intent(this, UseDisclosure.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
             catch (RuntimeException error) { EnablePrompt.show(this); }
-        }
+        } else com.teydralab.autark.android.PhoneUseAsk.settle(this); // on and agreed: the standing request ("Let the AI use this phone") goes
         Runnable listener = changed;
         if (listener != null) listener.run();
     }

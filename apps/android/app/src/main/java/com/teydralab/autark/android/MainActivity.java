@@ -18,6 +18,9 @@
 // the page volume up and volume down pressed together as the feedback cell's press (VolumePair → the page's
 // {t:'feedback', down}); one key alone stays the volume. W (19.11.2026): the page's 'wake' goes to CompanyLink.wake.
 // Owner 19.11.2026: with the page's voice live ('voice.live') a pause leaves the WebView running, KeepAlive the microphone.
+// Owner/Konrad 24.11.2026 (#821): the AI's request to use the phone is an ongoing notification until tapped (PhoneUseAsk)
+// and, while this screen is open in front (inFront), the large native card (PhoneUseCard); the Lite build's tap or button
+// goes through PhoneUseUpgrade.begin, and resumed() continues it after Android's "install unknown apps" switch.
 // Never: copies the UI, needs a VPN or a reachable PC address, reads the UI's storage, or runs agents.
 package com.teydralab.autark.android;
 
@@ -147,8 +150,11 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         if (route != null) { if (pageUp) web.evaluateJavascript("location.hash='" + route + "'", null); else pendingRoute = route; }
         ShareIn.Shared shared = ShareIn.accept(intent);
         if (shared != null) { if (pageUp) port.share(shared.text, shared.files); else pendingShare = shared; }
-        if (PhoneUseUpgrade.wanted(intent)) { intent.removeExtra(PhoneUseUpgrade.EXTRA); PhoneUseUpgrade.start(this, updates::step); }
+        if (PhoneUseUpgrade.wanted(intent)) { intent.removeExtra(PhoneUseUpgrade.EXTRA); PhoneUseUpgrade.begin(this, updates::step); }
     }
+
+    /** True while this screen is open in front of the person (the large phone-use card shows only then). */
+    boolean inFront() { return port != null && !paused && !isFinishing() && !isDestroyed(); }
 
     private void createWebView() {
         web = PhoneWeb.create(this, () -> origin, this);
@@ -393,6 +399,8 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         if (link != null) { link.connection.check(); optional(() -> KeepAlive.start(this)); }
         if (web != null && !setup) web.onResume();
         optional(() -> SelfUpdate.resumed(this, updates::step));
+        optional(() -> PhoneUseUpgrade.resumed(this, updates::step)); // back from Android's "install unknown apps" switch
+        optional(() -> PhoneUseAsk.settle(this)); // phone use there and agreed (or the full build after the upgrade): the request goes
         optional(() -> UpdateCheck.start(this, updates));
     }
     @Override protected void onPause() { paused = true; AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
@@ -432,6 +440,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         if (current == this) current = null;
         if (pairing != null) { pairing.cancel(); pairing = null; } // a recreated activity shows the first level again
         keys.removeCallbacksAndMessages(null);
+        PhoneUseCard.close();
         closeTour();
         PairScreens.stop();
         if (port != null) port.dispose();
