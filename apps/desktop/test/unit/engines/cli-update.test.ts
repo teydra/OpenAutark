@@ -54,6 +54,16 @@ function rig(found: Record<string, Executable | null>, options: { version?: stri
   return { deps, calls, lines, log, supervisor, updated, accounts, clears: () => clears };
 }
 
+test('an update to a Codex not on the verified list warns in the runtime log; a listed one does not (task_76a7vybn)', async () => {
+  const listed = rig({ codex: exe(STANDALONE) }, { next: '0.172.0' });
+  assert.equal(await updateCli('codex', listed.deps), 'updated');
+  assert.deepEqual(listed.log.warns, []);
+  const unchecked = rig({ codex: exe(STANDALONE) }, { next: '0.173.0' });
+  assert.equal(await updateCli('codex', unchecked.deps), 'updated', 'the update itself stands');
+  assert.deepEqual(unchecked.log.warns, ['Codex 0.173.0 is not on the verified list: sessions start anew after a restart until Autark lists it']);
+  assert.deepEqual(unchecked.updated, ['codex'], 'the catalog lists again as for any update');
+});
+
 test('a standalone Codex updates with its own `codex update`; a new version lists the Codex accounts again', async () => {
   const r = rig({ codex: exe(STANDALONE) }, { next: '0.171.0' });
   assert.equal(await updateCli('codex', r.deps), 'updated');

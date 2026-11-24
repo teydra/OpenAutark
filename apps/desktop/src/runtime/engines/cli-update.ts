@@ -24,6 +24,7 @@ import type { Executable, ExecutableFinder } from '../accounts/executables.ts';
 import { runCli } from '../accounts/cli.ts';
 import { npmInstaller, type InstallRoute } from '../accounts/install.ts';
 import { childEnv } from './codex/server.ts';
+import { verifiedCli } from './managed-path.ts';
 import type { Account } from '../../shared/model/providers.ts';
 
 /** The CLIs that are kept current (each one's CLI id is its provider id). */
@@ -114,6 +115,9 @@ export async function updateCli(cli: UpdatedCli, deps: CliUpdateDeps): Promise<C
   if (!after || after === before) return 'current';
   deps.finder.clear();
   deps.log.info(`${NAME[cli]} updated`, { from: before ?? null, to: after });
+  // Not yet controlled (the version watch in the CI harness checks each new npm latest within a day): its sessions start anew
+  // from the filtered history after each restart until Autark lists it – a cost, not a leak.
+  if (!verifiedCli(cli, after)) deps.log.warn(`${NAME[cli]} ${after} is not on the verified list: sessions start anew after a restart until Autark lists it`, { version: after });
   deps.onUpdated(cli);
   return 'updated';
 }
