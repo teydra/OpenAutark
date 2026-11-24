@@ -34,8 +34,10 @@ android {
         // 21.11.: 0.3.18 – the phone hears dictation itself at the person's ChatGPT plan (page and bubble; the PC's way
         // when that gives nothing).
         // 24.11.: 0.3.19 – the Tasks page's day line, month and Tasks/Calendar switch (page), sign-in work to an agent.
-        versionCode = 19
-        versionName = '0.3.19'
+        // 24.11.: 0.3.19.1 – Android only (Konrad #849): the phone-use request stays as a notification until tapped and opens
+        // "install unknown apps" first, so the Lite build installs its phone-use build through its own installer (6b11f3e).
+        versionCode = 20
+        versionName = '0.3.19.1'
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' } // F25: libwebrtc for phones only (x86 would add ~20 MB)
     }
     sourceSets { main { assets.srcDir('build/generated/tour') } } // the feedback video page (build.ps1)
