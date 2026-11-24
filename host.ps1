@@ -45,7 +45,7 @@ try {
   if ($LASTEXITCODE) { throw 'Model download failed.' }
   $server=(Get-ChildItem "$root\llama" -Recurse -Filter llama-server.exe | Select-Object -First 1).FullName
   if (!$server) { throw 'llama-server.exe missing.' }
-  $srv=Start-Process -FilePath $server -ArgumentList @('-m',$model,'--alias','qwen2.5-1.5b-instruct','--host','127.0.0.1','--port','8080','-c','16384','--jinja','-t','4') -WindowStyle Hidden -PassThru -RedirectStandardOutput "$out\llama-out.log" -RedirectStandardError "$out\llama-err.log"
+  $srv=Start-Process -FilePath $server -ArgumentList @('-m',$model,'--alias','qwen2.5-1.5b-instruct','--host','127.0.0.1','--port','8080','-c','32768','-np','1','--jinja','-t','4') -WindowStyle Hidden -PassThru -RedirectStandardOutput "$out\llama-out.log" -RedirectStandardError "$out\llama-err.log"
   $ready=$false
   foreach($i in 1..90){ Start-Sleep -Seconds 2; try { if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8080/health -TimeoutSec 3).StatusCode -eq 200) { $ready=$true; break } } catch {} }
   if (!$ready) { throw 'Local model server did not become ready.' }
@@ -76,7 +76,7 @@ try {
   cmdkey /generic:TERMSRV/127.0.0.2 /user:$user /pass:$pw | Out-Null
   $mstsc=Start-Process mstsc.exe -ArgumentList '/v:127.0.0.2','/w:1920','/h:1080' -PassThru
   Say 'Remote Desktop client started (1920x1080 requested).'
-  $deadline=(Get-Date).AddMinutes(32); $shot=0; $lastStage=''
+  $deadline=(Get-Date).AddMinutes(45); $shot=0; $lastStage=''
   while ((Get-Date) -lt $deadline -and !(Test-Path "$out\session.done")) {
     Start-Sleep -Seconds 10
     if (Test-Path "$out\stage.txt") { $s=(Get-Content "$out\stage.txt" -Raw).Trim(); if ($s -ne $lastStage) { Say "stage: $s"; $lastStage=$s } }

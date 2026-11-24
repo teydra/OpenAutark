@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 if ($env:USERNAME -ne 'dnpro') { exit 0 }
 $root='C:\dnpro'; $out="$root\out"
 New-Item -ItemType Directory -Path $out -Force | Out-Null
@@ -212,6 +212,14 @@ function WindowFor([string]$name) {
   foreach($p in (Get-Process -Name $name -ErrorAction SilentlyContinue)) { if ($p.MainWindowHandle -ne [IntPtr]::Zero) { return $p.MainWindowHandle } }
   [IntPtr]::Zero
 }
+function AppLogs {
+  $n=0
+  foreach($root in @("$env:APPDATA","$env:LOCALAPPDATA")) {
+    foreach($f in (Get-ChildItem -Path $root -Recurse -Include *.log -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'Autark' -and $_.Length -lt 8MB } | Sort-Object LastWriteTime -Descending | Select-Object -First 4)) {
+      $n++; try { Get-Content -LiteralPath $f.FullName -Tail 250 | Set-Content -LiteralPath "$outpp-$n.log" -Encoding UTF8; Log "app log $n = $($f.Name) ($($f.Length) bytes)" } catch {}
+    }
+  }
+}
 function Step([string]$name,[scriptblock]$body){
   Stage $name
   try { . $body; if (-not $phases.Contains($name)) { $phases[$name]='PASS' } }
@@ -276,6 +284,12 @@ try {
           Start-Sleep -Milliseconds 800
           Shot '02-installer-fertig.png' -Print
           Log "finish page buttons: $(($buttons | ForEach-Object Caption) -join ' / ')"
+          $run=@($buttons | Where-Object Caption -Match '^Run Autark')
+          if ($run.Count -eq 1) {
+            Log "Run Autark checked on finish page: $([W]::Checked($run[0].Handle))"
+            if ([W]::Checked($run[0].Handle)) { [void][W]::Click($run[0].Handle); Start-Sleep -Milliseconds 800 }
+            Log "Run Autark checked after click: $([W]::Checked($run[0].Handle))"
+          }
           if (![W]::QueueFinish($hwnd,$action[0].Handle,[uint32]$setup.Id)) { throw 'Could not queue Finish on the verified foreground wizard.' }
           $finished=$true
           if (!$setup.WaitForExit(75000)) { throw 'Verified installer did not exit after Finish.' }
@@ -316,7 +330,7 @@ try {
   Start-Sleep -Seconds 6
   $auto=@(Get-Process Autark -ErrorAction SilentlyContinue)
   Log "Autark processes started by the installer: $($auto.Count)"
-  if ($auto.Count) { $auto | Stop-Process -Force; Start-Sleep -Seconds 4 }
+  if ($auto.Count) { Log 'installer started the app anyway: restarting it with the debugging port'; $auto | Stop-Process -Force; Start-Sleep -Seconds 4 }
   $app=Start-Process -FilePath $exe -ArgumentList '--remote-debugging-port=9222' -PassThru
   $target=$null
   $until=(Get-Date).AddSeconds(120)
@@ -329,6 +343,7 @@ try {
   } while(!$target -and (Get-Date) -lt $until)
   if (!$target) { Dbg 'no-cdp'; throw 'App UI not reachable through the debugging port.' }
   Log "page target: title='$($target.title)'"
+  Log ("prompt umlaut check: " + ('Prioritätenliste').Contains([string][char]0xE4))
   CdpConnect $target.webSocketDebuggerUrl
   [void](Cdp 'Runtime.enable')
   # Maximize the verified app window
@@ -343,7 +358,8 @@ try {
   if (!$found) { Dbg 'no-window'; throw 'No visible Autark window of the verified installation.' }
   [void][W]::ShowWindow($found,3); [void][W]::SetForegroundWindow($found)
   Start-Sleep -Seconds 3
-  if (!(WaitText 'Set up a new company' 90)) { Dump 'first-start-missing'; Dbg 'first-start-missing'; throw 'First-start card not shown.' }
+  if ((WaitText 'stopped while starting' 15)) { Log 'app reports a start failure'; Dump 'start-failure'; AppLogs; [void](ClickText 'Try again' 5); Start-Sleep -Seconds 20 }
+  if (!(WaitText 'Set up a new company' 90)) { AppLogs; Dump 'first-start-missing'; Dbg 'first-start-missing'; throw 'First-start card not shown.' }
   Start-Sleep -Seconds 2
   Dump 'first-start'
   Shot '03-erststart.png' -Print
