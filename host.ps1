@@ -87,7 +87,7 @@ try {
   if ($res -notmatch '^OK') { $failed=$true }
 } catch {
   $failed=$true
-  Say "HOST FAILED: $($_.Exception.Message)"
+  Say "HOST FAILED: $($_.Exception.Message) at line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())"
   ConsoleShot 'console-fail.png'
 } finally {
   Get-ChildItem $out -File | Copy-Item -Destination $screens -Force
