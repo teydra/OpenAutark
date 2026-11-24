@@ -21,14 +21,25 @@ try {
   if (noBus) env.DBUS_SESSION_BUS_ADDRESS = 'unix:path=' + path.join(root, 'no-bus');
   const app = await electron.launch({ executablePath: image, args, env, timeout: 40_000 });
   try {
-    const seen = await app.evaluate(({ app, safeStorage }) => ({
+    const seen = await app.evaluate(async ({ app, safeStorage }) => ({
       packaged: app.isPackaged,
       electron: process.versions.electron,
       available: safeStorage.isEncryptionAvailable(),
+      asyncAvailable: await safeStorage.isAsyncEncryptionAvailable(),
       backend: safeStorage.getSelectedStorageBackend(),
       appImageEnv: Boolean(process.env.APPIMAGE),
     }));
     console.log(`PROBE ${label}: ${JSON.stringify({ args, noBus, ...seen })}`);
+    // what the person sees: the headline of the first window (a repair card or the normal shell)
+    try {
+      const page = await app.firstWindow({ timeout: 25_000 });
+      await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 6_000));
+      const text = await page.evaluate(() => ({ title: document.title, shell: Boolean(document.querySelector('.shell')), repair: Boolean(document.querySelector('.repair-card')), heading: [...document.querySelectorAll('h1,h2')].map(h => h.textContent.trim()).slice(0, 3) }));
+      console.log(`WINDOW ${label}: ${JSON.stringify(text)}`);
+    } catch (error) {
+      console.log(`WINDOW ${label}: no window within 25 s (${String(error.message).split('\n')[0]})`);
+    }
   } finally {
     await app.close();
   }
