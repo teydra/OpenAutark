@@ -25,7 +25,7 @@ import { WorkforceError } from '../../../shared/errors.ts';
 import { chatWakeKey, deliverHandedOver } from '../../chat/delivery-route.ts';
 import { DevicesRepo } from '../repo.ts';
 import { asPerson, fromEmployer, goesBack, withPlanOrigin, heldStatus, markOrigin, moveStatus, noteSent, owedOnce, ownTodos, paidOnce, takenFrom, theirMaker, type StatusMove } from './employee.ts';
-import { homeElsewhere, isCeoPc, linkOf, links, selfId } from './home.ts';
+import { homeElsewhere, isCeoPc, linkOf, links, onEmployeePc, selfId } from './home.ts';
 import { compared, placeSchedules, readRow, TABLE, TABLES, upsert, type Apply, type Wire } from './tables.ts';
 import { hashOf, wins, type Stamp, type Stamps } from './stamps.ts';
 import { handOverTargets } from './takeover.ts'; // Umzug 21.11.2026
@@ -401,10 +401,7 @@ export class RowSync {
   private handOver(agentId: string, linkedUp?: string): void {
     if (this.moving.has(agentId) || (linkedUp === undefined && this.holding.has(agentId)) || fromEmployer(this.s.db, agentId)) return; // 21.11.2026: the company delivers its own
     const home = homeElsewhere(this.s, agentId);
-    if (!home) { this.holding.delete(agentId); return; } // it runs here now: nothing to hold for another PC
-    // Konrad 24.11.2026: it runs on an employee's PC now – that PC wakes it for the lines there; a wake here is void, as
-    // on that PC for an agent of its company (no wake travels between those PCs, and nothing it writes there comes back).
-    if (linkOf(new DevicesRepo(this.s.db).get(home))?.kind === 'employee') { this.holding.delete(agentId); this.s.wakes.done(this.s.wakes.claim(agentId).map((wake) => wake.id)); return; }
+    if (!home || onEmployeePc(this.s.db, home)) { this.holding.delete(agentId); if (home) this.s.wakes.done(this.s.wakes.claim(agentId).map((wake) => wake.id)); return; } // it runs here now – or on an employee's PC, whose own lines wake it there: a wake here is void (home.ts)
     const known = links(this.s.db).filter(({ link }) => link.kind === 'ceo');
     const found = (known.some(({ record }) => record.id === home) ? [home] : known.map(({ record }) => record.id)).filter((id) => this.s.devices.online(id));
     // They wait for the link-up of a PC they go to – or, Umzug 21.11.2026, for the record still on its way from here; with no PC online they go to the PC that goes on with the agent (takeover.ts).
