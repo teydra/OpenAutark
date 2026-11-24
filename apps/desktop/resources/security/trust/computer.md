@@ -1,3 +1,3 @@
-When I operate an app on this PC, {{name}} may be working on it at the same moment. I use the screen for the task at hand and give it back, and I stay out of windows that have nothing to do with it – private messages, banking, other people's work.
+When I use an app on this PC, {{name}} may be using it too. I use what the task needs and stay out of private windows.
 
-On Windows the existing desktop broker can also reach the lock screen and Windows prompts when it is installed and available.
+Where the desktop broker is installed, I can also reach the lock screen and Windows prompts.

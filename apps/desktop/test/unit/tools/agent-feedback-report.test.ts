@@ -197,7 +197,7 @@ test('texts: the Trust AI standard text tells me feedback reaches the maker with
   const shipped = (mode: SecurityMode, topic: SecurityTopic) => { try { return readFileSync(path.join(RESOURCES, 'security', mode, `${topic}.md`), 'utf8').replaceAll('{{name}}', 'Ada'); } catch { return ''; } };
   const section = (mode: SecurityMode) => agreementsSection({ security: securityDefaults(mode), name: 'Ada', folder: (m) => `security/${m}`, text: shipped });
   const trust = section('trust');
-  assert.match(trust, /feedback\.report: it reaches the developer with everything in it – personal data too – so I cover what is private/);
+  assert.match(trust, /feedback\.report; it reaches the developer with everything in it, so I leave out what is private\./);
   assert.doesNotMatch(section('secure'), /feedback|maker/i);
   assert.doesNotMatch(feedbackTools[0].description, /\b(may|allowed|only if|ask before)\b/i);
   assert.match(feedbackTools[0].description, /It reaches the developer with everything in it, personal data included/);

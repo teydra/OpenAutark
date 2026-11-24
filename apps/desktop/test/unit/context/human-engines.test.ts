@@ -54,7 +54,7 @@ test('owner 19.11.2026: "What Alex and I agreed" stands before the person\'s own
     const at = stable.indexOf('## What Alex and I agreed\nAlex runs this PC in Trust AI mode');
     assert.ok(at > 0 && at < stable.indexOf('## From Alex\n'), stable.slice(-600));
     assert.match(stable, /### Spending money\nKey secret:\/\/sec_pw buys nothing\./, 'its own file, redacted');
-    assert.match(stable, /### Bot checks \("I'm not a robot"\)\nChecks like "I'm not a robot" exist/, 'the default text');
+    assert.match(stable, /### Bot checks \("I'm not a robot"\)\nI don't solve checks like "I'm not a robot"\n/, 'the default text');
     assert.ok(!stable.includes('{{name}}'));
     assert.ok(stable.endsWith('## From Alex\nNo calls before 10:00.'), 'HUMAN.md still last');
   } finally { rmSync(data, { recursive: true, force: true }); }

@@ -103,7 +103,7 @@ test('the old text for every agent: the robot line goes, the rest lands below bo
     writeFileSync(h.general('secure'), 'My own secure text.\n');
     runSicher1119Files(h.dir, RESOURCES);
     const trust = readFileSync(h.general('trust'), 'utf8');
-    assert.match(trust, /^I decide and act – that is what Ada chose this mode for\./, 'the default with the name');
+    assert.match(trust, /^I decide and act – that is why Ada chose this mode\./, 'the default with the name');
     assert.ok(trust.endsWith('\n\nI sign with my name.\nNo calls before 10:00.\n'));
     assert.equal(readFileSync(h.general('secure'), 'utf8'), 'My own secure text.\n\nI sign with my name.\nNo calls before 10:00.\n');
     assert.equal(h.read().security.mode, 'trust');

@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 import { SecurityTopics, fillName, topicOfRel } from '../../../src/runtime/security/topics.ts';
 import { readSecurityChanges, type LogKv } from '../../../src/runtime/settings/security-log.ts';
-import { MAX_TOPIC_TEXT, securityDefaults, type SecurityMode } from '../../../src/shared/model/security-settings.ts';
+import { CRITICAL_TOPICS, MAX_TOPIC_TEXT, SECURE_EXTRA_TOPICS, TRUST_TOPICS, securityDefaults, type SecurityMode } from '../../../src/shared/model/security-settings.ts';
 import type { Settings } from '../../../src/shared/model/system.ts';
 import { clock, tempDir } from '../store/helpers.ts';
 
@@ -57,13 +57,40 @@ test('the shipped Trust texts act with a line of report; an irreversible guess i
       assert.ok(!text.includes('{{name}}'), topic);
     }
     const general = topics.text('trust', 'general');
-    assert.match(general, /^I decide and act – that is what Ada chose this mode for\./);
-    assert.match(general, /cannot be taken back and rests only on my guess I prepare to the last click/, 'an irreversible guess still stops at the last click');
-    assert.match(topics.text('trust', 'money'), /I prepare to the last click and put in front of them with the amount and the link\.$/);
-    assert.match(topics.text('trust', 'publish'), /the first one goes to Ada as a finished piece ready to go out/, 'a first of a kind goes to the person finished');
-    assert.match(topics.text('trust', 'message'), /read it once as the recipient and send it/);
-    assert.match(topics.text('trust', 'write'), /keep a copy when it may be the only one\.$/);
-    assert.match(topics.text('secure', 'general'), /In this mode a doubt about a step that reaches beyond my own work goes to Ada rather than to my guess\.$/);
+    assert.match(general, /^I decide and act – that is why Ada chose this mode\./);
+    assert.match(general, /can't be undone and rests only on a guess I prepare to the last click/, 'an irreversible guess still stops at the last click');
+    assert.match(topics.text('trust', 'money'), /I prepare to the last click and leave to them with the amount and the link\.$/);
+    assert.match(topics.text('trust', 'publish'), /goes to Ada as a finished piece before it goes out/, 'a first of a kind goes to the person finished');
+    assert.match(topics.text('trust', 'message'), /needs their own word; without it I leave that point open and send the rest/);
+    assert.match(topics.text('trust', 'write'), /keep a copy if it may be important\.$/);
+    assert.match(topics.text('secure', 'general'), /In this mode a doubt about a step beyond my own work goes to Ada\.$/);
+  } finally { h.done(); }
+});
+
+// Owner 24.11.2026 (task_nkrfq0dt): the bot-check text reads word for word as he wrote it, in both modes; every topic a
+// mode shows has its default, short (at most three sentences), and the hard limits stay in it.
+test('the shipped texts: the bot check word for word, every shown topic present and short, the hard limits kept', () => {
+  const h = rig();
+  try {
+    const topics = h.make();
+    const BOT = 'I don\'t solve checks like "I\'m not a robot"';
+    assert.equal(topics.text('trust', 'captcha'), BOT);
+    assert.equal(topics.text('secure', 'captcha'), BOT);
+    for (const mode of ['trust', 'secure'] as const) {
+      const shown = mode === 'trust' ? TRUST_TOPICS : [...SECURE_EXTRA_TOPICS, ...CRITICAL_TOPICS.secure];
+      for (const topic of shown) {
+        const text = topics.text(mode, topic);
+        assert.ok(text.length > 0, `${mode}/${topic} has a default`);
+        assert.ok(!text.includes('{{name}}'), `${mode}/${topic}`);
+        const sentences = text.split(/\n\s*\n/).flatMap((part) => part.split(/(?<=[.!?])\s+(?=[A-Z{])/)).filter((s) => s.trim());
+        assert.ok(sentences.length <= 3, `${mode}/${topic}: ${sentences.length} sentences`);
+      }
+    }
+    assert.match(topics.text('trust', 'money'), /full price, including anything that repeats/, 'money: the full price, repeats included');
+    assert.match(topics.text('trust', 'message'), /a date, a price, a promise – needs their own word/, 'messages: no new commitment without the person');
+    assert.match(topics.text('trust', 'accounts'), /Passwords and codes stay out of chats, files and logs\./, 'accounts: no values in texts');
+    assert.match(topics.text('secure', 'accounts'), /Passwords and codes stay out of chats, files and logs\./);
+    assert.match(topics.text('secure', 'money'), /^Spending money is closed in this company/);
   } finally { h.done(); }
 });
 

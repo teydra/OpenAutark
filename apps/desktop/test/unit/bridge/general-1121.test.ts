@@ -38,7 +38,7 @@ test('the old paragraph goes, the person\'s lines stay; only the old paragraph: 
     assert.deepEqual(generalPart(topics), ['trust', 'secure']);
     assert.equal(readFileSync(h.file('trust'), 'utf8'), 'I sign with my name.\nNo calls before 10:00.\n');
     assert.equal(existsSync(h.file('secure')), false, 'nothing of theirs left: the shipped default shows');
-    assert.match(topics.text('secure', 'general'), /rather than to my guess\.$/, 'today\'s default');
+    assert.match(topics.text('secure', 'general'), /a doubt about a step beyond my own work goes to Ada Lind\.$/, 'today\'s default');
     assert.equal(topics.isAccepted('security/trust/general.md', 'I sign with my name.\nNo calls before 10:00.'), true, 'accepted, so sync carries it');
     assert.equal(readSecurityChanges(h.kv).filter((entry) => entry.field === 'security/trust/general.md' || entry.field === 'security/secure/general.md').length, 2, 'logged');
     assert.deepEqual(generalPart(topics), [], 'once');
