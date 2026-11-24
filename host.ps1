@@ -56,8 +56,7 @@ try {
   Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue
   Set-Service TermService -StartupType Manual -ErrorAction SilentlyContinue
   Start-Service TermService -ErrorAction SilentlyContinue
-  New-Item 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Force | Out-Null
-  Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Name DoNotOpenServerManagerAtLogon -Value 1 -Type DWord
+  try { reg add 'HKLM\SOFTWARE\Microsoft\ServerManager' /v DoNotOpenServerManagerAtLogon /t REG_DWORD /d 1 /f 2>&1 | ForEach-Object { Log "reg: $_" } } catch { Log "ServerManager flag not set: $($_.Exception.Message)" }
   $pw='Aa1!'+(([guid]::NewGuid().ToString('N')).Substring(0,20))
   Write-Host "::add-mask::$pw"
   $secure=ConvertTo-SecureString $pw -AsPlainText -Force
