@@ -67,14 +67,15 @@ c2)
   echo "== c2) what the Type-2 runtime still needs: a fusermount helper (fuse3) – start with fusermount and fusermount3 hidden ($variant)"
   unset APPIMAGE_EXTRACT_AND_RUN
   export HOME; HOME=$(mktemp -d); export WORKFORCE_FAKE_ENGINE=1
-  for f in /usr/bin/fusermount /usr/bin/fusermount3 /bin/fusermount /bin/fusermount3; do [ -e "$f" ] && sudo mv "$f" "$f.hidden"; done
+  for f in /usr/bin/fusermount /usr/bin/fusermount3 /bin/fusermount /bin/fusermount3; do if [ -e "$f" ]; then sudo mv "$f" "$f.hidden"; fi; done
   command -v fusermount fusermount3 || echo "no fusermount on PATH now"
   log=$(mktemp)
   timeout 20 xvfb-run -a bash -c '"$1" >"$2" 2>&1 & pid=$!; sleep 12; if kill -0 $pid 2>/dev/null; then echo "ALIVE after 12s"; else wait $pid; echo "EXITED with code $?"; fi; kill $pid 2>/dev/null; pkill -f "/tmp/\.mount_" 2>/dev/null; true' _ "$img" "$log"
   echo "--- output"; head -12 "$log" | cut -c1-240
   echo "--- same image with --appimage-extract-and-run (needs no FUSE at all):"
   APPIMAGE_EXTRACT_AND_RUN=1 timeout 20 xvfb-run -a bash -c '"$1" >"$2" 2>&1 & pid=$!; sleep 12; if kill -0 $pid 2>/dev/null; then echo "ALIVE after 12s"; else wait $pid; echo "EXITED with code $?"; fi; kill $pid 2>/dev/null; pkill -f "/tmp/appimage_extracted_" 2>/dev/null; true' _ "$img" "$log"
-  for f in /usr/bin/fusermount /usr/bin/fusermount3 /bin/fusermount /bin/fusermount3; do [ -e "$f.hidden" ] && sudo mv "$f.hidden" "$f"; done
+  for f in /usr/bin/fusermount /usr/bin/fusermount3 /bin/fusermount /bin/fusermount3; do if [ -e "$f.hidden" ]; then sudo mv "$f.hidden" "$f"; fi; done
+  echo "fusermount restored: $(command -v fusermount3)"
   ;;
 d)
   echo "== d) keyring: safeStorage backend and Autark's behaviour ($variant)"
