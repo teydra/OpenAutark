@@ -88,6 +88,10 @@ jobs:
         run: npm run package -- ${{ matrix.arguments }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # 24.11.2026 (Felix): the Mac package is signed ad hoc with hardened runtime and entitlements
+          # (scripts/mac-signing-config.cjs, since 0.3.20); on a Mac package-desktop.mjs builds the AX helper first.
+          # Developer ID follows with the paid Apple account. Empty on Windows and Linux.
+          AUTARK_MAC_SIGNING: ${{ runner.os == 'macOS' && 'adhoc' || '' }}
       - name: Install the desktop secret service on the disposable CI host
         if: runner.os == 'Linux'
         shell: bash
