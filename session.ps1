@@ -384,8 +384,15 @@ try {
   if (!(ClickText 'Local server')) { throw 'Local server button not clickable.' }
   Start-Sleep -Seconds 2
   Dump 'local-form'
+  # the form starts on Ollama: pick llama.cpp (the server on this runner), which fills its own address
+  if (!(ClickText 'Ollama' 10 'exact')) { throw 'Provider list not clickable.' }
+  Start-Sleep -Seconds 1
+  Dump 'provider-list'
+  if (!(ClickText 'llama.cpp' 10 'start')) { throw 'llama.cpp not in the provider list.' }
+  Start-Sleep -Seconds 1
+  Log ('form url now: ' + (Js '(document.querySelector("input[type=url]")||{}).value'))
   if (!(ClickText 'Test')) { throw 'Test button not clickable.' }
-  $ok=WaitText 'qwen2.5' 40
+  $ok=WaitText 'qwen2.5' 60
   Log "test found model text: $ok"
   Start-Sleep -Seconds 1
   Dump 'local-form-tested'
@@ -447,14 +454,16 @@ try {
   Key 'Enter' 13
   Log 'prompt sent'
   $sentAt=Get-Date
-  $prev=''; $stable=0; $answered=$false; $tick=0
-  while(((Get-Date)-$sentAt).TotalMinutes -lt 9) {
+  $prev=''; $stable=0; $answered=$false; $tick=0; $sawWorking=$false
+  while(((Get-Date)-$sentAt).TotalMinutes -lt 14) {
     Start-Sleep -Seconds 6
     $t=PageText
-    $n=([regex]::Matches($t,'Anleitung')).Count
+    $busy=[bool](Js '[...document.querySelectorAll("button")].some(b=>(b.innerText||"").trim()==="Stop")') -or $t.Contains('Working')
+    if ($busy) { $sawWorking=$true }
     if ($t -eq $prev) { $stable++ } else { $stable=0; $prev=$t }
     $tick++; if (($tick % 10) -eq 0) { Dbg 'task-progress' }
-    if ($n -ge 2 -and $stable -ge 3) { $answered=$true; break }
+    $n=([regex]::Matches($t,'Anleitung')).Count
+    if (-not $busy -and $stable -ge 3 -and $n -ge 3 -and ($sawWorking -or ((Get-Date)-$sentAt).TotalSeconds -gt 90)) { $answered=$true; break }
   }
   Dump 'task-end'
   if (!$answered) { throw 'No settled answer to the first task.' }
