@@ -219,7 +219,7 @@ function FindWf {
 }
 function EnsureModel {
   $want=$script:wantModel
-  $tree=@(Get-ChildItem -Path "$env:APPDATA\Autark Companies" -Recurse -Depth 2 -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'Cache|Partitions|Storage|blob|GPU|Shader|DIPS|Network|Dictionary' } | ForEach-Object { $_.FullName.Replace("$env:APPDATA\",'') })
+  $tree=@(Get-ChildItem -Path "$env:APPDATA" -Recurse -Depth 2 -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'Cache|Partitions|Storage|blob|GPU|Shader|DIPS|Network|Dictionary|Microsoft|Windows|Packages|Local State' } | ForEach-Object { $_.FullName.Replace("$env:APPDATA\",'') })
   Log "data folders: $($tree -join ' | ')"
   $wf=FindWf
   Log "wf: $wf"
@@ -240,7 +240,7 @@ function EnsureModel {
     $phases['model-set']="wf $modelId"
     return
   }
-  $files=@(Get-ChildItem -Path "$env:APPDATA\Autark Companies" -Recurse -Depth 3 -Filter settings.json -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'Cache|Partitions|Storage' })
+  $files=@(Get-ChildItem -Path "$env:APPDATA\Autark","$env:APPDATA\Autark Companies" -Recurse -Depth 3 -Filter settings.json -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'Cache|Partitions|Storage' })
   Log "settings.json: $(($files | ForEach-Object FullName) -join ' | ')"
   if (!$files.Count) { throw 'Neither wf nor settings.json found.' }
   foreach($f in $files) {
