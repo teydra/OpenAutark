@@ -87,6 +87,9 @@ jobs:
       - name: c) start under xvfb without libfuse2 and without --appimage-extract-and-run
         if: always()
         run: bash .github/appimage-type2/checks.sh c
+      - name: c2) what the Type-2 runtime still needs (fusermount hidden)
+        if: always() && matrix.variant == 'type2'
+        run: bash .github/appimage-type2/checks.sh c2
       - name: install the test dependencies for d)
         if: always()
         working-directory: apps/desktop
