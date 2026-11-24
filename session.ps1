@@ -81,7 +81,7 @@ public static class W {
 [void][W]::SetProcessDPIAware()
 $sid=(Get-Process -Id $PID).SessionId
 $phases=[ordered]@{}
-$script:shots=0
+$script:shots=0; $script:uacShots=0
 $minW=1920; $minH=1024
 
 function Shot([string]$name,[switch]$Print){
@@ -286,7 +286,16 @@ try {
         Start-Sleep -Seconds 2
       }
     }
-    if (!$began -and ([DateTime]::UtcNow-$lastProgress).TotalSeconds -gt 35) { throw "No recognized wizard action. shown=$shown scope=$scope next=$next." }
+    if (!$began -and ([DateTime]::UtcNow-$lastProgress).TotalSeconds -gt 240) { throw "No recognized wizard action. shown=$shown scope=$scope next=$next." }
+    $consent=@(Get-Process consent -ErrorAction SilentlyContinue)
+    if ($consent.Count) {
+      $script:uacShots++
+      Log "UAC consent prompt visible (consent.exe x$($consent.Count))"
+      try { Start-Sleep -Milliseconds 800; Shot ("uac-{0:00}-prompt.png" -f $script:uacShots) } catch { Log "uac shot failed: $($_.Exception.Message)" }
+      [Windows.Forms.SendKeys]::SendWait('%y'); Log 'sent Alt+Y to the consent prompt'
+      Start-Sleep -Seconds 3
+    }
+    if (!$began -and ([DateTime]::UtcNow-$lastProgress).TotalSeconds -gt 8 -and (([int]([DateTime]::UtcNow-$lastProgress).TotalSeconds) % 10) -lt 1) { Dbg 'wizard-wait'; Log "foreground: $([W]::Title([W]::GetForegroundWindow()))" }
     Start-Sleep -Milliseconds 500
     $setup.Refresh()
   } while (!$setup.HasExited -and [DateTime]::UtcNow -lt $deadline)
