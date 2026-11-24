@@ -24,7 +24,7 @@
 // take of this page holds the microphone – part of the page's "voice live" (boot/voice-live.ts), so it goes on hidden.
 // Owns: the take's microphone lifetime, its pieces and their format, the "can this page dictate" note and the take's
 // fallback notice. Never: API keys or provider calls, audio sent anywhere but the runtime's blob store, the Android
-// app's port (dictation-direct.ts) or this page's held pieces, a microphone left open after finish/keep/cancel.
+// app's port (dictation-direct.ts) or this page's held pieces, a mic left open after finish/keep/cancel, a voiceless piece to a recognizer.
 
 import { signal } from '@preact/signals';
 import type { ResultOf } from '../../shared/api/methods.ts';
@@ -35,6 +35,7 @@ import { useValue } from '../../shared/model/models-uses.ts';
 import type { FileRef } from '../../shared/model/system.ts';
 import { languageHint } from '../../shared/voice/conversation.ts';
 import type { MarkedText, TextMarks } from '../../shared/voice/marks.ts';
+import { pcmHasVoice } from '../../shared/voice/voiced.ts';
 import { pullPercent, running } from '../settings/speech-models-text.ts';
 import { speechPulls, watchSpeechPulls } from '../settings/speech-models.ts';
 import { directHearing, type DirectHearing } from './dictation-direct.ts';
@@ -150,7 +151,7 @@ type Stored = { ref: FileRef } | { held: HeldTake } | { error: unknown };
 interface TakeFile { blob: Blob; name: string }
 
 /** `stored`: its upload, started at once – or only once needed while the phone hears by itself (storedOf). */
-interface TakePiece { file: Promise<TakeFile>; lengthMs: number; owner?: string; stored?: Promise<Stored>; tried: boolean; heard?: MarkedText; error?: unknown; missedBy?: Exclude<HeardBy, 'plan'> }
+interface TakePiece { file: Promise<TakeFile>; lengthMs: number; owner?: string; stored?: Promise<Stored>; tried: boolean; voiceless?: true; heard?: MarkedText; error?: unknown; missedBy?: Exclude<HeardBy, 'plan'> }
 
 interface Take {
   mic: Microphone | null;
@@ -272,8 +273,8 @@ export class Dictation {
 
   private addPiece(take: Take, piece: Piece, hear: boolean): void {
     const file = this.fileOf(piece.pcm, new Date(take.startedAt), take.pieces.length + 1);
-    const entry: TakePiece = { file, lengthMs: piece.ms, owner: take.options.owner, tried: false };
-    if (!this.deps.direct?.ready()) void this.storedOf(entry);
+    const entry: TakePiece = { file, lengthMs: piece.ms, owner: take.options.owner, tried: false, ...(pcmHasVoice(piece.pcm) ? {} : { voiceless: true as const }) };
+    if (!this.deps.direct?.ready() && !entry.voiceless) void this.storedOf(entry); // keep() still stores a voiceless piece
     take.pieces.push(entry);
     if (hear) this.queue(take, entry);
   }
@@ -314,13 +315,12 @@ export class Dictation {
   }
 
   /** Hears the piece after the pieces before it (their text is its context). */
-  private queue(take: Take, piece: TakePiece): void {
-    take.chain = take.chain.then(() => this.hearPiece(take, piece));
-  }
+  private queue(take: Take, piece: TakePiece): void { take.chain = take.chain.then(() => this.hearPiece(take, piece)); }
 
   private async hearPiece(take: Take, piece: TakePiece): Promise<void> {
     if (take.cancelled || piece.tried) return;
     piece.tried = true;
+    if (piece.voiceless) { piece.heard = { text: '' }; this.tell(take, { ms: piece.lengthMs, text: '' }); return; } // 24.11.2026: no recognizer hears a piece without voice (voiced.ts)
     const language = languageHint(take.options.language);
     if (this.deps.direct?.ready()) {
       const text = await this.deps.direct.hear((await piece.file).blob, language).catch(() => undefined);

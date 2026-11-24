@@ -13,6 +13,7 @@ import type { Agent } from '../../../shared/model/org.ts';
 import { ownHowIWork } from '../../org/system-parts.ts';
 import '../../contracts/open-fs.ts';
 import { vocabularyPrompt } from '../../../shared/voice/vocabulary.ts';
+import { accountTerms } from '../../../shared/voice/hint.ts';
 import { chosenFor, talksLive } from '../../../shared/model/models-uses.ts';
 import type { RuntimeServices } from '../../contracts.ts';
 import { coreInstructions } from '../../agent-core/prompt.ts';
@@ -141,8 +142,10 @@ export function realtimeInstructions(s: Pick<RuntimeServices, 'org' | 'chats' | 
 }
 
 /** The learned words (names, special spellings) as the input transcription's hint. */
-export function realtimeVocabulary(s: Pick<RuntimeServices, 'settings'>): string | undefined {
-  try { return vocabularyPrompt(s.settings.get().voice?.vocabulary); } catch { return undefined; }
+export function realtimeVocabulary(s: Pick<RuntimeServices, 'settings'> & { accounts?: Pick<RuntimeServices['accounts'], 'list'> }): string | undefined {
+  let terms: string[] = [];
+  try { terms = accountTerms(s.accounts?.list() ?? []); } catch { terms = []; } // no account's address or name in a hint (shared/voice/hint.ts)
+  try { return vocabularyPrompt(s.settings.get().voice?.vocabulary, undefined, terms); } catch { return undefined; }
 }
 
 /** The chat's recent text lines as realtime context (the person → user, this agent → assistant, a colleague → "(Lena wrote) …"). */

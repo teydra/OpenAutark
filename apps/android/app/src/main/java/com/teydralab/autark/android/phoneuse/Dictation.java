@@ -6,7 +6,8 @@
 // digital silence says that Android kept the microphone from the bubble. A take that reaches TAKE_MAX_MS tells its owner
 // (`full`, main thread), who finishes it the usual way. Used by the panel's mic and the dot's hold
 // (TodoButton). STIMME 21.11.2026: a piece is first heard by the person's ChatGPT plan from the phone itself (PlanHearing,
-// the plan login from the PC); only a piece that gave nothing there goes to the PC as above.
+// the plan login from the PC); only a piece that gave nothing there goes to the PC as above. 24.11.2026: a piece is
+// heard from just before its first to just after its last voice, and one without voice by nobody (SpokenAudio.voicedSpan).
 // Never: keeps audio beyond its request, sends a piece twice, or answers twice.
 package com.teydralab.autark.android.phoneuse;
 
@@ -130,7 +131,10 @@ final class Dictation {
 
     /** One piece to the PC (the worker, in order): uploaded, heard, its text joined to the take's. */
     private void send(short[] pcm, int count) {
-        byte[] wav = SpokenAudio.wav(pcm, 0, count);
+        // 24.11.2026: only the voiced part goes to a recognizer, a piece without voice to none (SpokenAudio.voicedSpan)
+        int[] voiced = SpokenAudio.voicedSpan(pcm, 0, count);
+        if (voiced == null) return;
+        byte[] wav = SpokenAudio.wav(pcm, voiced[0], voiced[1]);
         run(() -> {
             if (problem != null || cancelled) return;
             if (link == null) { problem = german ? "Gerade nicht mit deinem PC verbunden." : UseLink.UNLINKED; return; }

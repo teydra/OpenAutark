@@ -8,6 +8,8 @@ import { vocabularyPrompt, vocabularyWords } from '../../../src/shared/voice/voc
 import type { RuntimeServices } from '../../../src/runtime/contracts.ts';
 import type { Account, ModelInfo } from '../../../src/shared/model/providers.ts';
 import { WorkforceError } from '../../../src/shared/errors.ts';
+import { encodeWav } from '../../../src/shared/voice/wav.ts';
+import { join, RATE, rumble, silence, speech, tap } from '../../helpers/voice-signals.ts';
 
 const FILE_ID = 'c'.repeat(64);
 
@@ -213,4 +215,45 @@ test('other errors are not retried: a rate limit and a refused take keep their c
   const refused = setup({ respond: () => new Response('nope', { status: 400 }) });
   await assert.rejects(refused.transcriber.transcribe({ fileId: FILE_ID }), /did not accept the audio/);
   assert.equal(refused.requests.length, 1);
+});
+
+test('25.11.2026: no account address or name reaches a recognizer as its hint – learned words, the chat\'s last message, the text heard before', async () => {
+  const found = [{ id: 'acc_9', label: 'Claude Code · Salzburg Lernstudio', email: 'jane.example@example.org' }];
+  const { transcriber, requests, services } = setup({
+    functions: { stt: 'compatible:whisper-large-v3' },
+    voice: { vocabulary: ['Teydra', 'jane.example@example.org', 'jane.example', 'Claude Code · Salzburg Lernstudio', 'Workforce'] },
+  });
+  (services.accounts as unknown as { list: () => unknown[] }).list = () => found;
+  await transcriber.transcribe({ fileId: FILE_ID, language: 'de' });
+  const hint = String((requests[0].init.body as FormData).get('prompt'));
+  assert.equal(hint, 'Workforce, Teydra', 'the learned words keep the names of the company, not an account\'s');
+  assert.equal(/example|@|Lernstudio/.test(hint), false);
+
+  // the listener's context: the last agent message talks about the found login – the hint must not
+  (services as unknown as { db: unknown }).db = { get: () => ({ body: 'Ich habe ein Login gefunden: jane.example@example.org (Claude Code · Salzburg Lernstudio). Soll ich es nutzen?' }) };
+  (services as unknown as { secrets: unknown }).secrets = { redact: (text: string) => text };
+  const context = (transcriber as unknown as { dictationContext: (s: RuntimeServices, chat: string, before: string) => { lastReply?: string; vocabulary?: string; before?: string } })
+    .dictationContext(services, 'chat_1', 'Schreib an jane.example@example.org dass es passt');
+  const all = JSON.stringify(context);
+  assert.equal(/jane|example|@|Lernstudio/i.test(all), false, `no account in the listener's context: ${all}`);
+  assert.match(context.lastReply ?? '', /Login gefunden/, 'the rest of the message stays as context');
+  assert.equal(context.vocabulary, 'Workforce, Teydra');
+});
+
+test('24.11.2026: a WAV dictation piece without voice reaches no recognizer – neither the plan nor a service – and is no words', async () => {
+  const heardBy: string[] = [];
+  const hear = (bytes: Uint8Array) => {
+    const services = fakeServices({
+      acc: account(), model: 'whisper-large-v3', functions: { stt: 'compatible:whisper-large-v3' }, voice: { vocabulary: [] },
+      files: { get: (id: string) => (id === FILE_ID ? { id, createdAt: 1, mime: 'audio/wav', name: 'dictation-3.wav', size: bytes.byteLength } : undefined), read: async () => bytes },
+    });
+    const fetch: FetchFn = async () => { heardBy.push('service'); return new Response(JSON.stringify({ text: 'Colearning Salzburg.' }), { status: 200 }); };
+    const plan = async () => { heardBy.push('plan'); return { text: 'Colearning Salzburg.' }; };
+    return new Transcriber({ services: () => services, fetch, plan }).transcribe({ fileId: FILE_ID, language: 'de' });
+  };
+  assert.deepEqual(await hear(encodeWav(join(rumble(2000, 0.0056), tap()), RATE)), { text: '' }, 'the pause before Stop');
+  assert.deepEqual(await hear(encodeWav(silence(8000), RATE)), { text: '' }, 'digital silence');
+  assert.deepEqual(heardBy, []);
+  assert.deepEqual(await hear(encodeWav(join(speech(2000, 0.1), silence(1000)), RATE)), { text: 'Colearning Salzburg.', by: 'service' }, 'a piece with voice is heard as before');
+  assert.deepEqual(heardBy, ['service']);
 });
