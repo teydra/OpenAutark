@@ -19,6 +19,7 @@
 // F23: Plus › Record audio / Record video open composer/RecordBar.tsx in the same slot above the text (the take goes in
 // as a chip, a recording or video not bound to the 20 MB of other files; Send waits while a take records, attaches or
 // waits there); Photos & videos takes both; on a phone Take photo and Record video are the camera app's.
+// Owner 24.11.2026 (task_ec8e4ztn): a Send while a take is still heard shows the line in the chat at once (pending-sends.ts).
 // Owns: input handling and when to send (the send itself: composer/send.ts). Never: message rendering or chat settings UI.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
@@ -37,6 +38,10 @@ import { ChatSecretBar } from '../settings/SecretRows.tsx';
 import { ReplyQuote } from './ReplyQuote.tsx';
 import { draftFor, flushDraft, setReply, updateDraft } from './composer/draft.ts';
 import { sendDraft } from './composer/send.ts';
+import { addPending, pendingSends, removePending } from './pending-sends.ts';
+import { joinPieces } from '../lib/take-pieces.ts';
+import { dictation } from '../lib/dictation.ts';
+import { newId } from '../../shared/ids.ts';
 import { createTaskFromText, parseSlash, runSlash, sendMenuItems } from './composer/slash.ts';
 import { findToken, suggestionsFor, SuggestionList, useSuggestions } from './composer/Suggestions.tsx';
 import type { Suggestion } from './composer/Suggestions.tsx';
@@ -57,6 +62,20 @@ import type { SpanMark } from '../../shared/voice/marks.ts';
 import { markAt } from './composer/draft-marks.ts';
 import { MarkLayer } from './composer/MarkLayer.tsx';
 import { MarkMenu } from './composer/MarkMenu.tsx';
+
+/** Preview only this take: another chat can start recording before the last piece comes back. */
+function dictationPreview(chatId: string): (() => string) | undefined {
+  const source = dictation.heardSource;
+  if (source?.chatId !== chatId) return;
+  let words = '';
+  const preview = () => {
+    const pieces = dictation.heardPieces.value;
+    if (source === dictation.heardSource) words = joinPieces(pieces.flatMap((piece) => piece.text ? [{ text: piece.text }] : [])).text;
+    return words;
+  };
+  preview();
+  return preview;
+}
 
 export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
   const { chat } = props;
@@ -153,12 +172,19 @@ export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
   };
 
   // The whole draft goes out – files, secrets, reply – also at another level (composer/send.ts).
-  const sendAs = (body: string, sentLevel: MessageLevel) => sendDraft({ conversationId: chat.id, body, level: sentLevel, mentions: (sent) => mentionsIn(sent, chat) });
+  const sendAs = (body: string, sentLevel: MessageLevel, clientId?: string) => sendDraft({ conversationId: chat.id, body, level: sentLevel, mentions: (sent) => mentionsIn(sent, chat), ...(clientId ? { clientId } : {}) });
 
   /** `sentLevel`: the Plus menu's "Send as important" / "Send silently" (no slash command then). */
   const send = async (sentLevel?: MessageLevel) => {
     if (sending || record.held) return; // never sends without the take
     setSending(true); // also while a dictation is transcribed first (a second tap sends nothing twice)
+    // Owner 24.11.2026 (task_ec8e4ztn): a Send while the take is still heard shows the line at once – the typed text and
+    // the words heard so far (PendingMessages.tsx) – instead of an empty chat until the last piece is transcribed.
+    const early = dictating.peek() === chat.id || transcribing.peek().has(chat.id) ? newId('req') : undefined;
+    if (early) addPending({
+      clientId: early, conversationId: chat.id, body: draft.peek().text.trim(), attachments: draft.peek().attachments,
+      state: 'transcribing', preview: dictationPreview(chat.id),
+    });
     try {
       // A running take stops, a stopped one is waited for: its words go out with the draft. One that came back as a
       // recording, failed or was cancelled leaves the draft: the person sees it (and the toast) first.
@@ -167,17 +193,20 @@ export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
       if (!body.trim() && !draft.value.attachments.length && !draft.value.secrets?.length) return;
       const slash = sentLevel ? null : parseSlash(body);
       if (slash) {
+        let sent = false;
+        const originalText = draft.peek().text;
         const clear = await runSlash(slash, {
           chat,
           openModelMenu: () => setModelSignal(Date.now()),
           setLevel: (next) => updateDraft(chat.id, { level: next }),
-          send: (rest, options) => sendAs(rest, options?.level ?? draft.peek().level),
+          send: (rest, options) => { sent = true; return sendAs(rest, options?.level ?? draft.peek().level, early); },
         });
-        if (clear) updateDraft(chat.id, { text: '' }); // a sent command's draft is already fresh (sendDraft)
+        if (clear && !sent && draft.peek().text === originalText) updateDraft(chat.id, { text: '' });
         return;
       }
-      await sendAs(body, sentLevel ?? draft.value.level);
+      await sendAs(body, sentLevel ?? draft.value.level, early);
     } finally {
+      if (early && pendingSends.peek().some((line) => line.clientId === early && line.state === 'transcribing')) removePending(early); // nothing went out
       setSending(false);
       fieldRef.current?.focus();
     }

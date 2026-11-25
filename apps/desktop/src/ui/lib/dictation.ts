@@ -183,6 +183,7 @@ export class Dictation {
     this.deps = deps;
   }
 
+  get heardSource(): Readonly<HearOptions> | undefined { return this.heardTake?.options; }
   /** A take holds the microphone. */
   get active(): boolean { return this.take !== null; }
 

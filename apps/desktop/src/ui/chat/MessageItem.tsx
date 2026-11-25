@@ -19,6 +19,7 @@
 // a thread shows one quiet line under it ("3 replies · Mara", threads.ts) that opens or closes the thread in the side panel.
 // 16.11.2026: a key still in the text shows masked, with one quiet line under it – Show/Hide and Save as secret
 // (KeysLine, message-keys.ts).
+// Owner 24.11.2026 (task_3x012n3a): the own bubble's meta row ends with its ticks (Receipt.tsx; the list passes them).
 // Owns: message chrome. Never: renders untrusted HTML itself (MessageBody sanitizes).
 
 import { memo } from 'preact/compat';
@@ -56,6 +57,8 @@ import { ModelTagMark } from './ModelTagMark.tsx';
 import { threadLine, threadsByAnchor } from './threads.ts';
 import { chatPanel, chatThread, toggleThread } from '../lib/shell-state.ts';
 import { canSaveFrom, keysIn, keysLine, maskedBody, saveAsSecret } from './message-keys.ts';
+import { ReceiptMark } from './Receipt.tsx';
+import type { Receipt } from './receipts.ts';
 
 function Failure(props: { message: Message }) {
   const { message } = props;
@@ -80,7 +83,7 @@ function ModelTag(props: { message: Message }) {
   return <ModelTagMark tag={messageModelTag(props.message, modelShortName)} />;
 }
 
-function Actions(props: { message: Message; own: boolean; menu: (open: MenuOpen) => MenuSection[] }) {
+function Actions(props: { message: Message; own: boolean; menu: (open: MenuOpen) => MenuSection[]; receipt?: Receipt }) {
   const { message } = props;
   const warmth = temperatureTitle(message.meta.temperature); // B-083
   const via = message.meta.model ? ` · ${message.meta.model}${message.meta.effort ? ` ${message.meta.effort}` : ''}${warmth ? ` · ${warmth}` : ''}` : '';
@@ -98,6 +101,7 @@ function Actions(props: { message: Message; own: boolean; menu: (open: MenuOpen)
       <time class="tabular" dateTime={new Date(message.createdAt).toISOString()} title={`${fullDate(message.createdAt)}${via}`}>{time(message.createdAt)}</time>
       {message.editedAt !== undefined && <span class="edited-marker" title={`Edited ${fullDate(message.editedAt)}`}>edited</span>}
       {message.meta.imported === true && <span class="edited-marker" title="Imported from a chat folder (another PC or an export)">imported</span>}
+      {props.own && props.receipt && <ReceiptMark state={props.receipt} />}
       {!props.own && <MessageTools message={message} menu={props.menu} />}
     </div>
   );
@@ -131,7 +135,7 @@ function ThreadLink(props: { message: Message }) {
   );
 }
 
-function MessageItemInner(props: { message: Message }) {
+function MessageItemInner(props: { message: Message; receipt?: Receipt }) {
   const { message } = props;
   const [editing, setEditing] = useState(false);
   const [selecting, setSelecting] = useState(false); // F30: the Select text sheet (touch)
@@ -171,7 +175,7 @@ function MessageItemInner(props: { message: Message }) {
         <SecretAttachments ids={message.meta.secrets} />
       </div>
       {(message.state === 'failed' || message.state === 'stopped') && <Failure message={message} />}
-      <Actions message={message} own={human} menu={build} />
+      <Actions message={message} own={human} menu={build} receipt={props.receipt} />
       <ThreadLink message={message} />
       {selecting && <SelectText message={message} onClose={() => setSelecting(false)} />}
     </article>

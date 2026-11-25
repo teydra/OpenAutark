@@ -69,7 +69,10 @@ test('send: clientId double-send guard returns the same message without new even
   const created = h.of('message.created').length;
   const again = h.chats.send({ conversationId: chat.id, body: 'once', authorId: 'human', clientId: 'c1' });
   assert.equal(again.id, first.id);
+  assert.equal(first.clientId, 'c1');
+  assert.equal(again.clientId, 'c1');
   assert.equal(h.of('message.created').length, created);
+  assert.equal(h.chats.messages(chat.id)[0].clientId, 'c1');
   assert.equal(h.chats.messages(chat.id).length, 1);
   assert.equal(h.wakeRows().length, 1);
 });

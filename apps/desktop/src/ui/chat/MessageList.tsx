@@ -6,12 +6,17 @@
 // burst lands on the burst. The "New messages" divider sits before the first new message since the
 // start ChatView captured; "↓ N new" counts new messages below the visible part and goes to the newest.
 // 13.11.2026: only real messages – who works shows in the live bar above the composer (LiveBar.tsx), never here.
+// Owner 24.11.2026: the person's unsent lines stand after the messages (PendingMessages.tsx) and a send scrolls to them; each
+// own message gets its ticks (receipts.ts, read from the chat's members and agent placement).
 // Owns: windowing, scroll anchoring, the divider's place and the pill count.
 // Never: message markup (MessageItem), the grouping into rows (message-rows.ts) or what counts as new (catch-up.ts).
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { VNode } from 'preact';
-import { historyComplete, loadOlder, messagesFor } from '../lib/store.ts';
+import { agentMap, conversationMap, historyComplete, loadOlder, messagesFor, systemInfo } from '../lib/store.ts';
+import { PendingMessages } from './PendingMessages.tsx';
+import { pendingSends } from './pending-sends.ts';
+import { receiptFor } from './receipts.ts';
 import { focusMessage } from '../lib/shell-state.ts';
 import { Spinner } from '../lib/ui.tsx';
 import { MessageItem, StatusGroup } from './MessageItem.tsx';
@@ -51,6 +56,14 @@ export function MessageList(props: { conversationId: string; loading: boolean; s
   const rows = groupRows(visible);
   const lastSeq = list.length ? list[list.length - 1].seq : 0;
   const info = catchUp(list, props.start);
+  const self = systemInfo.value?.deviceId;
+  const known = agentMap.value;
+  /** The agent runs on the PC this window talks to (no deviceId, or that PC's): a stored line has reached it. */
+  const agentHere = (agentId: string) => { const agent = known.get(agentId); return !!self && !!agent && !agent.archivedAt && (!agent.deviceId || agent.deviceId === self); };
+  const unsent = pendingSends.value.filter((line) => line.conversationId === conversationId).length;
+  const unsentBefore = useRef(unsent);
+  if (unsent > unsentBefore.current) atBottom.current = true; // a line just sent: the chat goes to it, as after any send
+  unsentBefore.current = unsent;
 
   /** "↓ N new": new messages after `seen` whose top is below the visible part. */
   const measure = () => {
@@ -170,12 +183,14 @@ export function MessageList(props: { conversationId: string; loading: boolean; s
 
   const nodes: VNode[] = [];
   const divider = () => <UnreadDivider key="unread-divider" count={info!.count} />;
+  const members = conversationMap.value.get(conversationId)?.members ?? [];
   for (const row of rows) {
     if (info && rowHas(row, info.dividerBefore)) nodes.push(divider());
+    const receipt = row.kind === 'message' ? receiptFor(row.message, members, agentHere) : undefined;
     nodes.push(row.kind === 'call'
       ? <CallTranscript key={row.callId} messages={row.messages} />
       : row.kind === 'message'
-      ? <MessageItem key={row.message.id} message={row.message} />
+      ? <MessageItem key={row.message.id} message={row.message} receipt={receipt} />
       : <StatusGroup key={row.messages[0].id} messages={row.messages} />);
   }
 
@@ -185,6 +200,7 @@ export function MessageList(props: { conversationId: string; loading: boolean; s
         {loadingOlder && <div class="older-loading"><Spinner size={14} /></div>}
         {props.loading && <div class="older-loading"><Spinner size={16} /></div>}
         {nodes}
+        <PendingMessages conversationId={conversationId} list={list} />
         <NewPill count={below} onClick={toNewest} />
       </div>
     </div>
