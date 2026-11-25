@@ -26,6 +26,9 @@ export const SETTINGS_SCHEMA_FILE = 'settings.schema.json';
 
 /** preferences.navOrder: the most destination keys kept. */
 export const NAV_ORDER_MAX = 20;
+/** preferences.declinedLogins: the most keys kept, and the longest key. */
+export const DECLINED_LOGINS_MAX = 100;
+export const DECLINED_LOGIN_CHARS = 200;
 
 /** B-078: profile.notes, the AI's note on how the person wants to be spoken to. */
 export const NOTES_MAX = 600;
@@ -123,6 +126,10 @@ export const SECTIONS: readonly SectionDef[] = [
     { key: 'navOrder', about: 'Your order of the main destinations in the left rail and the phone tabs (drag them in the rail, or right-click › Reset order)', type: 'array',
       allowed: `a list of destination keys such as "tasks", "chats", "team" (up to ${NAV_ORDER_MAX}), or [] (the default order)`, default: [],
       schema: { maxItems: NAV_ORDER_MAX, items: { type: 'string', pattern: PATTERNS.navKey } } },
+    // 0.3.20 (Stanislaus 24.11.2026): "Not here" on a found plan login holds on every PC of the company – this list travels with the settings sync.
+    { key: 'declinedLogins', about: 'Plan logins you said "Not here" to (accounts › Found); the list holds on all your PCs – "Use" or "Add again" takes one out', type: 'array',
+      allowed: `a list of up to ${DECLINED_LOGINS_MAX} login keys such as "codex:default", or [] (none)`, default: [],
+      schema: { maxItems: DECLINED_LOGINS_MAX, items: { type: 'string', minLength: 1, maxLength: DECLINED_LOGIN_CHARS } } },
   ] },
   { key: 'notifications', title: 'Notifications (to-dos for you, blockers and important messages always arrive)', keys: [
     flag('enabled', 'Desktop notifications for replies and finished work (the ones that always arrive are not affected)', true),

@@ -19,6 +19,8 @@ import { WorkforceError, type WorkforceErrorData } from '../../shared/errors.ts'
 export const STALL_IDLE_MS = 10 * 60_000;
 export const STALL_TOOL_MS = 45 * 60_000;
 export const STALL_MESSAGE = 'The engine stopped responding.';
+/** The error text of a turn cut because its account was switched off (no "sign in" or "api key" in it: accounts/failure.ts reads those as a sign-out). */
+export const SWITCHED_OFF_MESSAGE = 'The account was switched off.';
 /** B-059 #22: a timer this much later than due slept with the PC: no stall. */
 export const SLEEP_GAP_MS = 60_000;
 /** Shortest re-arm, so a late timer never spins. */
@@ -65,6 +67,7 @@ export class StallWatch {
   /** B-059: the overrun's cut, waiting for the running calls to end; `overran` once it cut. */
   private overrunError: WorkforceError | undefined;
   private overran = false;
+  private off = false;
 
   constructor(deps: StallWatchDeps) {
     this.deps = deps;
@@ -87,8 +90,23 @@ export class StallWatch {
     return this.overran;
   }
 
-  /** The error of the watch's own cut (silence: stallError; ceiling: the overrun's); undefined while it has not cut. */
+  /**
+   * 25.11.2026 (Stanislaus 24.11.: a plan switched off and "es geht manchmal nicht mehr weiter"): the account this attempt runs on
+   * was switched off. A turn running on it, or waiting on it for a limit or a lost connection, would only end at the stall cut
+   * (10 min, 45 with a call running) – cut it now, with code 'unavailable' and details.switchedOff, so the failover rule applies
+   * (agents/turn.ts: another account when no tool ran or every effect is known) and the account is not cooled (accounts/failure.ts).
+   * Once; nothing after another cut, the attempt's end or the parent's abort.
+   */
+  cutSwitchedOff(): void {
+    if (this.ended || this.off || this.deps.parent.aborted) return;
+    this.off = true;
+    this.stop();
+    this.cut.abort(new WorkforceError('unavailable', SWITCHED_OFF_MESSAGE, { details: { switchedOff: true } }));
+  }
+
+  /** The error of the watch's own cut (silence: stallError; ceiling: the overrun's; switch-off); undefined while it has not cut. */
   get cutError(): WorkforceErrorData | undefined {
+    if (this.off) return { code: 'unavailable', message: SWITCHED_OFF_MESSAGE, details: { switchedOff: true } };
     if (this.fired) return stallError();
     return this.overran && this.overrunError ? { code: 'internal', message: this.overrunError.message, details: { overlong: true } } : undefined;
   }

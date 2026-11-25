@@ -355,9 +355,16 @@ export async function runAttempt(services: RuntimeServices, plan: TurnPlan, turn
   // The tool offer is computed by buildTurn (SES2: the session's prompt key covers exactly these).
   const tools = turn.engine.caps.dynamicTools ? (turn.tools ?? []) : [];
   let result: EngineTurnResult;
+  // 25.11.2026 (task_3jyxzgfq): the person switches the account this attempt runs on off (here, or on another PC of the company –
+  // the sync announces that row too): the attempt is cut at once and fails over to another account (agents/turn.ts), instead of
+  // waiting on the switched-off plan until the stall cut. Also an account that was switched off between the route and now.
+  const offSwitch = services.bus.on('account.upserted', (changed) => { if (changed.id === turn.account.id && changed.enabled === false) watch.cutSwitchedOff(); });
   try {
+    if (accountSwitchedOff(services, turn.account.id)) watch.cutSwitchedOff();
     status('Working'); // D5: the reasoning headline or the running step replaces it as soon as there is one
     watch.start();
+    // An engine that subscribes to abort at startup cannot hear an earlier abort event.
+    watch.signal.throwIfAborted();
     result = await runWithNativeTimeouts(turn.engine, {
       runId: request.runId, agentId: plan.agent.id, account: turn.account, model: turn.model, effort: turn.route.effort,
       ...(temperature !== undefined ? { temperature } : {}), // B-078/B-083: the turn's temperature (engines whose model takes one send it)
@@ -388,6 +395,7 @@ export async function runAttempt(services: RuntimeServices, plan: TurnPlan, turn
       result = { text: streamed, stop: data.code === 'rate_limited' ? 'limit' : 'error', error: error instanceof WorkforceError ? data : { ...data, code: data.code } };
     }
   } finally {
+    offSwitch();
     thoughts.close(); // a block still open ends with the attempt (live: false)
     ended.abort();
     watch.stop();
@@ -420,6 +428,11 @@ export async function runAttempt(services: RuntimeServices, plan: TurnPlan, turn
   const own = kept.counts && usage.costUsd !== undefined ? ownCost(services, plan, turn, result, usage.costUsd, kept.usd) : undefined;
   if (own) usage.costUsd = own.usd;
   return { result, streamed, reasoning: thoughts.text, toolCalls, tools: used, plan: planSteps, ...(planDone !== undefined ? { planDone } : {}), usage, ...(modelCalls !== undefined ? { modelCalls } : {}), ...(own?.total ? { costTotal: own.total } : {}), ms: services.clock.now() - started };
+}
+
+/** The account was switched off by the person (read live; an account that cannot be read counts as on). */
+function accountSwitchedOff(services: RuntimeServices, accountId: string): boolean {
+  try { return services.accounts.get(accountId)?.enabled === false; } catch { return false; }
 }
 
 /** The full length of a call's arguments as the journal would show them uncut (B-049 F9). */

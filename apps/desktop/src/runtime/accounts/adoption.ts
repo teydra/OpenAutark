@@ -147,11 +147,11 @@ export class Adoption {
     return this.takeShared(login, thisPcOnly);
   }
 
-  /** "Not here": the offered login is dismissed in this company (it stays on the PC; "Add again" or a later "Use" brings it back). */
+  /** "Not here": the offered login is dismissed in this company, on all its PCs (it stays on the PC; "Add again" or a later "Use" brings it back). */
   async declineFound(key: string): Promise<void> {
     const offer = (await this.detect(false)).found?.find((entry) => entry.key === key);
     if (!offer) throw new WorkforceError('not_found', 'That sign-in is not offered any more.');
-    this.deps.dismissed.add(key);
+    this.deps.dismissed.add(key, true); // the person's word for the company: every PC hears it (settings.preferences.declinedLogins)
   }
 
   /** The default-home login as an account (the Codex one on a copy in a home of its own); the one that exists when there is one. */

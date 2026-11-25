@@ -101,7 +101,7 @@ export class AccountServiceImpl implements AccountServiceContract {
   constructor(deps: AccountServiceDeps) {
     this.deps = deps;
     this.repo = new AccountRepo(deps.db);
-    this.dismissed = new DismissedLogins(deps.db, () => this.now());
+    this.dismissed = new DismissedLogins(deps.db, () => this.now(), deps.settings);
     this.monitor = new AccountMonitor({ accounts: this, bus: deps.bus, clock: deps.clock, log: deps.log });
     const { data, temp } = deps.paths;
     const cwd = data ? engineCwd({ data }) : temp ?? os.tmpdir(); // never the process cwd, where project config could apply

@@ -10,10 +10,12 @@ import path from 'node:path';
 import type { Db } from '../db/database.ts';
 import { foundHere, type Account, type DetectionReport, type ProviderId } from '../../shared/model/providers.ts';
 import { KvRepo } from '../store/kv.ts';
+import type { SettingsService } from '../contracts.ts';
+import { DECLINED_LOGINS_MAX } from '../settings/schema.ts';
 
 const NS = 'accounts';
 const KEY = 'dismissed';
-const MAX = 100;
+const LOCAL_MAX = 100;
 
 export const loginKey = (provider: ProviderId | DetectionReport['clis'][number]['provider']): string => `${provider}:default`;
 export const serverKey = (provider: ProviderId, baseUrl: string): string => `${provider}:${baseUrl}`;
@@ -26,29 +28,56 @@ export function dismissalKeys(account: Pick<Account, 'provider' | 'auth' | 'home
   return account.auth === 'local' && account.baseUrl ? [serverKey(account.provider, account.baseUrl)] : [];
 }
 
+/** The part of the settings service the company-wide "Not here" list needs (settings.preferences.declinedLogins). */
+export type DeclinedStore = Pick<SettingsService, 'get' | 'update'>;
+
+const strings = (value: unknown, max: number): string[] => (Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string').slice(-max) : []);
+
 export class DismissedLogins {
   private readonly kv: KvRepo;
   private readonly now: () => number;
+  private readonly settings?: DeclinedStore;
 
-  constructor(db: Db, now: () => number) {
+  /**
+   * 25.11.2026 (Stanislaus 24.11., 0.3.20): "Not here" is the person's word for the whole company, not for one PC – it lives
+   * in settings.preferences.declinedLogins, which the settings sync (devices/sync/settings.ts) already carries between the
+   * person's PCs (no PC first, the last change wins), so the offer stays away on every PC and after a restart. Without a
+   * settings service (tests) it stays in kv as before. What detection dismisses by itself (a removed account, a local server)
+   * is this PC's own and stays in kv.
+   */
+  constructor(db: Db, now: () => number, settings?: DeclinedStore) {
     this.kv = new KvRepo(db);
     this.now = now;
+    this.settings = settings;
   }
+
+  /** What the company declined (settings, every PC's) – the keys the person said "Not here" to. */
+  declined(): string[] {
+    return strings(this.settings?.get().preferences.declinedLogins, DECLINED_LOGINS_MAX);
+  }
+
+  private local(): string[] { return strings(this.kv.get<unknown>(NS, KEY), LOCAL_MAX); }
 
   list(): string[] {
-    const value = this.kv.get<unknown>(NS, KEY);
-    return Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string').slice(-MAX) : [];
+    return [...new Set([...this.local(), ...this.declined()])];
   }
 
-  add(key: string): void {
-    this.kv.set(NS, KEY, [...this.list().filter((entry) => entry !== key), key].slice(-MAX), this.now());
+  /** `everywhere`: the person's "Not here" – every PC of the company hears it (a settings unit); else this PC's own kv list. */
+  add(key: string, everywhere = false): void {
+    if (everywhere && this.settings) {
+      this.settings.update({ preferences: { declinedLogins: [...this.declined().filter((entry) => entry !== key), key].slice(-DECLINED_LOGINS_MAX) } });
+      return;
+    }
+    this.kv.set(NS, KEY, [...this.local().filter((entry) => entry !== key), key].slice(-LOCAL_MAX), this.now());
   }
 
-  /** True when the key was dismissed (and is not any more). */
+  /** True when the key was dismissed (and is not any more) – on this PC and, for a "Not here", on every PC of the company. */
   delete(key: string): boolean {
-    const list = this.list();
-    if (!list.includes(key)) return false;
-    this.kv.set(NS, KEY, list.filter((entry) => entry !== key), this.now());
+    const local = this.local();
+    const shared = this.declined();
+    if (!local.includes(key) && !shared.includes(key)) return false;
+    if (local.includes(key)) this.kv.set(NS, KEY, local.filter((entry) => entry !== key), this.now());
+    if (shared.includes(key)) this.settings?.update({ preferences: { declinedLogins: shared.filter((entry) => entry !== key) } });
     return true;
   }
 

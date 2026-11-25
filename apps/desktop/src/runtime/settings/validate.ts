@@ -17,7 +17,7 @@ import { validateRouting } from '../routing/uses-settings.ts';
 import { validateLifecycle } from '../knowledge/lifecycle-settings.ts';
 import { clockMinutes } from '../../shared/model/day-settings.ts';
 import { MAX_WORDS } from '../../shared/voice/vocabulary.ts';
-import { NAV_ORDER_MAX, NOTES_MAX, PATTERNS, SECTIONS, optionsOf, rangeOf } from './schema.ts';
+import { DECLINED_LOGINS_MAX, DECLINED_LOGIN_CHARS, NAV_ORDER_MAX, NOTES_MAX, PATTERNS, SECTIONS, optionsOf, rangeOf } from './schema.ts';
 
 const STUN_URL = new RegExp(PATTERNS.stun); // F25: settings.devices.stun
 import { validateSecurity } from './security-keys.ts';
@@ -125,6 +125,10 @@ export function validateSettings(s: Settings): void {
   for (const key of ['sidebarOpen', 'workspaceOpen', 'enterSends', 'openAtLogin', 'autoDownloadUpdates'] as const) boolean(ui[key], `preferences.${key}`);
   if (ui.navOrder !== undefined && (!Array.isArray(ui.navOrder) || ui.navOrder.length > NAV_ORDER_MAX || ui.navOrder.some((key) => typeof key !== 'string' || !NAV_KEY.test(key)))) {
     bad('preferences.navOrder', `a list of up to ${NAV_ORDER_MAX} destination keys such as "tasks"`);
+  }
+  if (ui.declinedLogins !== undefined && (!Array.isArray(ui.declinedLogins) || ui.declinedLogins.length > DECLINED_LOGINS_MAX
+    || ui.declinedLogins.some((key) => typeof key !== 'string' || !key || key.length > DECLINED_LOGIN_CHARS || /[\u0000-\u001f]/.test(key)))) {
+    bad('preferences.declinedLogins', `a list of up to ${DECLINED_LOGINS_MAX} login keys such as "codex:default"`);
   }
 
   const n = s.notifications;
