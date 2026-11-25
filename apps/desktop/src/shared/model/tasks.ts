@@ -73,6 +73,8 @@ export interface TaskWait {
   ids?: string[]; // on 'task'
   why: string;
   since: number;
+  until?: number; // local follow-up instant, independent of the calendar's at
+  followedUp?: boolean; // delivery recorded for this deadline
 }
 
 export interface Task {
@@ -141,6 +143,7 @@ export interface CreateTaskInput {
   title: string;
   notes?: string;
   plan?: string[];
+  waitingOn?: Omit<TaskWait, 'since'>; // runtime only: create directly in a wait
   givenIn?: string; // runtime only – the giving agent turn's chat (TaskLedger.givenIn)
   assigneeKind?: AssigneeKind;
   assigneeId?: string;

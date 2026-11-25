@@ -61,9 +61,9 @@ export function applyDepends(repo: Repo, draft: Task, ids: readonly string[], no
 
 /**
  * `ended` finished or went: every task that waits on it waits for one less, or is open again – and the agent owner of
- * those that opened hears it once, all of its opened tasks in one word (R1.10), unless `tell` is false.
+ * those that opened hears it once, all of its opened tasks in one word (R1.10), unless that owner already heard the answer.
  */
-export function waitsEnded(t: TaskServiceImpl, ended: Task, how: 'done' | 'dropped' | 'removed', tell = true): void {
+export function waitsEnded(t: TaskServiceImpl, ended: Task, how: 'done' | 'dropped' | 'removed', alreadyTold?: string): void {
   const rows = t.s.db.all<{ id: string }>(
     `SELECT id FROM tasks WHERE status IN ('open', 'waiting') AND (depends_on LIKE ? OR (status = 'waiting' AND waiting_on LIKE ?))`,
     [`%"${ended.id}"%`, `%"${ended.id}"%`]);
@@ -76,7 +76,18 @@ export function waitsEnded(t: TaskServiceImpl, ended: Task, how: 'done' | 'dropp
       t.s.log?.warn('a task waiting on another was not released', { taskId: id, after: ended.id, error: String(error) });
     }
   }
-  if (tell) for (const [owner, opened] of owners) tellOpened(t, owner, ended, how, opened);
+  for (const [owner, opened] of owners) if (owner !== alreadyTold) tellOpened(t, owner, ended, how, opened);
+}
+
+/** A synced completion may bypass local finish(); let the waiting task's home repair that edge. */
+export function recoverDepends(t: TaskServiceImpl, task: Task): void {
+  if (!waitsOnTasks(task)) return;
+  const ids = [...new Set([...(task.dependsOn ?? []), ...(task.waitingOn?.ids ?? [])])];
+  const predecessors = ids.map((id) => t.repo.get(id));
+  if (!predecessors.length || !predecessors.every((item) => item && isFinished(item.status))) return;
+  const ended = predecessors.at(-1)!;
+  const opened = stepOn(t, task.id, ended);
+  if (opened?.assigneeKind === 'agent' && opened.assigneeId) tellOpened(t, opened.assigneeId, ended, ended.status === 'dropped' ? 'dropped' : 'done', [opened]);
 }
 
 /** One step on: a shorter wait, or – after the last one – the task open again (returned). */

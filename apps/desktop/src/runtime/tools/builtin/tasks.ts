@@ -31,6 +31,7 @@ import { chatIfAny, clip, defineTool, internal } from './util.ts';
 import { isQuest, ownerOf } from '../../context/quest-text.ts';
 import { AGENT_TIME, DAY_LENGTH, QUEST_TIME, answer, isPerson, keepPersonLine, personTimeRefused, questOf, receiverOf, requireTask, timeOf, turnTask } from './tasks-util.ts';
 import { isDayOnly } from '../../../shared/model/day-settings.ts';
+import { nextFollowUp } from '../../tasks/follow-up.ts';
 import { profileZone } from '../../context/time.ts';
 import { listTool } from './tasks-list.ts';
 import { remindTool } from './tasks-remind.ts';
@@ -71,6 +72,23 @@ export function waitOf(ctx: ToolContext, line: string): Omit<TaskWait, 'since'> 
   return { on: 'outside', why };
 }
 
+const WAIT_PROPERTY = { type: 'string', description: 'What it waits on, in one line: a name or task id first when it waits on them.' };
+const UNTIL_PROPERTY = { ...WHEN_PROPERTY, description: `When to follow up on the wait, not a calendar time. An outside wait defaults to tomorrow at 09:00 local. ${String(WHEN_PROPERTY.description)}` };
+
+function readWait(ctx: ToolContext, line: string, until?: string, old?: TaskWait) {
+  const wait = waitOf(ctx, line);
+  if (typeof wait === 'string') return wait;
+  const time = timeOf(ctx, until, 'until');
+  if ('refused' in time) return time.refused;
+  const same = old?.on === wait.on && old.why === wait.why;
+  const at = time.at ?? (same ? old?.until : undefined);
+  if (at !== undefined) return { wait: { ...wait, until: at, ...(same && old?.until === at && old.followedUp ? { followedUp: true } : {}) } };
+  if (wait.on !== 'outside') return { wait };
+  const zone = profileZone(ctx.services);
+  const date = nextFollowUp(ctx.services.clock.now(), zone);
+  return { wait: { ...wait, until: date }, followUp: 'Default follow-up: tomorrow at 09:00 local.' };
+}
+
 /** How urgent a to-do is, in words (Task.priority 0 · 1 · 2). */
 const PRIORITIES = ['normal', 'high', 'urgent'] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -94,7 +112,7 @@ function followUpsOf(ctx: ToolContext, task: Task): TaskResult['followUps'] {
   return items.length ? items : undefined;
 }
 
-type AddArgs = { title: string; for?: string; quest?: string; at?: string; minutes?: number; notes?: string; ask?: Record<string, unknown>; after?: string[]; doneWhen?: string; effort?: Effort; priority?: Priority };
+type AddArgs = { title: string; for?: string; quest?: string; at?: string; minutes?: number; notes?: string; ask?: Record<string, unknown>; after?: string[]; waiting?: string; until?: string; doneWhen?: string; effort?: Effort; priority?: Priority };
 
 const addTool = defineTool<AddArgs>({
   name: 'tasks.add',
@@ -110,6 +128,8 @@ const addTool = defineTool<AddArgs>({
       notes: { type: 'string', maxLength: 20_000, description: "What is to be done now and what whoever takes it on cannot find without me: the person's words, the facts, what good looks like." },
       ask: { type: 'object', properties: { type: { type: 'string' } }, required: ['type'], description: `How the person answers: an ask block – ${ASK_TYPES_TEXT} – with its fields (ui.help shows them).` },
       after: { type: 'array', items: { type: 'string' }, maxItems: 20, description: 'The to-dos it comes after; it waits until the last of them ends.' },
+      waiting: WAIT_PROPERTY,
+      until: UNTIL_PROPERTY,
       doneWhen: { type: 'string', maxLength: 2000, description: 'The outcome in one line – what exists or changed when it is done.' },
       effort: { ...EFFORT_PROPERTY, description: "The effort a colleague's work runs at from its first turn." },
       priority: PRIORITY_PROPERTY,
@@ -123,6 +143,9 @@ const addTool = defineTool<AddArgs>({
     if (quest && (args.at?.trim() || args.minutes !== undefined)) return failure(QUEST_TIME);
     const time = timeOf(ctx, args.at, 'at');
     if ('refused' in time) return failure(time.refused);
+    if (args.until !== undefined && args.waiting === undefined) return failure('until needs a waiting line.');
+    const wait = args.waiting === undefined ? undefined : readWait(ctx, args.waiting, args.until);
+    if (typeof wait === 'string') return failure(wait);
     const conversationId = chatIfAny(ctx, undefined);
     let widget: UiBlock | undefined;
     let notes = args.notes?.trim() ?? '';
@@ -150,19 +173,19 @@ const addTool = defineTool<AddArgs>({
     for (const after of args.after ?? []) requireTask(ctx, after);
     const task = await ctx.services.tasks.createTo({
       ...(conversationId ? { conversationId } : {}), ...(ctx.origin ? { origin: ctx.origin } : {}), ...(quest ? { kind: 'quest' as const } : {}),
-      title: args.title, ...(notes ? { notes } : {}), doneWhen: args.doneWhen, parentId, dependsOn: args.after, widget,
+      title: args.title, ...(notes ? { notes } : {}), doneWhen: args.doneWhen, parentId, dependsOn: args.after, widget, waitingOn: wait?.wait,
       ...(typeof time.at === 'number' ? { at: time.at } : {}), ...(args.minutes ? { minutes: args.minutes } : {}), createdBy: ctx.agent.id,
       ...(args.priority ? { priority: priorityOf(args.priority) } : {}),
       ...(to !== ctx.agent.id && ctx.conversationId ? { givenIn: ctx.conversationId } : {}),
     }, to, to !== ctx.agent.id && !isPerson(to) && args.effort ? { route: { effort: args.effort } } : {});
     keepPersonLine(ctx, task.id);
-    return json(answer(ctx, ctx.services.tasks.get(task.id) ?? task));
+    return json(answer(ctx, ctx.services.tasks.get(task.id) ?? task, wait?.followUp ? { followUp: wait.followUp } : {}));
   },
 });
 
 type UpdateArgs = {
   id?: string; title?: string; notes?: string; doneWhen?: string; for?: string; at?: string; minutes?: number; quest?: string; after?: string[];
-  status?: 'open' | 'waiting' | 'done' | 'dropped'; waiting?: string; result?: string; evidence?: Evidence[]; effort?: Effort;
+  status?: 'open' | 'waiting' | 'done' | 'dropped'; waiting?: string; until?: string; result?: string; evidence?: Evidence[]; effort?: Effort;
   priority?: Priority; quiet?: boolean; alsoHandled?: string[];
 };
 
@@ -183,7 +206,8 @@ const updateTool = defineTool<UpdateArgs>({
       quest: { type: 'string', description: 'The quest it moves into, or "none".' },
       after: { type: 'array', items: { type: 'string' }, maxItems: 20, description: 'The to-dos it comes after; it replaces the list.' },
       status: { type: 'string', enum: ['open', 'waiting', 'done', 'dropped'] },
-      waiting: { type: 'string', maxLength: 500, description: 'What it waits on, in one line – a name or a to-do\'s id first when it waits on someone or on that to-do ("Felix: the signed installer").' },
+      waiting: WAIT_PROPERTY,
+      until: UNTIL_PROPERTY,
       result: { type: 'string', maxLength: 4000, description: 'Done: what came out, in a few lines the person reads; dropped: why.' },
       evidence: {
         type: 'array', maxItems: 30, description: 'What shows the result: files, links, checks.',
@@ -236,13 +260,16 @@ const updateTool = defineTool<UpdateArgs>({
       patch.parentId = into ?? null;
     }
     if (args.after !== undefined) { for (const after of args.after) requireTask(ctx, after); patch.dependsOn = args.after; }
-    if (args.waiting !== undefined || args.status === 'waiting') {
+    let followUp: string | undefined;
+    if (args.until !== undefined && (ending || args.status === 'open')) return failure('until needs a waiting task.');
+    if (args.waiting !== undefined || args.status === 'waiting' || args.until !== undefined) {
       const line = args.waiting ?? current.waitingOn?.why;
       if (!line) return failure('A wait names what it waits on, in one line (waiting).');
-      const wait = waitOf(ctx, line);
+      const wait = readWait(ctx, line, args.until, current.waitingOn);
       if (typeof wait === 'string') return failure(wait);
       patch.status = 'waiting';
-      patch.waitingOn = wait;
+      patch.waitingOn = wait.wait;
+      followUp = wait.followUp;
     } else if (args.status === 'open') patch.status = 'open';
     if (Object.keys(patch).length) current = ctx.services.tasks.update(current.id, patch, ctx.agent.id);
     if (typeof to === 'string' && to !== ownerOf(current)) {
@@ -256,7 +283,7 @@ const updateTool = defineTool<UpdateArgs>({
         ...(alsoHandled.length ? { alsoHandled } : {}), ...(followUps ? { followUps } : {}), ...(args.quiet ? { quiet: true } : {}),
       }, ctx.agent.id);
     }
-    return json(answer(ctx, current));
+    return json(answer(ctx, current, followUp ? { followUp } : {}));
   },
 });
 

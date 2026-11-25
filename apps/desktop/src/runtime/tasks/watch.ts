@@ -1,5 +1,5 @@
 // The watcher (Quests round 20.11.2026): what keeps tasks moving that is not a "look again later" – an agent's own look
-// later is a reminder (schedules), and nothing here wakes an agent on a timer of its own:
+// later is a reminder (schedules). The watcher handles operational passes and timed waits:
 //  - a row without an owner (an older PC's "team" row) gets one now (tasks/give.ts pickOwner);
 //  - an archived agent's unfinished work goes to its successor (tasks/owners.ts handOver), also for rows that arrive later;
 //  - the follow-up of an owner's turn on its task (afterTurn): the person's Stop pauses it; a cut-off turn goes on now; an
@@ -10,6 +10,7 @@
 //    without a time at the start of that working day) – on the
 //    CEO PC with the smallest id that is not gone (no main PC: the next one rings while it is out; `ledger.ringedAt` on the
 //    synced row says what rang, so the PC that comes back does not ring it again), never on a PC that joined as an employee;
+//  - a wait with until: follow up once when the date arrives (tasks/follow-up.ts);
 //  - the morning pass (tasks/morning.ts): once a day an agent hears of its quests without a next note.
 // Where: an agent's tasks on the PC it runs on (devices/sync/home.ts).
 // Owns: those passes and their timers. Never: calls a model (except the owner pick), writes "working", plans a look, or
@@ -28,6 +29,7 @@ import { INTERRUPTED_NOTE, installReceipt, wakeInstaller } from './recover-notes
 import { giveTask, pickOwner, tell } from './give.ts';
 import { handOver } from './owners.ts';
 import { KvRepo } from '../store/kv.ts';
+import { followUpPass } from './follow-up.ts';
 import { MorningPass } from './morning.ts';
 import { nextWorkStart, ringAt } from '../../shared/model/day-settings.ts';
 import { dayZone, daySettings } from '../day/clock.ts';
@@ -47,6 +49,8 @@ export type WatchDeps = Pick<RuntimeServices, 'tasks' | 'wakes' | 'chats' | 'clo
 export class TaskWatcher implements OwnershipService {
   private readonly s: WatchDeps;
   private readonly rings: DueTimer;
+  private readonly followUps: DueTimer;
+  private checkingWaits = false;
   readonly morning: MorningPass;
   private offs: Array<() => void> = [];
   private routing = new Set<string>();
@@ -54,6 +58,7 @@ export class TaskWatcher implements OwnershipService {
   constructor(deps: WatchDeps, timers: Timers = REAL_DUE_TIMERS) {
     this.s = deps;
     this.rings = new DueTimer(timers, () => deps.clock.now(), () => this.ring());
+    this.followUps = new DueTimer(timers, () => deps.clock.now(), () => this.checkWaits());
     this.morning = new MorningPass(deps, timers);
   }
 
@@ -104,6 +109,7 @@ export class TaskWatcher implements OwnershipService {
       }
     }
     this.pass();
+    this.checkWaits();
     let receipt: ReturnType<typeof installReceipt>;
     try { receipt = installReceipt(this.s); } catch (error) { this.s.log?.warn('install receipt not read', { error: String(error) }); }
     if (receipt) wakeInstaller(this.s, receipt);
@@ -114,12 +120,13 @@ export class TaskWatcher implements OwnershipService {
   start(): () => void {
     if (this.offs.length) return () => this.stop();
     const { bus } = this.s;
-    const hourly = setInterval(() => this.pass(), HOUR_MS);
+    const hourly = setInterval(() => { this.pass(); this.checkWaits(); }, HOUR_MS);
     (hourly as { unref?: () => void }).unref?.();
     const tracker = new OutageTracker(this.accounts(), this.s.catalog?.list() ?? [], this.s.clock.now());
     this.offs = [
       () => clearInterval(hourly),
       bus.on('task.upserted', (task) => { // a row from here or another PC: an owner it lacks, a ring it brings
+        if (!this.checkingWaits && (task.status === 'waiting' || isFinished(task.status))) this.followUps.arm(this.s.clock.now());
         if (isFinished(task.status)) return;
         if (task.assigneeKind === 'team' || (task.assigneeKind === 'agent' && task.assigneeId && !this.active(task.assigneeId))) this.owner(task);
         if (task.assigneeKind === 'human' && task.at !== undefined && task.at > this.s.clock.now()) this.armRings();
@@ -131,6 +138,7 @@ export class TaskWatcher implements OwnershipService {
     try { if (this.s.host) this.offs.push(this.s.host.onPower((event) => { if (event === 'online') this.outagesEnded(onlineDeliveryAt(this.accounts(), this.s.clock.now())); })); } catch { /* a host without power events */ }
     this.ringsFromNow();
     this.armRings();
+    this.checkWaits();
     this.morning.start();
     return () => this.stop();
   }
@@ -138,7 +146,16 @@ export class TaskWatcher implements OwnershipService {
   stop(): void {
     for (const off of this.offs.splice(0)) off();
     this.rings.stop();
+    this.followUps.stop();
     this.morning.stop();
+  }
+
+  private checkWaits(): void {
+    this.checkingWaits = true;
+    try {
+      const next = followUpPass(this.t, (task) => this.watchesHere(task), true);
+      if (this.offs.length) this.followUps.arm(next);
+    } finally { this.checkingWaits = false; }
   }
 
   // ------------------------------------------------------------- the pass

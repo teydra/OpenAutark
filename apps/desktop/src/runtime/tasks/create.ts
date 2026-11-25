@@ -134,6 +134,7 @@ export function createTask(t: TaskServiceImpl, input: CreateTaskInput & { create
   if (input.doneWhen) task.doneWhen = input.doneWhen;
   if (input.widget) task.widget = armed?.widget ?? input.widget;
   if (input.files?.length) task.files = input.files.map((file) => ({ ...file })); // a quick task's files
+  if (input.waitingOn) { task.status = 'waiting'; task.waitingOn = { ...input.waitingOn, since: now }; }
   if (input.dependsOn?.length) applyDepends(t.repo, task, checkDepends(t.repo, undefined, parent?.id, input.dependsOn), now);
   if (parent) task.parentId = parent.id;
   if (options.anchor) task.messageId = options.anchor.id;
