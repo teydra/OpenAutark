@@ -45,6 +45,10 @@ export class TaskLifecycle {
   constructor(tasks: TaskServiceImpl) { this.t = tasks; this.verification = new TaskVerification(tasks); }
 
   created(task: Task): void {
+    if (task.status === 'waiting' && (task.waitingOn?.on !== 'task' || !task.dependsOn?.length)) {
+      this.changed({ ...task, status: 'open', waitingOn: undefined }, task, task.createdBy);
+      if (task.assigneeKind === 'agent') return; // work created in an explicit wait doesn't start now
+    }
     tellGiven(this.t, task, task.createdBy);
   }
 
@@ -110,7 +114,7 @@ export class TaskLifecycle {
     const told = !answered && pieceEnded(this.t, task, by);
     if (answered && task.parentId) endWaitOn(this.t, this.t.repo.get(task.parentId), task, by); // the asked person's answer ends the wait on them
     this.tellGiver(task, by, told ? this.parentOwner(task) : undefined);
-    waitsEnded(this.t, task, task.status === 'dropped' ? 'dropped' : 'done', !answered);
+    waitsEnded(this.t, task, task.status === 'dropped' ? 'dropped' : 'done', answered ? task.createdBy : undefined);
     if (task.parentId) { const parent = this.t.repo.get(task.parentId); if (parent) this.t.emit(parent); }
     if (task.status === 'done') this.verification.start(task, by);
   }
