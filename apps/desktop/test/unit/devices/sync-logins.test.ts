@@ -96,7 +96,7 @@ test('a plan\'s login reaches the other PC\'s own home whole and the account is 
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   a.accounts.push(plan('acc_cx', 'codex', { home: a.own('acc_cx'), email: 'lena@example.com' }));
   b.accounts.push(plan('acc_cx', 'codex', { home: b.own('acc_cx'), email: 'lena@example.com', state: 'needs_login' })); // its row came with the rows
@@ -132,7 +132,7 @@ test('22.11.2026: a catch-up in rhythm sends a PC only the logins it has not tak
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   a.accounts.push(plan('acc_cx', 'codex', { home: a.own('acc_cx'), email: 'lena@example.com' }));
   b.accounts.push(plan('acc_cx', 'codex', { home: b.own('acc_cx'), email: 'lena@example.com', state: 'needs_login' }));
@@ -159,7 +159,7 @@ test('a login found in a CLI\'s default home travels and comes back there – ne
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   a.accounts.push(plan('acc_found', 'codex', { detected: true, email: 'lena@example.com' })); // in ~/.codex
   b.accounts.push(plan('acc_found', 'codex', { home: b.own('acc_found'), email: 'lena@example.com', state: 'unknown' }));
@@ -184,7 +184,7 @@ test('a PC with the same login itself takes it into its own account (provider an
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   a.accounts.push(plan('acc_a', 'codex', { home: a.own('acc_a'), email: 'lena@example.com' }), plan('acc_ga', 'gemini-cli', { detected: true }));
   b.accounts.push(plan('acc_b', 'codex', { detected: true, email: 'lena@example.com', state: 'needs_login' }), plan('acc_gb', 'gemini-cli', { detected: true }));
@@ -205,7 +205,7 @@ test('22.11.2026: a shared plan goes to an employee\'s PC and its refresh comes 
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
   const mac = await makePc(pcs, 'dev_mac', 'darwin');
-  t.after(async () => { for (const pc of [a, b, mac]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b, mac]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   a.repo.upsert(record('dev_b', { personId: 'per_lena000001' }));
   b.repo.upsert(record('dev_a', { joinedAs: 'employee' }));
   link(a, mac);
@@ -247,7 +247,7 @@ test('never over a login of another account – also in the plan\'s own home her
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   a.accounts.push(plan('acc_cx', 'codex', { home: a.own('acc_cx'), email: 'lena@example.com' }), plan('acc_work', 'codex', { home: a.own('acc_work'), email: 'team@example.com' }));
   b.accounts.push(plan('acc_cx', 'codex', { home: b.own('acc_cx'), email: 'lena@example.com' }), plan('acc_team', 'codex', { home: b.own('acc_team'), email: 'team@example.com' }));
@@ -266,7 +266,7 @@ test('a plan signed out here takes no login from a linked PC until one is made h
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   a.accounts.push(plan('acc_cx', 'codex', { home: a.own('acc_cx'), email: 'lena@example.com', state: 'needs_login' }));
   b.accounts.push(plan('acc_cx', 'codex', { home: b.own('acc_cx'), email: 'lena@example.com' }));
@@ -293,7 +293,7 @@ test('B-080 (live 09.11.2026): one login in two plans – a refresh token anothe
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   const cred = (refresh: string, expiresAt: number) => JSON.stringify({ claudeAiOauth: { accessToken: `a-${refresh}`, refreshToken: refresh, expiresAt, scopes: [], subscriptionType: 'max' } });
   const file = (pc: Pc, account: string) => path.join(pc.own(account, 'claude'), '.credentials.json');
@@ -319,7 +319,7 @@ test('B-087: a list from an older PC that carries one login for two plans gives 
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   const cred = (refresh: string, expiresAt: number) => JSON.stringify({ claudeAiOauth: { accessToken: `a-${refresh}`, refreshToken: refresh, expiresAt, scopes: [], subscriptionType: 'max' } });
   const file = (account: string) => path.join(b.own(account, 'claude'), '.credentials.json');
@@ -356,7 +356,7 @@ test('16.11.2026: two companies on one PC share one home – both LoginSyncs wri
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b'); // company 1 on PC B
   const b2 = await makePc(pcs, 'dev_b2'); // company 2 on PC B: its row points at the same home
-  t.after(async () => { for (const pc of [a, b, b2]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b, b2]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   link(a, b2);
   const shared = b.own('acc_cx');
@@ -390,7 +390,7 @@ test('a login kept "Only on this PC" (17.11.2026, Account.thisPcOnly) is not sen
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   const kept = plan('acc_cx', 'codex', { home: a.own('acc_cx'), email: 'lena@example.com', thisPcOnly: true });
   a.accounts.push(kept);
@@ -409,7 +409,7 @@ test('21.11.2026: a login that comes before its account\'s row waits for the row
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   const off = b.logins.attach();
   t.after(off);
@@ -434,7 +434,7 @@ test('24.11.2026 (ORENDA): a PC that answers "forbidden" gets no more logins –
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { clearLoginsRefused('dev_b'); for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { clearLoginsRefused('dev_b'); for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   const logged: string[] = [];
   (a.s as { log: unknown }).log = { debug() {}, warn() {}, error() {}, info: (message: string) => { logged.push(message); } };
   const rows: Array<{ loginsRefused?: unknown }> = [];
@@ -492,7 +492,7 @@ test('22.11.2026: a plan whose login is rejected here asks the PCs that share it
   const pcs = new Map<string, Pc>();
   const a = await makePc(pcs, 'dev_a');
   const b = await makePc(pcs, 'dev_b');
-  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true }); });
+  t.after(async () => { for (const pc of [a, b]) await rm(pc.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   link(a, b);
   a.accounts.push(plan('acc_cx', 'codex', { home: a.own('acc_cx'), email: 'lena@example.com' }));
   b.accounts.push(plan('acc_cx', 'codex', { home: b.own('acc_cx'), email: 'lena@example.com' }));
