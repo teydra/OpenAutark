@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Owns: what only the website APK (flavor site, full and lite) has: Android's install permission for its own update and
      for adding phone use (SelfUpdate, PhoneUseUpgrade; the person still allows "Install unknown apps" for Autark once),
-     UpdateReceiver for the install session's status and the "installed" notification after MY_PACKAGE_REPLACED.
+     UpdateReceiver for the install session's status and the "installed" notification after MY_PACKAGE_REPLACED, and the
+     one ask for Android's battery exemption (BatteryExempt, phone use behind a dark screen).
      Never: a photo permission (26.11.2026: the scanner's "Choose QR image" uses the system chooser) or part of the Play build. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Phone use behind a dark screen (BatteryExempt asks once). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <application>
         <receiver android:name=".UpdateReceiver" android:exported="false">
             <intent-filter>

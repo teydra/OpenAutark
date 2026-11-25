@@ -1,5 +1,6 @@
 // Owns: how a swipe moves like a finger – a light curve (a quadratic Bézier whose bend is a few percent of the way, to a
-// random side), start and end a few pixels off, and a duration varied around the asked one. Pure Java (host-tested);
+// random side), start and end a few pixels off, and a duration varied around the asked one; a path through given points
+// (a lock pattern) runs straight between them. Pure Java (host-tested);
 // UseService turns the points into a GestureDescription path. Never: leaves the screen.
 package com.teydralab.autark.android.phoneuse;
 
@@ -40,7 +41,18 @@ public final class Gestures {
         return new Stroke(points, duration);
     }
 
-    /** A tap's press: a few pixels off the point and 50–120 ms long. */
+    /** One finger through the points `through` (x, y pairs, two points or more) without lifting – a lock pattern. Straight
+     *  from point to point, so no dot beside the way is caught; `durationMs` is the whole way. */
+    public static Stroke path(float[] through, long durationMs, int width, int height, Random random) {
+        float[] points = new float[through.length];
+        for (int i = 0; i + 1 < through.length; i += 2) {
+            points[i] = clamp(through[i] + gauss(random) * 2f, width);
+            points[i + 1] = clamp(through[i + 1] + gauss(random) * 2f, height);
+        }
+        return new Stroke(points, Math.max(80, Math.min(10_000, durationMs)));
+    }
+
+    /** A tap's press:a few pixels off the point and 50–120 ms long. */
     public static Stroke tap(float x, float y, int width, int height, Random random) {
         float[] points = { clamp(x + gauss(random) * 1.5f, width), clamp(y + gauss(random) * 1.5f, height) };
         return new Stroke(points, 50 + random.nextInt(70));

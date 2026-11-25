@@ -70,6 +70,10 @@ public final class ScreenTreeTest {
             check(maxOff > 10 && maxOff < 120); // a light curve, not a straight line or a detour
             check(Math.abs(stroke.points[stroke.points.length - 1] - 600) <= 6);
         }
+        float[] pattern = { 270, 1400, 270, 1700, 270, 2000, 540, 2000 }; // an L through four lock dots
+        Gestures.Stroke drawn = Gestures.path(pattern, 900, 1080, 2400, random);
+        check(drawn.durationMs == 900 && drawn.points.length == pattern.length);
+        for (int i = 0; i < pattern.length; i++) check(Math.abs(drawn.points[i] - pattern[i]) <= 2);
         Gestures.Stroke tap = Gestures.tap(0, 0, 1080, 2400, random);
         check(tap.points[0] >= 0 && tap.points[1] >= 0 && tap.durationMs >= 50 && tap.durationMs < 120);
         System.out.println(assertions + " phone use (tree, gestures) assertions passed.");

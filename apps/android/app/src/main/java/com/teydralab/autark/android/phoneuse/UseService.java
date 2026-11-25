@@ -3,7 +3,8 @@
 // ScreenTree), screenshot (Android 11+), tap (always a short press of a finger, Gestures: ACTION_CLICK reported success
 // while nothing happened – in a WebView, and on Samsung's app search, where Konrad's taps on "SimplySign" never opened it
 // on 19.11.2026), swipe (a curved, jittered finger path, Gestures), type (ACTION_SET_TEXT on the focused field, Enter
-// between lines; answers what the field reads afterwards, TypedText.readback), key (back, home, recents, notifications,
+// between lines; answers what the field reads afterwards, TypedText.readback), key (wakeup – the dark screen goes on,
+// WakeActivity; Awake keeps the phone reachable and a woken screen lit –, back, home, recents, notifications,
 // quick_settings, enter), open (an app by its package or by the name under its icon – AppNames –, or a link) and say
 // (16.11.2026: the AI's short line in the
 // bubble, or with ask its question with ✓ and ✕ – {answer: yes|no|none}, none after ASK_MS; a ✓ makes the job active;
@@ -76,6 +77,7 @@ public final class UseService extends AccessibilityService {
     private volatile Consumer<String> asking;
     private volatile TodoButton todo;
     private final Object shooting = new Object();
+    private volatile Awake awake;
 
     /** The service while it is on (Accessibility settings), else null. */
     public static UseService current() { return current; }
@@ -125,6 +127,7 @@ public final class UseService extends AccessibilityService {
             @Override public void end() { state.end(); bubble.close(); }
         });
         current = this;
+        awake = new Awake(this);
         todo = new TodoButton(this);
         todo.start();
         // Turned on by hand in Android's settings without the in-app disclosure: show it now (on "Not now" it switches itself off).
@@ -138,6 +141,7 @@ public final class UseService extends AccessibilityService {
 
     @Override public boolean onUnbind(Intent intent) {
         current = null;
+        if (awake != null) { awake.close(); awake = null; }
         if (bubble != null) bubble.close();
         if (todo != null) { todo.close(); todo = null; }
         Runnable listener = changed;
@@ -161,8 +165,10 @@ public final class UseService extends AccessibilityService {
     /** One step (off the main thread) of the PC's run `job` (null from an older PC) for the agent `by` (null: unnamed);
      *  the result as phoneUse.reply's `result`. */
     public Object run(String op, Map<String, Object> args, String job, String by) throws UseError {
-        if ("done".equals(op)) { state.finished(job); bubble.finished(job); return Json.map(); } // no step: nothing is touched
+        Awake hold = awake;
+        if ("done".equals(op)) { state.finished(job); bubble.finished(job); if (hold != null) hold.done(); return Json.map(); } // no step: nothing is touched
         if (!UseConsent.agreed(this)) throw new UseError("off", "The person has not yet agreed to the phone-use disclosure in the app.");
+        if (hold != null) hold.step();
         UseState.Refusal refused = state.step(job, System.currentTimeMillis());
         if ("say".equals(op)) {
             boolean ask = Boolean.TRUE.equals(args.get("ask"));
@@ -176,7 +182,7 @@ public final class UseService extends AccessibilityService {
                 case "ui_tree": return tree(job);
                 case "screenshot": return screenshot(job);
                 case "tap": tap(job, num(args, "x"), num(args, "y")); return Json.map();
-                case "swipe": swipe(num(args, "x1"), num(args, "y1"), num(args, "x2"), num(args, "y2"), (long) num(args, "durationMs")); return Json.map();
+                case "swipe": swipe(num(args, "x1"), num(args, "y1"), num(args, "x2"), num(args, "y2"), (long) num(args, "durationMs"), args.get("via")); return Json.map();
                 case "type": { String now = type(job, Json.str(args, "text")); return now == null ? Json.map() : Json.map("text", now); }
                 case "key": return Json.map("key", key(Json.str(args, "key")));
                 case "open": return Json.map("opened", open(Json.str(args, "url"), Json.str(args, "package"), Json.str(args, "app")));
@@ -242,7 +248,8 @@ public final class UseService extends AccessibilityService {
 
     private Map<String, Object> screenshot(String job) throws UseError {
         if (Build.VERSION.SDK_INT < 30) throw new UseError("unavailable", "Screenshots need Android 11 or newer; phone.ui_tree reads the screen.");
-        look(job, root());
+        AccessibilityNodeInfo root = front(); // none on some lock screens: the picture is taken all the same
+        if (root != null) look(job, root);
         Bitmap full;
         try { full = capture(); } catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new UseError("conflict", "The step was interrupted on the phone."); }
         if (full == null) throw new UseError("unavailable", "Android did not hand over a screenshot right now (at most one per second).");
@@ -306,18 +313,50 @@ public final class UseService extends AccessibilityService {
 
     /** A finger's short press at (x, y) – what the person's own tap does, in every app. */
     private void tap(String job, float x, float y) throws UseError {
-        AccessibilityNodeInfo root = root();
-        List<ScreenTree.Node> visited = new ArrayList<>();
-        ScreenTree.flatten(new Wrapped(root), visited);
-        target.tapped(job, str(root.getPackageName()), fieldAt(visited, Math.round(x), Math.round(y)));
+        AccessibilityNodeInfo root = front(); // none on some lock screens: the finger works there too
+        if (root != null) {
+            List<ScreenTree.Node> visited = new ArrayList<>();
+            ScreenTree.flatten(new Wrapped(root), visited);
+            target.tapped(job, str(root.getPackageName()), fieldAt(visited, Math.round(x), Math.round(y)));
+        }
         int[] screen = screen();
         gesture(Gestures.tap(x, y, screen[0], screen[1], random));
     }
 
-    private void swipe(float x1, float y1, float x2, float y2, long durationMs) throws UseError {
-        root();
+    /** A swipe, or with `via` (x, y pairs between start and end) one stroke through those points. Needs no readable
+     *  window: the lock screen takes it. */
+    private void swipe(float x1, float y1, float x2, float y2, long durationMs, Object via) throws UseError {
         int[] screen = screen();
-        gesture(Gestures.swipe(x1, y1, x2, y2, durationMs <= 0 ? 400 : durationMs, screen[0], screen[1], random));
+        long ms = durationMs <= 0 ? 400 : durationMs;
+        List<?> between = via instanceof List ? (List<?>) via : java.util.Collections.emptyList();
+        if (between.isEmpty()) { gesture(Gestures.swipe(x1, y1, x2, y2, ms, screen[0], screen[1], random)); return; }
+        if (between.size() % 2 != 0 || between.size() > 32) throw new UseError("bad_request", "via is up to 16 points.");
+        float[] through = new float[between.size() + 4];
+        through[0] = x1;
+        through[1] = y1;
+        for (int i = 0; i < between.size(); i++) {
+            Object value = between.get(i);
+            if (!(value instanceof Number)) throw new UseError("bad_request", "via is up to 16 points.");
+            through[i + 2] = ((Number) value).floatValue();
+        }
+        through[through.length - 2] = x2;
+        through[through.length - 1] = y2;
+        gesture(Gestures.path(through, ms, screen[0], screen[1], random));
+    }
+
+    /** phone.key wakeup: the screen goes on (WakeActivity) and stays on between the AI's steps; the lock stays. */
+    private String wake() throws UseError {
+        android.os.PowerManager power = getSystemService(android.os.PowerManager.class);
+        if (!power.isInteractive()) {
+            try { startActivity(new Intent(this, WakeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+            catch (RuntimeException error) { throw new UseError("conflict", "Android did not turn the screen on: " + error.getClass().getSimpleName()); }
+            for (int i = 0; i < 30 && !power.isInteractive(); i++) SystemClock.sleep(100);
+            if (!power.isInteractive()) throw new UseError("conflict", "Android did not turn the screen on.");
+            SystemClock.sleep(1_000); // the activity leaves and the lock screen draws
+        }
+        Awake hold = awake;
+        if (hold != null) hold.keepLit();
+        return "wakeup";
     }
 
     /** Types `text`; what the field reads afterwards (TypedText.readback: null for a password field). */
@@ -376,6 +415,7 @@ public final class UseService extends AccessibilityService {
         String key = name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
         int action;
         switch (key) {
+            case "wakeup": return wake();
             case "back": action = GLOBAL_ACTION_BACK; break;
             case "home": action = GLOBAL_ACTION_HOME; break;
             case "recents": case "app_switch": action = GLOBAL_ACTION_RECENTS; break;
@@ -388,7 +428,7 @@ public final class UseService extends AccessibilityService {
                 enter(field);
                 return "enter";
             }
-            default: throw new UseError("bad_request", "Through the Autark app the keys are back, home, recents, notifications, quick_settings and enter.");
+            default: throw new UseError("bad_request", "Through the Autark app the keys are wakeup, back, home, recents, notifications, quick_settings and enter.");
         }
         if (!performGlobalAction(action)) throw new UseError("conflict", "Android did not press " + key + ".");
         return key;
