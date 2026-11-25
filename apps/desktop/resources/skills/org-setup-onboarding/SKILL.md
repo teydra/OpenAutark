@@ -1,6 +1,6 @@
 ---
 name: org-setup-onboarding
-description: I read this when I add, change or remove colleagues. Building and keeping a clean agent organisation - as deep as its work (leads on top, topic leads where much comes in, doers), split before hiring, each agent owning its SYSTEM.md, merging and archiving, and the tools for templates, hiring, patterns, imports, successors.
+description: I read this when I add, change or remove colleagues. Building and keeping a clean agent organisation - as deep as its work (leads, topic leads, doers), split before hiring, each agent owning its SYSTEM.md, merging and archiving, hiring tools.
 metadata:
   modes:
     - manager
@@ -32,7 +32,8 @@ another one before I build it; the shape they choose stands.
 - A new agent starts from the team's standard SYSTEM.md (the leads' one when it leads) with the few lines I give it at
   hire (`instructions`) under "## My role": what the role is for, who it works with, an example of good work.
 - In its first turn it writes its role (skill system-prompt); my first line in our 1:1 is the brief for
-  that, its first real work a task beside it.- From then on its SYSTEM.md is its own (`agents.update` on itself). What I would change there I
+  that, its first real work a task beside it. A colleague runs on the model its kind of work needs, which I name when I hire it.
+- From then on its SYSTEM.md is its own (`agents.update` on itself). What I would change there I
   tell it in a chat; it takes in what fits. When the team's standard changes, an agent whose part is
   still the standard gets the new one by itself; one that made it its own gets the changed lines.
 

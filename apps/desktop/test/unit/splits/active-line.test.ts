@@ -151,7 +151,7 @@ test('the volatile prompt: "My parts" in the agent\'s own turn while groups work
 test('Ultra is my own call, never a rule: How I work names my parts once, a short note on an older hinted message', () => {
   // Owner 08.11.2026: "Die soll es einfach selbst erkennen" – the composer's Ultra cell goes; the agent sees it for itself.
   const how = readFileSync(path.join(RESOURCES, 'prompts', 'standard-agent.md'), 'utf8');
-  const line = how.split('\n').find((text) => text.startsWith('- I can work on several things at once and stay one (people call this Ultra): parts of me'))!;
+  const line = how.split('\n').find((text) => text.startsWith('- Parts of me (people call this Ultra) take pieces'))!; // 25.11.2026: opens with the parts, no longer with "I can work on several things at once and stay one"
   assert.ok(line, 'one bullet in How I work, the same in every mode');
   assert.match(line, /come back into me when they end/);
   assert.equal(ultraNote({ authorKind: 'human', meta: { ultra: true } }), ` ${ULTRA_NOTE}`);

@@ -179,20 +179,20 @@ test('both standards, identity, subconscious and every mode text: first person, 
   assert.doesNotMatch(shipped('prompts/onboarding.md'), /\bmay\b|allowed|allows|only if|\bmust\b|\bnever\b/i, 'onboarding');
 });
 
-test('How I work keeps each stance once: carrying work in one turn and why, what they answered, work over proof, findings when asked', () => {
+test('How I work keeps each stance once: carrying work in one turn, what they answered, work over proof', () => {
   const judgment = HOW.slice(HOW.indexOf('## Judgment'), HOW.indexOf('## Carrying work'));
   const carrying = HOW.slice(HOW.indexOf('## Carrying work'), HOW.indexOf('## Chats'));
   const chats = HOW.slice(HOW.indexOf('## Chats'), HOW.indexOf('## Trust and memory'));
   const trust = HOW.slice(HOW.indexOf('## Trust and memory'));
   for (const kept of ['A request starts work, not a conversation.', 'I find out instead of asking', 'I decide instead of asking', 'what they already answered, I carry on with.',
     'Depth follows the goal, not the wording', 'Their words are theirs, my reading is mine', '"I cannot" means technically impossible',
-    'Their attention is the scarcest thing here', 'Their own to-dos stay theirs', 'My model is settled for my kind of work']) { // KI-Runde 17.11.2026
+    'Their attention is the scarcest thing here', 'My model is settled for my kind of work']) { // KI-Runde 17.11.2026
     assert.ok(judgment.includes(kept), `judgment: ${kept}`);
   }
-  for (const kept of ['One turn carries the work as far as it goes – each new turn reads my whole context again; it ends when the work is done or only waits.',
+  for (const kept of ['One turn carries the work as far as it goes and ends when it is done or waits on someone else.', // 25.11.2026: its reason is "I have no evening and no tomorrow"
     'Every ask in a person\'s line that I do not finish this turn becomes its own to-do in their words – one I finish and answer at once needs none', // Quests round 20.11.2026; FIXREAL 7: an answered ask needs no to-do
-    'waits on something real its to-do names', 'so what no longer holds I change or close at once', 'a part starts fresh from my brief', // Halb 21.11.2026: inside the two reasons for a part
-    'my time goes into the work, not into proving it', 'Asked what I know or did, I give the to-do\'s findings and state.',
+    'It waits on a named person who owes the next step, another to-do, or a date the outside world set', 'so what no longer holds I change or close at once', 'a part starts fresh from my brief', // Halb 21.11.2026: inside the two reasons for a part
+    'my time goes into the work, not into proving it',
     'Before something I cannot undo, I check target, amount and recipient myself', 'go out under Alexandra\'s name: I send them myself and make them worth it, once things are clear inside']) {
     assert.ok(carrying.includes(kept), `carrying work: ${kept}`);
   }
