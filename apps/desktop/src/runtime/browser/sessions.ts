@@ -5,7 +5,8 @@
 // (devtools.ts), and the agent's last look per tab (the change lists of diff.ts). Umzug 21.11.2026: profileHooks – what
 // keeps an agent's sign-ins the same on its other PCs (devices/sync/share-browser.ts) hears a profile right after it
 // opened (before its first page) and right before it is closed here. 25.11.2026: in Secure mode with the web on 'chosen'
-// each session's context carries the navigation guard (nav-guard.ts) from the first step after it turned on.
+// each session's context and its pages carry the navigation guard (nav-guard.ts) from the first step after it turned on;
+// it stands aside while the person has the browser (personHas).
 // Owns: the sessions map, launching, the idle timer, tab ids and the change listeners of the live view (view.ts).
 // Never: acts on a page (service.ts does) or touches the person's own browser profile.
 
@@ -17,7 +18,7 @@ import type { ContextLike, PageLike } from './page.ts';
 import { defaultLauncher, launchError, launchOptions, type Launcher } from './launch.ts';
 import { saveDownload } from './downloads.ts';
 import { PageLog } from './devtools.ts';
-import { installGuard, type GuardState, type NavGuard, type RoutableContext } from './nav-guard.ts';
+import { asPerson, installGuard, withPass, type GuardState, type NavGuard, type RoutableContext } from './nav-guard.ts';
 
 export interface Session extends GuardState {
   agentId: string;
@@ -55,6 +56,10 @@ export interface ViewSession {
   steer(page: PageLike): void;
   /** Show window (true) or Hide (false): counts as use; no idle close while shown. */
   onScreen(shown: boolean): void;
+  /** 25.11.2026: runs the person's own open of `url` with its site open to Secure mode's guard for it alone (nav-guard.ts); absent in fakes. */
+  personOpen?<T>(url: string, go: () => Promise<T>): Promise<T>;
+  /** 25.11.2026: runs the person's back / forward / reload with Secure mode's guard aside while it runs; absent in fakes. */
+  personStep?<T>(go: () => Promise<T>): Promise<T>;
 }
 
 export function openPages(session: Session): PageLike[] {
@@ -75,6 +80,8 @@ export interface BrowserSessionsDeps {
   actionTimeoutMs?: number; // default 10 s
   /** 25.11.2026: Secure mode's check of a tab's move to another site (nav-guard.ts); absent: none. */
   guard?: NavGuard;
+  /** True while the person has taken the agent's browser over: the guard lets their navigation through. */
+  personHas?(agentId: string): boolean;
   /** An agent's browser closed ('closed': idle, on request or by itself; 'shutdown'). */
   closed(agentId: string, reason: 'closed' | 'shutdown'): void;
 }
@@ -97,7 +104,7 @@ export class BrowserSessions {
   /** The agent's browser, launched when none is open; counts as use. */
   async session(agentId: string): Promise<Session> {
     const existing = this.sessions.get(agentId);
-    if (existing) { this.touch(existing); await installGuard(this.deps.guard, existing, existing.context as RoutableContext); return existing; }
+    if (existing) { this.touch(existing); await this.guard(existing); return existing; }
     let launching = this.launching.get(agentId);
     if (!launching) {
       launching = this.launch(agentId).finally(() => this.launching.delete(agentId));
@@ -105,8 +112,14 @@ export class BrowserSessions {
     }
     const session = await launching;
     this.touch(session);
-    await installGuard(this.deps.guard, session, session.context as RoutableContext); // Secure mode turned on after the launch: from this step on
+    await this.guard(session); // Secure mode turned on after the launch: from this step on
     return session;
+  }
+
+  /** The navigation guard on session once Secure mode needs it (nav-guard.ts). */
+  private async guard(session: Session): Promise<void> {
+    session.person ??= () => this.deps.personHas?.(session.agentId) ?? false;
+    await installGuard(this.deps.guard, session, session.context as unknown as RoutableContext);
   }
 
   isOpen(agentId?: string): boolean {
@@ -136,6 +149,8 @@ export class BrowserSessions {
         this.touch(session);
       },
       onScreen: (shown) => { session.shown = shown; this.touch(session); },
+      personOpen: (url, go) => withPass(session, url, go),
+      personStep: (go) => asPerson(session, go),
     };
   }
 

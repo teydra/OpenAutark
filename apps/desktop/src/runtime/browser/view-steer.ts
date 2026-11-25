@@ -21,8 +21,15 @@ export async function steerBrowser(agentId: string, view: ViewSession, input: Br
   view.steer(page);
   try {
     if (input.tab) await page.bringToFront().catch(() => undefined);
-    if (input.url) await page.goto(normaliseUrl(input.url), { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    else if (input.action) await perform(page, { action: input.action, timeoutMs: 15_000 });
+    if (input.url) { // 25.11.2026: the person's own open passes Secure mode's guard (nav-guard.ts), for this open alone
+      const url = normaliseUrl(input.url);
+      const go = () => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      await (view.personOpen ? view.personOpen(url, go) : go());
+    }
+    else if (input.action) { // back / forward / reload: the person's step, wherever it leads
+      const go = () => perform(page, { action: input.action!, timeoutMs: 15_000 });
+      await (view.personStep ? view.personStep(go) : go());
+    }
   } catch (error) {
     throw translateError(error, undefined);
   }

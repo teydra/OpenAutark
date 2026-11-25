@@ -114,6 +114,11 @@ export function siteListed(domains: readonly string[], site: string): boolean {
   return domains.some((domain) => { const listed = siteOf(domain); return Boolean(listed) && (host === listed || host.endsWith(`.${listed}`)); });
 }
 
+/** The line an agent reads when Secure mode held back its browser's move to `site` (its own browser and the side pane). */
+export function heldMoveText(site: string): string {
+  return `Secure mode held back the move to ${site}: that site is not open to me yet. I open it with browser.open, and the app asks the person first.`;
+}
+
 /** The switches Trust mode keeps for the gravest steps (Yes / Ask). */
 export const TRUST_SWITCHES: readonly SecuritySwitch[] = ['money', 'publish', 'message'];
 
