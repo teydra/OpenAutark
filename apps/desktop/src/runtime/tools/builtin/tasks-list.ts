@@ -14,7 +14,7 @@ import { excerpt } from '../../../shared/text/chat-names.ts';
 import { isPersonId } from '../../../shared/model/people.ts';
 import { profileZone, dueText } from '../../context/time.ts';
 import { humanLabel, renderMessages } from '../../context/render.ts';
-import { renderTask } from '../../context/task-text.ts';
+import { renderTask, taskAge } from '../../context/task-text.ts';
 import { isQuest, myQuestsSection, ownerOf, questLine, questSnapshot, todoState } from '../../context/quest-text.ts';
 import { namesFor, type NoteNames } from '../../tasks/names.ts';
 import { relatedWork } from '../../tasks/related.ts';
@@ -29,7 +29,7 @@ const LONE_MAX = 30;
 /** A lone to-do (or one found on its own) as a line: id · owner · state · title · its quest. */
 function todoLine(task: Task, me: string, names: NoteNames, now: number): string {
   const owner = ownerOf(task);
-  return `- ${task.id} · ${owner === me ? 'me' : names.nameOf(owner)} · ${todoState(task, names, now)} · ${excerpt(task.title, 120)}${task.parentId ? ` · in ${task.parentId}` : ''}`;
+  return `- ${task.id} · ${owner === me ? 'me' : names.nameOf(owner)} · ${todoState(task, names, now)} · ${excerpt(task.title, 120)}${task.parentId ? ` · in ${task.parentId}` : ''} · ${taskAge(task, names.zone, now)}`;
 }
 
 /** One quest or to-do whole (see the header). */
