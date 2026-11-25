@@ -12,6 +12,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { APP_ID_MAX, APP_ID_PATTERN, type ConnectedApp, type MailServer } from '../../shared/model/apps.ts';
+import { parseResultProjections } from './result-projection.ts';
 import type { Connector } from './types.ts';
 
 export const CONNECTORS_DIR = 'connectors';
@@ -107,7 +108,10 @@ export function readConnectors(dataDir: string): { connectors: Connector[]; prob
   else {
     for (const [name, raw] of Object.entries(servers)) {
       if (!isRecord(raw)) { problems.push(`${MCP_FILE}: "${name}" must be an object.`); continue; }
-      const base = { name, enabled: raw.disabled !== true && raw.enabled !== false, fingerprint: fingerprint(raw) };
+      const resultProjection = Object.hasOwn(raw, 'resultProjection') ? parseResultProjections(raw.resultProjection) : undefined;
+      if (resultProjection === null) problems.push(`${MCP_FILE}: a connector has invalid resultProjection rules.`);
+      const base = { name, enabled: raw.disabled !== true && raw.enabled !== false, fingerprint: fingerprint(raw),
+        ...(resultProjection !== undefined ? { resultProjection } : {}) };
       const url = text(raw.url) ?? text(raw.serverUrl);
       const command = text(raw.command);
       if (url) connectors.push({ ...base, id: freeId(name, taken), transport: 'http', url, ...(strings(raw.headers) ? { headers: strings(raw.headers) } : {}) });
@@ -203,8 +207,9 @@ export function mutateConnectors(dataDir: string, mutation: ConnectorMutation, o
       if (isArrayIndexKey(name)) throw new Error('Integer connector names change object order; rename them on the PC first.');
       names.add(name);
       addedNames.push(name);
-      const allowed = new Set(['url', 'serverUrl', 'command', 'args', 'cwd', 'env', 'headers']);
+      const allowed = new Set(['url', 'serverUrl', 'command', 'args', 'cwd', 'env', 'headers', 'resultProjection']);
       if (Object.keys(entry).some((key) => !allowed.has(key))) throw new Error('Connector entry has unsupported fields.');
+      if (Object.hasOwn(entry, 'resultProjection') && !parseResultProjections(entry.resultProjection)) throw new Error('Invalid connector resultProjection rules.');
       const http = typeof entry.url === 'string' || typeof entry.serverUrl === 'string';
       const stdio = typeof entry.command === 'string';
       if (Object.hasOwn(entry, 'url') && Object.hasOwn(entry, 'serverUrl')) throw new Error('Use either url or serverUrl, not both.');

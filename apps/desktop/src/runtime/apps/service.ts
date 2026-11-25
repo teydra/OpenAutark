@@ -12,6 +12,7 @@
 // Owns: the live state per connector, the tool host, sign-ins and the structured mutation apply step. Never: logs or returns a
 // token, header or env value, serializes the lossy read projection back to the connector files, or polls.
 
+import { randomUUID } from 'node:crypto';
 import { mailGeneration } from './mail-identity.ts';
 import { WorkforceError } from '../../shared/errors.ts';
 import type { AppStatus, ConnectedApp } from '../../shared/model/apps.ts';
@@ -69,7 +70,13 @@ export class Apps implements AppsService {
     });
     this.host = {
       state: (appId) => { const item = this.items.get(appId); return item ? { connector: item.connector, status: item.status, ...(item.error ? { error: item.error } : {}) } : undefined; },
-      call: (appId, tool, args, signal, generation) => this.call(appId, tool, args, signal, false, generation),
+      projectionEnabled: () => this.d.services.settings?.get().apps?.resultProjection === true,
+      storeProjection: (rows) => {
+        const id = randomUUID();
+        this.d.kv.set(`projection:${id}`, rows);
+        return id;
+      },
+      call: (appId, tool, args, signal, generation, expected) => this.call(appId, tool, args, signal, false, generation, expected),
     };
   }
 
@@ -264,7 +271,7 @@ export class Apps implements AppsService {
     }
     if (error instanceof ReconnectNeeded) return this.set(item, { status: 'signin', error: clip(error.message) || signInText(connector) });
     this.d.services.log?.warn('connector failed', { appId: connector.id, error: error instanceof Error ? error.name : 'error' });
-    this.set(item, { status: 'error', error: errorText(error, connector.name) });
+    this.set(item, { status: 'error', error: connector.resultProjection !== undefined && this.host.projectionEnabled?.() ? 'The protected connector could not connect.' : errorText(error, connector.name) });
   }
 
   /** Starts the browser sign-in ('waiting'); its end connects again ('ok') or says what is missing ('signin'). */
@@ -324,11 +331,14 @@ export class Apps implements AppsService {
 
   // ------------------------------------------------------------------ the tool host
 
-  private async call(appId: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal, retried = false, generation?: string): Promise<McpCallResult> {
+  private async call(appId: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal, retried = false, generation?: string, expected?: Connector): Promise<McpCallResult> {
     const item = this.items.get(appId);
     if (!item) throw new WorkforceError('not_found', 'This connector is no longer in its file.');
     if (!item.connector.enabled) throw new WorkforceError('unavailable', `${item.connector.name} is turned off.`);
-    const check = () => { if (generation !== undefined && (!generation || this.items.get(appId) !== item || item.connector.transport !== 'mail' || item.connector.mailGeneration !== generation)) throw new WorkforceError('unavailable', 'Mailbox incarnation changed.'); };
+    const check = () => {
+      if (expected && this.items.get(appId)?.connector !== expected) throw new WorkforceError('unavailable', 'Connector configuration changed.');
+      if (generation !== undefined && (!generation || this.items.get(appId) !== item || item.connector.transport !== 'mail' || item.connector.mailGeneration !== generation)) throw new WorkforceError('unavailable', 'Mailbox incarnation changed.');
+    };
     check();
     try {
       const result = await this.connections.use(item.connector, (conn) => { check(); return conn.callTool(tool, args, signal ? { signal } : undefined); });
@@ -339,7 +349,7 @@ export class Apps implements AppsService {
     } catch (error) {
       if (error instanceof McpAuthRequired || error instanceof ReconnectNeeded) {
         await this.connections.close(appId);
-        if (!retried && this.renewOnce(item, error)) return this.call(appId, tool, args, signal, true, generation);
+        if (!retried && this.renewOnce(item, error)) return this.call(appId, tool, args, signal, true, generation, expected);
         if (item.status !== 'waiting') this.set(item, { status: 'signin', error: signInText(item.connector) });
       } else if (error instanceof McpTransportError) {
         await this.connections.close(appId); // the next call opens a new connection

@@ -126,6 +126,8 @@ export interface ToolDef<A = Record<string, unknown>> extends ToolSpec {
   requires?: ToolRequirement;
   /** Can run on a linked PC (forwarded by DeviceService); the registry adds the `device` argument. */
   remote?: boolean;
+  /** Withhold a prior result that may have been recorded before the current output policy. Never re-run it. */
+  suppressResultReplay?(): boolean;
   /** The journal's one-line summary; without it the journal shows the tool's name. */
   describe?(args: A, ctx: ToolContext): ActionDescription;
   run(args: A, ctx: ToolContext): Promise<ToolOutput>;

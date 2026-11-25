@@ -79,6 +79,7 @@ export const HIDDEN_ARGS: ReadonlyMap<string, readonly string[]> = new Map([['ph
 /** Arguments that go straight into the vault: the leak guard (secrets/guard.ts) leaves them as given. */
 export const VAULT_ARGS: ReadonlyMap<string, readonly string[]> = new Map([['secrets.save', ['value']]]);
 
+const WITHHELD_RESULT = 'The earlier result is withheld by this tool’s current output policy. The call was not repeated.';
 const CUT_OFF = 'This call already started earlier, but no result was recorded (it was probably cut off), so whether it had an effect is unknown. I check that before doing it again.';
 
 export class Registry implements ToolRegistry {
@@ -177,9 +178,14 @@ export class Registry implements ToolRegistry {
     // resend while it runs gets its result; one whose result was never journaled is told so.
     const idemKey = `${ctx.runId}:${callId}`;
     const running = this.running.get(idemKey);
-    if (running) return running;
+    // A connector may have enabled projection after the previous output was produced.
+    if (running) {
+      if (tool.suppressResultReplay?.()) return failure(WITHHELD_RESULT);
+      const output = await running;
+      return tool.suppressResultReplay?.() ? failure(WITHHELD_RESULT) : output;
+    }
     const cached = cachedResult(services, `${idemKey}:result`);
-    if (cached) return cached;
+    if (cached) return tool.suppressResultReplay?.() ? failure(WITHHELD_RESULT) : cached;
     if (journaled(services, idemKey)) return failure(CUT_OFF);
 
     let action: ActionDescription = { summary: name, external: false };

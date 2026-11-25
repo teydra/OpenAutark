@@ -7,6 +7,7 @@
 //   service.ts     applies the files, connects, signs in, registers tools
 // Owns: these shapes and error classes. Never: behaviour, or a secret value in a field that is logged or shown.
 
+import type { ProjectedRow, ResultProjections } from './result-projection.ts';
 import type { AppTransport, ConnectedApp, MailServer } from '../../shared/model/apps.ts';
 
 // ------------------------------------------------------------------ MCP wire shapes (client side)
@@ -219,6 +220,8 @@ export interface Connector {
   env?: Record<string, string>;
   /** mail: the mailbox; servers are looked up from the address when not given; `agent` (id or name) is woken by new mail. */
   mail?: { contactStopFile?: string; address: string; user?: string; password: string; imap?: MailServer; smtp?: MailServer; agent?: string };
+  /** Local allowlist by exact MCP tool name; null is an invalid declaration. */
+  resultProjection?: ResultProjections | null;
   enabled: boolean;
   /** Changes whenever the entry's content does (a changed entry connects again). */
   fingerprint: string;
@@ -228,8 +231,10 @@ export interface Connector {
 export interface AppToolHost {
   /** The connector and its live state – read at call time. */
   state(appId: string): { connector: Connector; status: ConnectedApp['status']; error?: string } | undefined;
+  projectionEnabled?(): boolean;
+  storeProjection?(rows: readonly ProjectedRow[]): string;
   /** Runs the MCP call on a (lazily opened) connection. Rejects with Mcp* errors / ReconnectNeeded. */
-  call(appId: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal, generation?: string): Promise<McpCallResult>;
+  call(appId: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal, generation?: string, expected?: Connector): Promise<McpCallResult>;
 }
 
 /** The connectors service (RuntimeServices.apps, contracts/apps.ts). */
