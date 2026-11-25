@@ -15,39 +15,52 @@ import { routable } from './routable.ts';
 const network = new Proxy({}, { get: () => undefined }) as unknown as Network;
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-test('stop: a routing call in flight ends before the engines and the database stop', async () => {
+test('stop: a routing call in flight ends before the engines and the database stop', { timeout: 10_000 }, async () => {
   const f = fixture();
   routable(f.services, [model('codex:luna', 'small', 'Luna')]);
   const calls: string[] = [];
-  let release = () => {};
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
   const runner: StructuredRunner = async () => {
     calls.push('model');
-    await new Promise<void>((resolve) => { release = resolve; });
+    entered.resolve();
+    await release.promise;
     calls.push('answered');
     const structured = { hardest: 'x', fixed: true, shows: true, together: false, model: 'Luna', effort: 'low', why: 'a fact to take note of' };
     return { text: JSON.stringify(structured), structured, by: 'fake' };
   };
   const subconscious = new SubconsciousImpl({ services: () => f.services, runner });
   const turn = subconscious.beforeTurn({ agent: f.vid, thread: 'main', said: 'Mein Steuerberater heißt Jonas Weber.' });
-  for (let i = 0; i < 200 && !calls.length; i++) await flush(); // the word search reads files before the call starts
-  assert.deepEqual(calls, ['model']);
+  try {
+    // The word search reads files before the runner starts; wait for the runner,
+    // regardless of how many turns of the event loop the search takes.
+    await Promise.race([
+      entered.promise,
+      turn.then(() => assert.fail('Routing ended before the model started')),
+    ]);
+    assert.deepEqual(calls, ['model']);
 
-  const core = {
-    services: { subconscious, db: { close: () => calls.push('db.close') } },
-    dispatcher: { stop: () => calls.push('dispatcher') },
-    engines: { dispose: () => calls.push('engines') },
-  } as unknown as Core;
-  const steps = stopSteps(core, network);
-  const names = steps.map((step) => step.name);
-  assert.ok(names.indexOf('dispatcher') < names.indexOf('subconscious') && names.indexOf('subconscious') < names.indexOf('engines') && names.indexOf('engines') < names.indexOf('database'), names.join(', '));
+    const core = {
+      services: { subconscious, db: { close: () => calls.push('db.close') } },
+      dispatcher: { stop: () => calls.push('dispatcher') },
+      engines: { dispose: () => calls.push('engines') },
+    } as unknown as Core;
+    const steps = stopSteps(core, network);
+    const names = steps.map((step) => step.name);
+    assert.ok(names.indexOf('dispatcher') < names.indexOf('subconscious') && names.indexOf('subconscious') < names.indexOf('engines') && names.indexOf('engines') < names.indexOf('database'), names.join(', '));
 
-  const stopping = Promise.resolve(steps[names.indexOf('subconscious')].run());
-  await flush();
-  assert.deepEqual(calls, ['model'], 'the step waits for the call');
-  release();
-  await stopping;
-  assert.deepEqual(calls, ['model', 'answered']);
-  await turn;
+    let stopped = false;
+    const stopping = Promise.resolve(steps[names.indexOf('subconscious')].run()).then(() => { stopped = true; });
+    await flush();
+    assert.equal(stopped, false, 'the step waits for the call');
+    assert.deepEqual(calls, ['model']);
+    release.resolve();
+    await stopping;
+    assert.deepEqual(calls, ['model', 'answered']);
+  } finally {
+    release.resolve(); // Don't leave the runner waiting after an assertion failure.
+    await turn;
+  }
 });
 
 test('stop: services without it (a fake, no subconscious) skip the step', async () => {
