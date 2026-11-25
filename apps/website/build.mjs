@@ -189,14 +189,14 @@ const W = rel.windows;
 const statusLine = (f) => `- **${f.title}** (${STATUS[f.status].label}): ${f.text}`;
 const llms = `# ${site.name}
 
-> ${site.name} is a free desktop app that gives one person their own AI company: a manager, specialist agents and a private secretary that work proactively — they wake up on schedules, messages, tasks and events instead of waiting for a prompt. It runs on the user's own computer and uses the AI plans the user already pays for (ChatGPT plans through OpenAI Codex, paid Claude plans through Claude Code). Agents have full access to the PC: there is no permission gate, guardian model or money limit, and text steers them. Settings, skills and memory are open files the AI can change itself. An Android app and an iPhone web app join the same company. Made by ${maker.company} (${maker.location}). Formerly called "Proactive Agent Workforce".
+> ${site.name} is a free desktop app that gives one person their own AI company: a manager, specialist agents and a private secretary that work proactively — they wake up on schedules, messages, tasks and events instead of waiting for a prompt. It runs on the user's own computer and uses the AI plans the user already pays for (ChatGPT plans through OpenAI Codex, paid Claude plans through Claude Code). The user chooses one of two modes: in Trust AI mode (preselected) agents work with the user's rights and text steers them; in Secure mode the app asks before shell commands and before anything outside its own folders, declined steps are not executed, and spending is closed. Settings, skills and memory are open files the AI can change itself. An Android app and an iPhone web app join the same company. Made by ${maker.company} (${maker.location}). Formerly called "Proactive Agent Workforce".
 
 Key facts:
 - Current version: ${W.version} for Windows, macOS and Linux (released ${W.date}). Windows x64 installer, about ${W.sizeMb} MB, code-signed (publisher Open Source Developer Meral Anna Hees); SmartScreen may still warn once while the new certificate builds reputation. macOS universal DMG or ZIP, about ${rel.mac.sizeMb} MB, signed ad hoc and not notarized, so it needs manual steps to open. Linux x64 AppImage, about ${rel.linux.sizeMb} MB.
 - Phone: Android app ${rel.android.version} (APK, about ${rel.android.sizeMb} MB, Android 8+, installed from outside the Play Store); it connects to the user's company by the PC's Remote ID in any network. iPhone: no App Store app; the web app at ${appUrl}/ (Safari, Add to Home Screen, iOS 17+) pairs by the PC's Remote ID the same way, reaches the user's PC through the meeting server end-to-end encrypted, and shows the PC's own interface. Agents cannot use other iPhone apps: iOS allows that to no app.
 - Price: free download, no account, no subscription from ${maker.company}. AI usage is billed by the user's own AI providers.
 - Data: local-first. Chats, tasks, memory, agents and the secrets catalog live on the user's PC. No ${site.name} server holds user data; one meeting server run by ${maker.company} helps the user's devices find each other and passes only end-to-end encrypted traffic. Prompts go to the AI providers the user connects.
-- Access: agents run with the user's rights, without a sandbox and without approval prompts. The first thing the AI asks is how far it may go; that is a question, not a technical barrier. Details: ${site.url}/access/
+- Access: two modes, chosen on the first start and changeable in Settings › Security. Trust AI (preselected): agents work with the user's rights; agreements the user writes steer them, and three switches (spending, messages to other people, publishing) can make the app ask first. Secure: agents work freely in the company's own folders; the app asks the user before shell commands, files elsewhere, operating apps or the phone, messages, posts, sign-ins and changes to its setup, and a declined step is not executed ("BLOCKED – not executed"). Spending money, the app's own window, its security settings and the Windows lock screen stay closed in Secure mode. The web is open by default in Secure mode, and an allowed command is not checked for what it touches. Details: ${site.url}/access/
 - Secrets are used by ID (secret://...); values stay out of prompts and known values are masked in output.
 - Provider sign-in only through the official CLIs; the ${site.name} app does not read, copy or forward provider tokens. An agent with full access could still open those folders.
 - Status labels on this site: "Available" = in the current public release; "Next release" = built in development, not released yet; "Planned" = not built.
@@ -207,7 +207,7 @@ Key facts:
 - [Overview](${site.url}/): what ${site.name} is, downloads for every device, the problem, how it works, the open system, access.
 - [All capabilities](${site.url}/product/): every feature with its honest status.
 - [How it works](${site.url}/how-it-works/): the short start, the organisation, wake-ups, engines, open files, browser, memory, data.
-- [Access and data](${site.url}/access/): full access to the PC, the first question, secrets by ID, data and backups, install steps for Windows (signed), macOS (not notarized) and Linux, what is not proven yet.
+- [Access and data](${site.url}/access/): Trust AI and Secure mode, what each enforces and what Secure does not cover, the first questions, secrets by ID, data and backups, install steps for Windows (signed), macOS (not notarized) and Linux, what is not proven yet.
 - [Compare](${site.url}/compare/): ${site.name} vs. chat apps, automation tools, agent frameworks and similar agent products.
 - [FAQ](${site.url}/faq/): ${faq.length} answered questions.
 - [Download](${site.url}/download/): every platform, PC first, then phone; requirements, checksums, permanent links.
@@ -259,7 +259,16 @@ await out('facts.json', JSON.stringify({
   repository: release.repoUrl,
   downloads: Object.fromEntries(downloads.map((d) => [d.id, { stable: `${site.url}/${d.path}`, page: fileTarget(d) }])),
   engines: { available: ['OpenAI Codex (ChatGPT plan)', 'Claude Code (paid Claude plan)'], early: ['API keys: OpenAI, Anthropic, Google, OpenRouter, DeepInfra, Groq, Mistral, xAI, DeepSeek, Kimi, Qwen, any server speaking a supported protocol', 'Local servers: Ollama, LM Studio, llama.cpp, vLLM', 'Plan CLIs over ACP: Gemini CLI, GitHub Copilot CLI, Kimi Code (never seen in a live run)'] },
-  access: { sandbox: false, approvalPrompts: false, permissionGate: false, guardianModel: false, moneyLimit: false, firstQuestion: 'a question in the chat, not a technical barrier', stopAllAgentWork: 'this PC only, holds across a restart' },
+  access: {
+    modes: ['Trust AI', 'Secure'],
+    defaultMode: 'Trust AI (preselected on the first start; changeable in Settings › Security)',
+    trustAi: 'agents work with the user\'s rights; text steers them; spending, messages and publishing can be set to ask',
+    secure: 'the app asks before shell commands, files outside the company\'s own folders, apps, the phone, messages, posts, sign-ins and setup changes; declined steps are not executed; spending is closed',
+    secureNotCovered: 'web open by default; what an allowed command touches is not checked',
+    guardianModel: false,
+    moneyLimit: false,
+    stopAllAgentWork: 'this PC only, holds across a restart',
+  },
   privacy: { dataLocation: 'user\'s own computer', vendorServersHoldData: false, meetingServer: 'run by Teydra Lab, connects devices, end-to-end encrypted, replaceable', analytics: false, appReadsProviderTokens: false },
   openSource: true,
   license: 'Apache-2.0',

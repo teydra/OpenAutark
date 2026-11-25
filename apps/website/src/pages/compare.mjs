@@ -23,8 +23,8 @@ const rows = [
   { k: 'Runs on your existing ChatGPT or Claude plan', us: 'yes', v: ['yes', 'yes', 'part', 'yes', 'no', 'no'] },
   { k: 'Your data lives on your own PC', us: 'yes', v: ['no', 'yes', 'part', 'part', 'part', 'part'] },
   { k: 'No extra account with the tool maker', us: 'yes', v: ['yes', 'yes', 'yes', 'no', 'part', 'yes'] },
-  { k: 'Acts in your apps, browser and files', us: ['yes', '', 'with full access to your PC'], v: ['part', 'yes', 'yes', 'yes', 'yes', 'part'] },
-  { k: 'Built-in permission modes and limits', us: ['no', '', 'by design: text steers, nothing locks'], v: ['part', 'yes', 'part', 'part', 'part', 'part'] },
+  { k: 'Acts in your apps, browser and files', us: ['yes', '', 'with your rights; Secure mode asks first'], v: ['part', 'yes', 'yes', 'yes', 'yes', 'part'] },
+  { k: 'Built-in permission modes and limits', us: ['part', '', 'Trust AI or Secure; no spending limit'], v: ['part', 'yes', 'part', 'part', 'part', 'part'] },
   { k: 'Settings, skills and memory as open files the AI can change', us: 'yes', v: ['no', 'part', 'part', 'no', 'part', 'part'] },
   { k: 'A finished app, no code', us: 'yes', v: ['yes', 'part', 'part', 'yes', 'part', 'no'] },
   { k: 'Maturity and track record', us: ['no', 'Young', 'agent releases since October 2026'], v: [['yes', 'Established'], ['yes', 'Established'], ['part', 'Newer'], ['part', 'Ahead of us'], ['yes', 'Established'], ['yes', 'Established']] },
@@ -97,7 +97,7 @@ ${pageHero({
           <li>routing per task (engine, account, model and effort) across as many accounts as you like, with live quota bars;</li>
           <li>settings, skills and memory as open files, and a browser for each chat and each agent${st('browser-spaces')}.</li>
         </ul>
-        <p>An agent can also move between Codex and Claude Code without losing context. One thing they have that ${site.name} does not: their own approval modes. ${site.name} runs them with approvals off.</p>
+        <p>An agent can also move between Codex and Claude Code without losing context. Their own approval modes are not offered as such: in Trust AI mode ${site.name} runs them with approvals off, and in Secure mode their permission requests go to ${site.name}’s own gate, which asks you.</p>
         <p>Some setups, such as OpenAI Symphony, feed a ticket queue to coding agents. ${site.name} needs no ticket system: you write or dictate into one inbox, and the work finds its owner.</p>
         <h3>When to pick a coding agent alone</h3>
         <p>If you are a developer with one clear coding job, use Codex or Claude Code directly. You get the most direct control in your terminal or editor, and nothing sits between you and the tool.</p>
@@ -120,7 +120,7 @@ ${pageHero({
         <h2 id="automation">${site.name} vs. automation tools</h2>
         <p>Zapier, n8n, Dify and similar tools run workflows: when this happens, do that. They are predictable, easy to test, and cheaper wherever no language model is needed. Their visual editors and libraries of integrations are hard to beat.</p>
         <h3>Where ${site.name} is different</h3>
-        <p>You describe an outcome, not the steps. Agents decide how to get there, handle the case nobody drew a box for, and plan their own follow-ups. There is no flow to build or maintain. The price of that freedom: nothing guarantees the same path twice, and no step is locked.</p>
+        <p>You describe an outcome, not the steps. Agents decide how to get there, handle the case nobody drew a box for, and plan their own follow-ups. There is no flow to build or maintain. The price of that freedom: nothing guarantees the same path twice, and no step is fixed in advance.</p>
         <p>The two are not either-or. Zapier has an MCP server, and an agent can connect it${st('apps')}, so both can work side by side.</p>
         <h3>When to pick an automation tool instead</h3>
         <p>If the steps are known and must run exactly the same way every time, use an automation tool. The same goes for high-volume jobs that need no language model, such as syncing records between two systems, and for flows that have to run around the clock on a server.</p>
@@ -137,7 +137,7 @@ ${pageHero({
         <ul>
           <li><strong>Young.</strong> The releases with the full agent company date from October 2026. Most features are proven by automated tests; testing on real devices, with real accounts and over whole nights is still under way.</li>
           <li><strong>Signing.</strong> Version <span data-rel="windows-v">${rel.windows.version}</span> of the Windows installer is code-signed, though SmartScreen may warn once while the new certificate builds reputation. The Mac app is not notarized, so macOS warns you and you confirm by hand. On macOS agents cannot control the computer${release.renamed ? ', and the Mac update that replaces itself has not run on a real Mac yet' : ', and updates are a manual download for now'}.</li>
-          <li><strong>No guard rails in the app.</strong> Agents have full access to your PC, and only text steers them. If you want permission modes and spending limits enforced by the tool, this is the wrong tool.</li>
+          <li><strong>Guard rails are new and coarse.</strong> In Trust AI mode agents have full access and text steers them, with three switches for spending, messages and posts. Secure mode asks before commands and outside the app’s own folders, but leaves the web open by default, does not check what an allowed command touches, and has no spending limit, only a closed door. If you need fine-grained policies enforced by the tool, this is not yet the tool.</li>
           <li><strong>A vague request is still a gamble.</strong> How much an agent does on its own varies by model and by run. Sometimes it asks where it could have found out.</li>
           <li><strong>Your PC has to be on.</strong> Agents keep working from the tray with the window closed, but only while your computer is on.</li>
           <li><strong>Built for one person first.</strong> You can invite colleagues, but this is early; products built for teams are further along.</li>
@@ -153,7 +153,7 @@ ${pageHero({
           <li><strong>Many people and agents in shared channels, in the cloud:</strong> Genspark GenTeam.</li>
           <li><strong>Fixed steps that must run the same way every time:</strong> an automation tool.</li>
           <li><strong>Agents inside your own product:</strong> a framework.</li>
-          <li><strong>A team of agents that takes work off your plate on its own, on your own PC and your own plans, with full access and open files:</strong> ${site.name}.</li>
+          <li><strong>A team of agents that takes work off your plate on its own, on your own PC and your own plans, with the access you choose and open files:</strong> ${site.name}.</li>
         </ul>
         <div class="callout">${icon('refresh')}<div><strong>Based on public product descriptions, November 2026.</strong> Products change quickly; <a href="${maker.feedbackUrl}" rel="noopener">tell us if something here is out of date</a>. Product names belong to their owners; naming them implies no endorsement.</div></div>
       </div>

@@ -196,13 +196,13 @@ export default function home(rel) {
       </article>
       <article class="step" data-reveal style="--d:2">
         <div class="step__demo" aria-hidden="true"><div class="askdemo"><div class="card" data-ask>
-          <div class="card__top"><span class="tiny muted">Question · Mara</span></div>
-          <div class="card__title">How far may I go on this PC?</div>
-          <div class="card__meta">I technically can already. Your answer tells me what you want.</div>
-          <div class="card__btns"><span>Full access</span><span>Just this once</span><span>Less</span></div>
-          <div class="card__note">${icon('chat')}A question, not a lock</div>
+          <div class="card__top"><span class="tiny muted">First start · About you</span></div>
+          <div class="card__title">How far may your team go?</div>
+          <div class="card__meta">You can change it later in Settings › Security.</div>
+          <div class="card__btns" style="grid-template-columns:1fr 1fr"><span>Trust AI</span><span>Secure</span></div>
+          <div class="card__note">${icon('chat')}Trust AI: text steers · Secure: the app asks</div>
         </div></div></div>
-        <div class="step__txt"><span class="step__n">03 — You</span><h3 class="h3">You say how far it goes.${st('first-question')}</h3><p class="body">The first thing your manager asks is how far it may go. That is a question, not a barrier: agents have full access from the start. Your answer steers them, and so does every message after it.</p></div>
+        <div class="step__txt"><span class="step__n">03 — You</span><h3 class="h3">You choose how far it goes.${st('security-modes')}</h3><p class="body">On the first start you pick Trust AI, where agents work with your rights and your words steer them, or Secure, where the app asks you before commands and anything outside its own folders. Every message after that steers them too.</p></div>
       </article>
     </div>
   </div>
@@ -287,10 +287,10 @@ export default function home(rel) {
     <div class="grid" style="align-items:center;row-gap:56px">
       <div class="col-5">
         <span class="eyebrow" data-reveal><span class="eyebrow__n">08</span> Access</span>
-        <h2 class="h2" data-reveal style="margin-top:22px">It can do everything. <em>You say how far it goes.</em></h2>
-        <p class="lead" data-reveal style="--d:1;margin-top:22px">Agents run with your rights, without a sandbox or approval prompts. There is no guardian and no money limit in the app. Text steers them.</p>
+        <h2 class="h2" data-reveal style="margin-top:22px">It can do a lot. <em>You choose how far it goes.</em></h2>
+        <p class="lead" data-reveal style="--d:1;margin-top:22px">Agents work with your rights. In Trust AI mode text steers them. In Secure mode the app asks you before commands, files outside its own folders, messages and posts, and spending stays closed.</p>
         <div class="rules" data-reveal style="--d:2;margin-top:36px">
-          <div class="rule">${icon('chat')}<div><h3>The first question</h3><p>The first thing the AI asks is how far it may go: full access for good, this one search just this once, or less. It is a question, not a technical barrier.${st('first-question')}</p></div></div>
+          <div class="rule">${icon('chat')}<div><h3>Two modes</h3><p>Trust AI: agents work everywhere, guided by agreements you write. Secure: the app asks you first, and a declined step does not run. The web stays open there unless you set it to Ask.${st('security-modes')}</p></div></div>
           <div class="rule">${icon('key')}<div><h3>Secrets by ID</h3><p>Agents use <code>secret://…</code> references. Values stay out of prompts, and known values are masked in output.</p></div></div>
           <div class="rule">${icon('archive')}<div><h3>Backups on your disk</h3><p>A copy of the data folder when you ask for it, and a copy of the database before each update. They do not undo what an agent did elsewhere.</p></div></div>
           <div class="rule">${icon('stop')}<div><h3>A brake</h3><p>“Stop all agent work” or <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>X</kbd> halts every agent on this PC and stays stopped after a restart.</p></div></div>
@@ -299,10 +299,10 @@ export default function home(rel) {
       </div>
       <div class="col-7" data-reveal style="--d:1">
         <div class="reach" data-reach aria-hidden="true">
-          <div class="reach__label">${icon('bolt')}Agent · full access</div>
+          <div class="reach__label">${icon('bolt')}Agent · Trust AI mode</div>
           <div class="reach__lanes"><div class="reach__lane reach__lane--pc"><b>Your PC</b><span>files · commands</span></div><div class="reach__lane reach__lane--web"><b>The world</b><span>web · accounts · money</span></div><div class="reach__lane reach__lane--word"><b>Your words</b><span>chat · skills · memory</span></div></div>
         </div>
-        <p class="sr">Illustration: an agent’s actions go directly to your PC, to the web and your accounts, and to what steers it: your words, skills and memory. Nothing stands in between.</p>
+        <p class="sr">Illustration: in Trust AI mode an agent’s actions go directly to your PC, to the web and your accounts, and to what steers it: your words, skills and memory. Nothing stands in between. In Secure mode the app asks you first for most of them.</p>
       </div>
     </div>
   </div>

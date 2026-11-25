@@ -58,7 +58,7 @@ export default function (rel) {
       '@type': 'HowTo',
       '@id': `${url}#howto`,
       name: `How to set up your AI company with ${site.name}`,
-      description: `Install ${site.name}, connect the ChatGPT or Claude plan you already have, type your name and company, and answer your manager’s first question.`,
+      description: `Install ${site.name}, connect the ChatGPT or Claude plan you already have, type your name and company, choose Trust AI or Secure mode, and answer your manager’s first questions.`,
       inLanguage: site.lang,
       isPartOf: { '@id': `${url}#webpage` },
       tool: [
@@ -85,8 +85,8 @@ ${pageHero({
 
       <div class="prose">
         ${h2('start')}
-        <p>There is little to fill in${st('short-start')}. After a short tour you connect one AI and type your name and company. Press Start, and the app posts one automatic line in your manager’s chat, marked as the app’s start text: you just set this up, get to know me and my work, on the web and on this PC, and first ask me what you may do.</p>
-        <p>So the first thing you see is the manager’s question: full access to this PC for good, this one search including private files just this once, or less. It says plainly that it technically can already. <a href="${root}access/#first-question">The choice is a question, not a barrier.</a> Then it goes as deep as your answer allows, and shows you what it still needs: a decision model and an embedding model. It can set those up with you.</p>
+        <p>There is little to fill in${st('short-start')}. After a short tour you connect one AI, type your name and company and choose a mode: Trust AI, where agents work with your rights, or Secure, where the app asks you first. Press Start, and the app posts a start line in your manager’s chat, in your name and marked as the app’s, with the manager’s first message below it.</p>
+        <p>That message asks a few questions: which language to use, how independently to work, whether to set up this PC itself, what to call the team and how to build it. <a href="${root}access/#first-question">Your answers steer the team; they change no setting.</a> Then it goes as deep as your answers allow, and shows you what it still needs: a decision model and an embedding model. It can set those up with you.</p>
 
         ${h2('org')}
         <p>${site.name} is built like a small company, not like a single assistant. You are the owner. You start with a manager, and the manager builds the team you need. Every agent has a name, an avatar and its own instructions in a file.</p>
@@ -188,7 +188,7 @@ ${pageHero({
         </ul>
 
         ${h2('steering')}
-        <p>There is no permission system. Agents have full access to your PC, and what steers them is text: the rules every agent gets, its <code>SYSTEM.md</code>, skills such as the one on spending${st('money-skill')}, what it remembers and what you say. The texts give reference points and leave the thinking to the model, because a bare rule mostly makes a model stop and ask.</p>
+        <p>In Trust AI mode agents have full access to your PC, and what steers them is text. In Secure mode the app also asks you before commands and before anything outside its own folders, and a declined step does not run. In both modes text steers them: the rules every agent gets, its <code>SYSTEM.md</code>, skills such as the one on spending${st('money-skill')}, what it remembers and what you say. The texts give reference points and leave the thinking to the model, because a bare rule mostly makes a model stop and ask.</p>
         <div class="callout">${icon('bolt')}<p><strong>Please read the access page before you install.</strong> What agents can reach, how secrets are kept out of prompts, what leaves your PC, the brake, and what is not proven yet. <a href="${root}access/">Access and data</a></p></div>
 
         ${h2('where')}

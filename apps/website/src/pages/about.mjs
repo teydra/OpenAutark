@@ -90,7 +90,7 @@ ${pageHero({
         <h3>Coordinate, don’t obscure.</h3>
         <p>Agents work in the open. Every task has an owner, tool calls land in a run journal, and Team shows who is working on what. Their instructions, skills and memory are files you can read. You see how a result came about, not only the result.</p>
         <h3>Keep the stop button.</h3>
-        <p>“Stop all agent work”, in the tray, behind the chat header’s live line or with <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>X</kbd>, halts every agent on this PC and stays in force after a restart. It is a brake, not a wall: agents otherwise have full access to your PC, and how far they go is something you tell them. More on the <a href="${root}access/">access page</a>.</p>
+        <p>“Stop all agent work”, in the tray, behind the chat header’s live line or with <kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>X</kbd>, halts every agent on this PC and stays in force after a restart. It is a brake, not a wall. In Trust AI mode agents otherwise have full access to your PC, and how far they go is something you tell them; in Secure mode the app asks you first. More on the <a href="${root}access/">access page</a>.</p>
 
         <h2 id="contact">Contact</h2>
         <p>Questions, ideas or press requests: ${ext(maker.contactUrl, `contact ${maker.company}`)}. Found a bug or something out of date? ${ext(maker.feedbackUrl, 'Report it on GitHub')}.</p>

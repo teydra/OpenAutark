@@ -11,9 +11,9 @@ const st = stOf('access');
 // [id, label in the table of contents, heading in the text]
 const sections = [
   ['short', 'In short', 'In short'],
-  ['access', 'Full access', 'Agents have full access to your PC'],
-  ['first-question', 'The first question', 'The first question'],
-  ['steering', 'What steers them', 'What steers them instead'],
+  ['access', 'Two modes', 'Two modes: Trust AI and Secure'],
+  ['first-question', 'The first questions', 'The first questions'],
+  ['steering', 'What steers them', 'What steers them'],
   ['secrets', 'Secrets', 'Secrets are referred to by ID'],
   ['accounts', 'AI sign-ins', 'Your AI sign-ins'],
   ['data', 'Where your data lives', 'Where your data lives'],
@@ -32,8 +32,8 @@ const h2 = (id) => `<h2 id="${id}">${sections.find((s) => s[0] === id)[2]}</h2>`
 // Rules inside .prose: keep the .rule heading size (the prose h3 rule would override it).
 const ruleH = 'style="margin-top:0;font-size:17.5px;line-height:1.3"';
 const short = [
-  ['bolt', 'Agents may do everything your user account can', 'No sandbox, no approval prompts, no permission gate. The app has no built-in limit on money, deleting or sending.'],
-  ['chat', 'How far they go is a conversation', 'The first thing the AI asks is how far it may go. That is a question, not a technical barrier. Your answer and the text around it steer the model.'],
+  ['bolt', 'You choose one of two modes', 'Trust AI, preselected: agents may do everything your user account can. Secure: the app asks you before commands and before anything outside its own folders, and spending stays closed. You can switch later in Settings › Security.'],
+  ['chat', 'In Trust AI mode, text steers', 'Agents follow the agreements you can read and change, their rules and skills, and what you say. That is guidance, not a technical barrier. Three switches can make the app ask first: spending, messages and publishing.'],
   ['key', 'Secret values stay out of prompts', 'Agents refer to a secret by its ID and the app fills the value in at the last moment. That protects against leaks, not against an agent set on getting a value.'],
   ['pc', 'Your data lives on your PC', `No ${site.name} server holds your data, and there is no account with us. Prompts go to the AI providers you connect.`],
   ['hash', 'Windows is signed, macOS is not notarized', 'The Windows installer is code-signed, though SmartScreen may warn once. macOS warns you, and you confirm by hand. The steps are below.'],
@@ -47,12 +47,12 @@ export default function (rel) {
     slug: 'access',
     rel,
     title: 'Access and data',
-    description: `What ${site.name} really does on your PC: agents have full access, the first question is how far they may go, secrets are used by ID, data and backups stay on your disk, and how the builds are signed, with the Windows and Mac steps you will see.`,
+    description: `What ${site.name} really does on your PC: two modes, Trust AI with full access and Secure where the app asks first, secrets are used by ID, data and backups stay on your disk, and how the builds are signed, with the Windows and Mac steps you will see.`,
     ld: [{
       '@type': 'TechArticle',
       '@id': `${url}#article`,
       headline: `Access and data in ${site.name}`,
-      description: 'Full access to the PC, the first question, secrets by ID, where data lives, what leaves the PC, backups, signing and install steps, and what is not proven yet.',
+      description: 'Trust AI and Secure mode, the first questions, secrets by ID, where data lives, what leaves the PC, backups, signing and install steps, and what is not proven yet.',
       inLanguage: site.lang,
       about: { '@id': `${site.url}/#software` },
       author: { '@id': 'https://teydralab.com/#organization' },
@@ -63,8 +63,8 @@ export default function (rel) {
 ${pageHero({
   root,
   crumb: 'Access and data',
-  title: 'It can do <em>everything.</em> Here is what that means.',
-  lead: `${site.name} does not put walls around its agents. They work with your rights, and text steers them. This page says plainly what the app does and does not do on your PC, where your data lives, what you will see when you install it, and what is not proven yet.`,
+  title: 'It can do <em>a lot.</em> You choose how much.',
+  lead: `${site.name}’s agents work with your rights. In Trust AI mode text steers them; in Secure mode the app asks you before commands and before anything outside its own folders. This page says plainly what the app does and does not do on your PC, where your data lives, what you will see when you install it, and what is not proven yet.`,
 })}
 
 <section class="section section--tight">
@@ -81,29 +81,54 @@ ${pageHero({
         </div>
 
         ${h2('access')}
-        <p>Agents run as you${st('full-access')}. Codex runs with its approval policy on “never” and no sandbox; Claude Code runs with permissions bypassed. So an agent can:</p>
+        <p>On the first start you choose a mode${st('security-modes')}. Trust AI is preselected, and a company set up before the modes existed runs in Trust AI. You can change the mode later in Settings › Security, after confirming twice. Each PC keeps its own mode, and an agent works under the rules of the PC its step runs on.</p>
+
+        <h3>Trust AI mode</h3>
+        <p>Agents run as you. Claude Code runs with permissions bypassed; Codex runs with full access, and the app accepts its approval requests at once. So an agent can:</p>
         <ul>
           <li>read, change and delete any file your user account can, private ones included;</li>
           <li>run any command and install programs;</li>
           <li>use a browser, and on Windows or Linux with X11 your mouse and keyboard;</li>
+          <li>on Windows, with ${site.name}’s desktop service, unlock the screen and answer Windows prompts with a password from the catalog;</li>
           <li>use every secret in the catalog on any site, including a saved card, so it can spend money;</li>
           <li>send mail and messages through what you connected, and publish;</li>
           <li>do the same on a PC you linked.</li>
         </ul>
-        <p>There is no guardian model, no permission mode, no money limit and no approval gate in the app. Earlier versions had them. They were removed on purpose: in this product a clear text steers a model better than a wall, and a wall mostly produced questions. The provider’s own model rules still apply.</p>
-        <div class="callout">${icon('bolt')}<p><strong>This has real consequences.</strong> In our own live test runs, agents given a vague request reached real repositories, backups, SSH keys and <code>.env</code> files within minutes, and one changed the permissions of a file it had found. So we run those tests under a throwaway profile, with a watcher that exists only on our test bench. On your PC nothing like it runs. If this PC holds something you cannot afford to have touched, give ${site.name} its own Windows user or a virtual machine.</p></div>
+        <p>What you write in Settings › Security, one text per topic, tells the team when to check with you. Three switches can be set to Ask: spending money, messages to other people and publishing. Then the app asks you before its own tools take such a step, for example a stored card, a message through a connected app or a post. They do not catch a step an agent clicks through on a website. There is no guardian model and no money limit.</p>
+
+        <h3>Secure mode</h3>
+        <p>Agents work freely in the company’s own folders: the workspace, each agent’s own folder, memory and the temp folders. Everything else goes through a gate in the app, for ${site.name}’s own tools and for the engines’ own tools alike: Claude Code runs in its default permission mode and Codex in its write sandbox, and both hand their permission requests to that gate. As set up for a new Secure company, the app asks you before an agent:</p>
+        <ul>
+          <li>reads or changes files outside those folders (folders you add are open from then on);</li>
+          <li>runs a command;</li>
+          <li>operates an app on this PC, or your phone;</li>
+          <li>writes to people outside the company or publishes;</li>
+          <li>signs in or uses a stored password;</li>
+          <li>changes ${site.name}’s own setup.</li>
+        </ul>
+        <p>You answer once, always for this setting, always for this place, or decline. The request also lands in My day and on your phone. A declined step does not run: the agent reads “BLOCKED – not executed”, and the chat shows a short “Blocked: …” line.</p>
+        <p>Closed whatever a switch says: spending money (the app refuses stored cards and its spending tools), ${site.name}’s own window, its security settings, and the Windows lock screen and Windows prompts. Linking another PC is left to you in Settings › Devices.</p>
+        <p><strong>What Secure mode does not cover:</strong></p>
+        <ul>
+          <li><strong>The web is open by default.</strong> Agents browse and search without asking, also on sites where their browser is already signed in. A purchase or a post clicked through such a site is not stopped by code. You can set the web to Ask.</li>
+          <li><strong>An allowed command is not checked for what it does.</strong> The app decides whether a command may run, not which files it touches. “Always” for commands opens every command.</li>
+          <li><strong>Codex reads through commands.</strong> Commands Codex counts as harmless, such as listing a folder or printing a file, run without a question, and its sandbox limits writing, not reading.</li>
+          <li><strong>Hiring and changing agents</strong> is open by default.</li>
+          <li><strong>Programs outside the app</strong>, such as a script an agent started earlier, are not checked (see <a href="#others">who else can reach it</a>).</li>
+        </ul>
+        <div class="callout">${icon('bolt')}<p><strong>Full access has real consequences.</strong> In our own live test runs, agents given a vague request reached real repositories, backups, SSH keys and <code>.env</code> files within minutes, and one changed the permissions of a file it had found. So we run those tests under a throwaway profile, with a watcher that exists only on our test bench. Secure mode is new and has no outside audit. If this PC holds something you cannot afford to have touched, give ${site.name} its own Windows user or a virtual machine, in either mode.</p></div>
 
         ${h2('first-question')}
-        <p>The first run is short${st('first-question')}: a short tour, connect one AI, type your name and company, press Start. Then the app posts one automatic line in your manager’s chat, as if you had written it and marked as the app’s start text. It tells the manager to get to know you and your work, on the web and on this PC, and to ask you first, with a choice, what it may do: full access to this PC for good, this one search including private files just this once, or less.</p>
-        <p>The same line tells it to say plainly that it technically can already. <strong>The choice changes no setting and closes nothing.</strong> Your answer tells the AI what you want, an answer “for good” belongs in its memory, and a model follows it because you said so. You can read and replace this text: an own <code>prompts/onboarding.md</code> in the data folder takes its place.</p>
+        <p>The first run is short${st('first-question')}: a short tour, connect one AI, type your name and company, choose the mode, press Start. Then the app posts a start line in your manager’s chat, in your name and marked as the app’s, and the manager’s first message below it. That message asks a few questions: which language to use, how independently to work, whether to set up this PC itself, what to call the team and how to build it. Answer what matters to you; the rest it decides.</p>
+        <p><strong>Your answers change no setting.</strong> They tell the team what you want, and the manager keeps them as agreements; a model follows them because you said so. In Trust AI mode that is all that holds it back. You can read and replace this text: an own <code>prompts/onboarding.md</code> in the data folder takes its place.</p>
 
         ${h2('steering')}
-        <p>Agents act on what they read, so that is where the care goes. All of it is plain text you can open and change.</p>
+        <p>Agents act on what they read, so that is where the care goes, in both modes. All of it is plain text you can open and change.</p>
         <ul>
           <li><strong>The rules every agent gets</strong> (<code>rules.md</code>), for example: before something you cannot undo, such as deleting, paying or sending to outsiders, check target, amount and recipient once.</li>
           <li><strong>Each agent’s instructions</strong> (<code>SYSTEM.md</code>), which you or the manager can edit.</li>
           <li><strong>Skills.</strong> The ones that matter most have their description in every prompt, so a model reads them before that kind of work.</li>
-          <li><strong>Spending is a skill too</strong>${st('money-skill')}. It gives reference points to think with: roughly under 20 euros, buy when it is recognisably sensible; above that, it helps when the one above you was clear what is bought and why; for hundreds of euros, have a stronger model think it over once more. You can rewrite it. <strong>It is guidance. No code stops a purchase.</strong></li>
+          <li><strong>Spending is a skill too</strong>${st('money-skill')}. It gives reference points to think with: roughly under 20 euros, buy when it is recognisably sensible; above that, it helps when the one above you was clear what is bought and why; for hundreds of euros, have a stronger model think it over once more. You can rewrite it. <strong>In Trust AI mode it is guidance: no code stops a purchase</strong> unless you set spending to Ask. In Secure mode spending is closed.</li>
           <li><strong>Your own words.</strong> A message at any time steers running work, and one marked important reaches it at once.</li>
         </ul>
         <p>Text can be wrong, and so can a model. A web page, a mail or a file can also contain instructions aimed at your agent. The app marks such content as untrusted when it hands it over, and that is a hint to the model, not a filter. Treat what an agent reads from outside as something that can influence it.</p>
@@ -115,12 +140,12 @@ ${pageHero({
           <li><strong>Values stay out of prompts.</strong> The value is filled in at the last moment: into a browser field, a command’s environment, a request header or a connector.</li>
           <li><strong>A field for it.</strong> The + in the message box has a Secret entry, so you hand over a key without typing it into a chat. Text you type into a normal message does reach the model.</li>
           <li><strong>Masking.</strong> Before a tool runs, a known value in its arguments is replaced by its ID, so it does not land in a note or file. In output, known values are masked, also as base64, URL-encoded or hex. Values under 8 characters are too short for this.</li>
-          <li><strong>No site binding.</strong> Every secret works everywhere for every agent. That is deliberate.</li>
+          <li><strong>No site binding.</strong> Every secret works everywhere for every agent. That is deliberate. In Secure mode the app asks you before an agent uses a stored password, and refuses card data.</li>
         </ul>
         <p><strong>What this does not do:</strong> a command that receives a value can do anything with it, and masking only knows those encodings. It keeps values out of prompts and logs; it is not a barrier against an agent set on getting one. And it covers only the catalog. A password in a text file, a <code>.env</code> file or a browser export on your disk is as open to agents as any other file. Password import${st('import-pw')} reads such an export once and leaves the file where it is. Please delete it.</p>
 
         ${h2('accounts')}
-        <p>You sign in to ChatGPT and Claude through the providers’ official tools, Codex and Claude Code${st('plans')}, each added account in its own folder under <code>accounts/</code>. ${site.name} does not read, copy or forward the tokens those tools keep, and there is nothing to sign in to on our side. An agent with full access could still open those folders like any other, so this describes what the app does, not what an agent can reach.</p>
+        <p>You sign in to ChatGPT and Claude through the providers’ official tools, Codex and Claude Code${st('plans')}, each added account in its own folder under <code>accounts/</code>. ${site.name} does not read, copy or forward the tokens those tools keep, and there is nothing to sign in to on our side. An agent in Trust AI mode could still open those folders like any other, so this describes what the app does, not what an agent can reach. In Secure mode they are outside the folders agents read freely.</p>
 
         ${h2('data')}
         <dl class="kv">
@@ -196,7 +221,8 @@ ${pageHero({
         <p>${site.name} is young. This is what we have not proven.</p>
         <ul>
           <li><strong>Releases.</strong> Version 0.3.2 passed packaged start-up checks on Windows, Linux, Apple silicon and Intel. The update from 0.3.1 was not run on a PC before release; linked PCs need the same version to share settings and plan logins. A fresh Windows install, the update on macOS and Linux, and the AppImage on an ordinary Linux PC were not established.</li>
-          <li><strong>The first question</strong>${st('first-question')}: whether a model really asks first, in your language, has not been checked with a live model. It is a text, so a model can phrase it differently or skip it.</li>
+          <li><strong>Trust AI mode</strong> rests on text: your answers, agreements and rules. A model can read them differently or overlook them.</li>
+          <li><strong>Secure mode</strong>${st('security-modes')} is new. Its gate is covered by automated tests but has no outside audit; a step the gate does not see is not stopped.</li>
           <li><strong>Doing things on its own.</strong> Agents wake up and carry on, but how much they do on a vague request still varies by model and by run. In our own rounds they sometimes asked instead of finding out. The decision model behind the subconscious has also answered without having searched.</li>
           <li><strong>Browser per chat</strong>${st('browser-spaces')}: tested in real windows with a scripted test engine, not with a real model, and not on macOS.</li>
           <li><strong>Providers through a file</strong>${st('providers-file')}: tested with fakes, not against a real provider. API keys and local models have no recorded live run; Gemini CLI, Copilot CLI and Kimi Code have never been seen live.</li>

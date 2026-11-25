@@ -141,8 +141,8 @@ Autark's agents act for you; that is what the app is for. You choose how far the
 mode** gives your team the run of your PC, and it can even unlock Windows for you. **Secure mode** lets you close what you
 want (files, commands, web, apps, messages, accounts, money), and the app enforces it, not a prompt.
 
-> **Status.** Both modes are in the newest source code and arrive with the next update. The release you can install
-> today (0.3.14) is the open system: agents work with your rights and text steers them.
+> **Status.** Both modes are in the current release; you choose one on the first start (Trust AI is preselected) and
+> can switch in Settings › Security. Secure mode is new and has had no outside audit yet.
 
 **Trust AI mode** is the open system.
 
@@ -168,7 +168,7 @@ want (files, commands, web, apps, messages, accounts, money), and the app enforc
 **Ctrl+Alt+Shift+X** that stops every agent on the PC; backups of the data folder and of the database before each update;
 and, if you want, a separate Windows user or a virtual machine for Autark.
 
-There is no sandbox. Secure mode closes capabilities in the runtime; if you want a boundary around the whole PC, run Autark
+Autark adds no sandbox of its own (in Secure mode, Codex runs in its write sandbox). Secure mode closes capabilities in the runtime; if you want a boundary around the whole PC, run Autark
 under a separate operating-system user or in a virtual machine, and connect only the accounts you want it to use.
 
 ## Network connections

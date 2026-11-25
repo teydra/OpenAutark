@@ -33,7 +33,7 @@ export default function downloadPage(rel) {
 ${pageHero({
   root, crumb: 'Download',
   title: `Get <em>${site.name}.</em>`,
-  lead: `Free for Windows, macOS and Linux, with an Android app and an iPhone web app. No account, no subscription from us. Agents get full access to the PC you install it on, so please read <a href="${root}access/">what that means</a>.`,
+  lead: `Free for Windows, macOS and Linux, with an Android app and an iPhone web app. No account, no subscription from us. In Trust AI mode agents get full access to the PC you install it on; in Secure mode the app asks first. Please read <a href="${root}access/">what that means</a>.`,
   actions: `${downloadButton(root, { auto: true })}<a class="btn btn--ghost btn--lg" href="#platforms">Every device${icon('arrowDown', 'ic--move')}</a>`,
 })}
 <section class="section section--tight" id="platforms">
@@ -64,9 +64,9 @@ ${pageHero({
       <ol>
         <li><strong>Connect one AI.</strong> Sign in through the official tool of your provider; the app can install Codex or Claude Code for you and tests them with a real answer. Each added account lives in its own folder.</li>
         <li><strong>Type your name and company,</strong> and press Start.</li>
-        <li><strong>Answer the first question.</strong> Your manager asks how far it may go on this PC.</li>
+        <li><strong>Choose a mode and answer the first questions.</strong> Trust AI or Secure, then your manager asks a few questions, among them whether to set up this PC itself.</li>
       </ol>
-      <div class="callout">${icon('bolt')}<div><strong>Agents have full access from the first moment.</strong> The question is how you tell them what you want. It closes nothing technically. <a href="${root}access/">What that means</a></div></div>
+      <div class="callout">${icon('bolt')}<div><strong>You choose the mode on the first start.</strong> In Trust AI mode agents have full access from the first moment and your words steer them; in Secure mode the app asks you before commands and outside its own folders. <a href="${root}access/">What that means</a></div></div>
 
       <h2 id="verify">Check the file</h2>
 ${rel.sums && Object.keys(rel.sums).length ? `      <table>
