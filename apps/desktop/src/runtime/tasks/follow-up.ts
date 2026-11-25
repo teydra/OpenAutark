@@ -1,4 +1,5 @@
 // A deadline on a wait is a one-shot follow-up, not an appointment or an automatic reopening.
+// Owns: the default deadline and the persisted one-shot delivery of dated waits. Never: ends an outside wait.
 import { HUMAN_ID } from '../../shared/ids.ts';
 import type { Task } from '../../shared/model/tasks.ts';
 import { excerpt } from '../../shared/text/chat-names.ts';
