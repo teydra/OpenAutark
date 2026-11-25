@@ -223,6 +223,18 @@ button.author-name:hover { text-decoration: underline; text-underline-offset: 2p
 .message-failure .text-button:hover { color: var(--text); }
 .message.human:has(.message-failure) .message-failure { justify-content: flex-end; }
 .task-message { margin: 0 0 var(--msg-gap); }
+/* Owner 24.11.2026: ticks of an own message (Receipt.tsx) – a clock on its way, one tick sent, two delivered */
+.receipt { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--muted); }
+.receipt svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.receipt.pending svg { stroke-width: 1.4; opacity: .8; }
+/* the person's unsent line (PendingMessages.tsx): the own bubble as it will stand, its words plain until stored */
+.pending-line .pending-text { white-space: pre-wrap; }
+.pending-line.state-transcribing .pending-text { opacity: .7; }
+.pending-line .pending-text.muted { color: var(--muted); }
+.pending-line .pending-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); }
+.pending-line .pending-file { display: inline-flex; align-items: center; gap: 4px; }
+.pending-line.state-failed .message-content { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); }
+.pending-note { color: var(--muted); }
 
 /* streaming caret: the author avatar carries the working ring while the reply streams */
 .message:has(.message-author .avatar.working) .message-body > .md:last-child > :is(p, h1, h2, h3, h4):last-child::after,

@@ -11,6 +11,7 @@
 import { bool, int, json, toJson, type Db } from '../db/database.ts';
 import { nul, opt, optNumber } from '../store/rows.ts';
 import { foldText, ftsQuery } from '../../shared/text/normalize.ts';
+import { HUMAN_ID } from '../../shared/ids.ts';
 import type { Attachment, Message, MessageMeta } from '../../shared/model/chat.ts';
 
 type Row = Record<string, unknown>;
@@ -36,6 +37,7 @@ export function toMessage(row: Row): Message {
   const runId = opt<string>(row.run_id);
   const taskId = opt<string>(row.task_id);
   const editedAt = optNumber(row.edited_at);
+  if (message.authorId === HUMAN_ID && typeof row.client_id === 'string' && row.client_id) message.clientId = row.client_id;
   if (replyTo) message.replyTo = replyTo;
   if (runId) message.runId = runId;
   if (taskId) message.taskId = taskId;

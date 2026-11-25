@@ -15,6 +15,7 @@
 import { signal } from '@preact/signals';
 import type { Signal } from '@preact/signals';
 import type { Attachment, MessageLevel } from '../../../shared/model/chat.ts';
+import { findKeys } from '../../../shared/secrets/token-patterns.ts';
 import type { TextMarks } from '../../../shared/voice/marks.ts';
 import { RpcError, rpc } from '../../lib/rpc.ts';
 import * as store from '../../lib/store.ts';
@@ -114,10 +115,24 @@ export function flushAllDrafts(): void {
 }
 
 export function clearDraft(conversationId: string): void {
-  beforeLoad.delete(conversationId);
-  draftFor(conversationId).value = { text: '', attachments: [], level: 'normal' };
-  clearTimeout(timers.get(conversationId));
+  emptyDraft(conversationId);
   persist(conversationId);
+}
+
+/** Clears the field now, but keeps the saved draft until the send is acknowledged. */
+export function stageDraftSend(conversationId: string): Draft {
+  // Keep ordinary text for recovery without forcing a just-pasted key into the draft store.
+  if (!findKeys(draftFor(conversationId).peek().text).length) flushDraft(conversationId);
+  return emptyDraft(conversationId);
+}
+
+function emptyDraft(conversationId: string): Draft {
+  beforeLoad.delete(conversationId);
+  const empty: Draft = { text: '', attachments: [], level: 'normal' };
+  draftFor(conversationId).value = empty;
+  clearTimeout(timers.get(conversationId));
+  timers.delete(conversationId);
+  return empty;
 }
 
 if (typeof window !== 'undefined') window.addEventListener('pagehide', flushAllDrafts);

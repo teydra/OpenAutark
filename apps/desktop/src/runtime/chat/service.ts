@@ -193,6 +193,7 @@ export class ChatServiceImpl implements ChatService {
       seq: 0,
       authorId: input.authorId,
       authorKind,
+      ...(input.authorId === HUMAN_ID && input.clientId ? { clientId: input.clientId } : {}),
       kind: input.kind ?? 'text',
       body: input.body,
       attachments: input.attachments ?? [],

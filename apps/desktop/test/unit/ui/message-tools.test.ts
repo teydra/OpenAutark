@@ -72,8 +72,9 @@ test('the meta row: Copy and Reply on finished text messages only, after the tim
   assert.match(actions, /\{canReply\(message\) && <IconButton icon="arrow-bend-up-left" label="Reply" [^>]*class="message-tool" onClick=\{\(\) => \{ reply\(message\); \}\} \/>\}/);
   const item = read('src/ui/chat/MessageItem.tsx');
   assert.match(item, /<div class="message-actions">\s*\{props\.own && <MessageTools message=\{message\} menu=\{props\.menu\} \/>\}/, 'own bubble: before the markers, the time keeps the edge');
-  assert.match(item, /imported<\/span>\}\s*\{!props\.own && <MessageTools message=\{message\} menu=\{props\.menu\} \/>\}\s*<\/div>/, 'others: after the time');
-  assert.match(item, /<Actions message=\{message\} own=\{human\} menu=\{build\} \/>/);
+  // Owner 24.11.2026 (task_3x012n3a, "wie bei WhatsApp"): the own bubble's ticks come right after its time, at the edge.
+  assert.match(item, /imported<\/span>\}\s*\{props\.own && props\.receipt && <ReceiptMark state=\{props\.receipt\} \/>\}\s*\{!props\.own && <MessageTools message=\{message\} menu=\{props\.menu\} \/>\}\s*<\/div>/, 'others: after the time');
+  assert.match(item, /<Actions message=\{message\} own=\{human\} menu=\{build\} receipt=\{props\.receipt\} \/>/);
 });
 
 test('the tools never move anything: always rendered, opacity only, 24 px inside the 26 px row, always seen on touch', () => {

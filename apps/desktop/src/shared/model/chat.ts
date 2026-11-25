@@ -94,6 +94,8 @@ export interface Attachment {
 
 export interface Message {
   id: string;
+  /** Present on the originating PC's own sends; matches the composer request, not the message id. */
+  clientId?: string;
   conversationId: string;
   seq: number;
   authorId: string; // 'human', agent id, 'system'
