@@ -61,7 +61,7 @@ test('the choices per switch, the values\' words and the lists', () => {
   assert.deepEqual(answerOptions({ capability: 'web', place: { kind: 'site', value: 'example.com' } }).map((option) => option.label), ['Allow once', 'Always: Web', 'Always: example.com', 'Decline']);
   // Konrad 25.11.2026: commands open in Secure mode reads past the folder rules – the row says so
   assert.equal(switchHint('secure', 'commands', 'yes'), COMMANDS_OPEN_HINT);
-  assert.equal(COMMANDS_OPEN_HINT, 'Open: commands run without asking and can read any file this user can, including keys');
+  assert.equal(COMMANDS_OPEN_HINT, 'Open: commands run without asking and can read any file or send data anywhere this user can, including keys');
   assert.equal(switchHint('secure', 'commands', 'ask'), SWITCH_HINT.commands);
   assert.equal(switchHint('trust', 'commands', 'yes'), SWITCH_HINT.commands, 'Trust AI mode: commands are open anyway');
   const secure = securityDefaults('secure');

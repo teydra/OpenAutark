@@ -31,6 +31,7 @@ import { runSicher1119, runSicher1119Files } from './bridge/sicher-1119.ts';
 import { runQuestsWake } from './bridge/quests-wake.ts';
 import { runGeneral1121 } from './bridge/general-1121.ts';
 import { runEineId1122 } from './bridge/eine-id-1122.ts';
+import { runSecureWeb1125 } from './bridge/secure-web-1125.ts';
 import { loginsFolder } from './root/companies.ts';
 import { startSync } from './devices/sync/service.ts';
 import { wakeWhenBack } from './devices/back-wake.ts';
@@ -114,6 +115,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
   runSicher1119(s); // 19.11.2026: the old whole/careful PC line in each SYSTEM.md becomes today's (deleted with the bridge)
   runCost1117(s); // runs priced before 17.11.2026 get their notional cost from their own tokens, once (deleted with the bridge)
   runQuestsWake(s); // 20.11.2026: each agent with open work sorts it into quests once (deleted with the bridge)
+  runSecureWeb1125(s); // 25.11.2026: Secure mode's web 'yes' becomes 'chosen' once (deleted with the bridge)
   runGeneral1121(s); // 21.11.2026: the 19.11. general text the sicher bridge copied into general.md goes; the person's lines stay (deleted with the bridge)
   reviewPromptOverrides(s); // an own prompt file follows the release while untouched; an edited one gets one review
   s.prompts?.invalidate();
