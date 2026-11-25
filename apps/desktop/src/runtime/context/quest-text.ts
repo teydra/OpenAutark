@@ -20,7 +20,7 @@ import { excerpt } from '../../shared/text/chat-names.ts';
 import { namesFor, waitWords, type NoteNames } from '../tasks/names.ts';
 import { relatedWork } from '../tasks/related.ts';
 import { dayName, dueText, todoWhen } from './time.ts';
-import { taskAge, renderTask } from './task-text.ts';
+import { checklistSuffix, taskAge, renderTask } from './task-text.ts';
 
 export type QuestDeps = Pick<RuntimeServices, 'tasks' | 'clock' | 'org' | 'settings'> & Partial<Pick<RuntimeServices, 'chats' | 'people' | 'scheduler' | 'db'>>;
 
@@ -79,6 +79,8 @@ function nextOfPerson(open: Task[], zone: string, now: number): string {
 export function questLine(quest: TaskView, me: string, names: NoteNames, now: number, nextNote?: number): string {
   const open = quest.steps.filter((todo) => !isFinished(todo.status));
   const parts = [excerpt(quest.title, 100), quest.id, taskAge(quest, names.zone, now)];
+  const checklist = checklistSuffix(quest);
+  if (checklist) parts.push(checklist.slice(3));
   const owner = ownerOf(quest);
   if (owner !== me) parts.push(`${names.nameOf(owner)}'s`);
   const person = quest.steps.filter((todo) => ownerOf(todo) === HUMAN_ID);
@@ -136,7 +138,7 @@ export function myQuestsSection(s: QuestDeps, agentId: string, zone: string): st
     for (const task of other.slice(0, OTHER_MAX)) {
       covered.add(task.id);
       const owner = ownerOf(task);
-      lines.push(`- ${task.id} · ${owner === agentId ? '' : `${names.nameOf(owner)} · `}${todoState(task, names, now)} · ${excerpt(task.title, 100)} · ${taskAge(task, zone, now)}`);
+      lines.push(`- ${task.id} · ${owner === agentId ? '' : `${names.nameOf(owner)} · `}${todoState(task, names, now)} · ${excerpt(task.title, 100)} · ${taskAge(task, zone, now)}${checklistSuffix(task)}`);
     }
     if (other.length > OTHER_MAX) lines.push(`(+${other.length - OTHER_MAX} more – tasks.list)`);
   }
@@ -177,13 +179,13 @@ export function questSnapshot(s: QuestDeps, task: TaskView, readerId: string, zo
   const head = `${excerpt(quest.title, 120)} · ${quest.id}${owner === readerId ? '' : ` · ${names.nameOf(owner)}'s`}`;
   if (!isQuest(quest)) {
     const news = threadSince(s, [quest.id], new Map([[quest.id, quest.title]]), readerId, names, now);
-    return [`${head} · ${todoState(quest, names, now)}`, `Thread since my last line: ${news.length ? '' : 'nothing new.'}`.trimEnd(), ...news];
+    return [`${head} · ${todoState(quest, names, now)}${checklistSuffix(quest)}`, `Thread since my last line: ${news.length ? '' : 'nothing new.'}`.trimEnd(), ...news];
   }
   const lines = [`${head} – done when ${quest.doneWhen?.trim().replace(/\.+$/, '') || 'not set yet'}.`]; // "…abgegeben." ends once (real run 20.11.)
   const todos = quest.steps;
   const byOwner = new Map<string, Task[]>();
   for (const todo of todos) if (!isFinished(todo.status)) byOwner.set(ownerOf(todo), [...(byOwner.get(ownerOf(todo)) ?? []), todo]);
-  const todoLine = (todo: Task) => `  - "${excerpt(todo.title, 100)}" · ${todo.id} · ${todoState(todo, names, now)} · ${taskAge(todo, zone, now)}`;
+  const todoLine = (todo: Task) => `  - "${excerpt(todo.title, 100)}" · ${todo.id} · ${todoState(todo, names, now)} · ${taskAge(todo, zone, now)}${checklistSuffix(todo)}`;
   const personDone = todos.filter((todo) => ownerOf(todo) === HUMAN_ID && todo.status === 'done').sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
   const last = personDone.at(-1);
   const personOpen = byOwner.get(HUMAN_ID) ?? [];

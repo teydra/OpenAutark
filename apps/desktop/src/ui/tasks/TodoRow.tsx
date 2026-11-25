@@ -15,6 +15,7 @@ import { useContextMenu } from '../lib/context-menu.tsx';
 import { dayZone } from '../lib/day-store.ts';
 import { activity, agentName } from '../lib/store.ts';
 import { Icon } from '../lib/ui.tsx';
+import { PlanSummary } from './TaskPlan.tsx';
 import { MoreButton } from './parts.tsx';
 import { tick, told } from './page-actions.ts';
 import { taskIndex } from './page-data.ts';
@@ -68,6 +69,7 @@ export function TodoRow(props: TodoRowProps) {
           {task.private && <span class="todo-only" title="You do this one; the AI keeps it in view"><Icon name="user" size={12} />Only me</span>}
           {finished && task.completedAt && <span>{task.status === 'dropped' ? 'dropped' : doneText(task.completedAt, now, zone)}</span>}
         </span>
+        <PlanSummary task={task} />
       </button>
       <span class="todo-kind" aria-hidden="true">{task.widget && task.widget.type !== 'confirm' && <Icon name={widgetIcon(task.widget)} size={16} />}</span>
       <MoreButton build={build} />

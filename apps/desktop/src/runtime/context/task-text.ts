@@ -10,6 +10,7 @@
 import type { RuntimeServices } from '../contracts.ts';
 import { HUMAN_ID } from '../../shared/ids.ts';
 import { isFinished, isPaused, type Task, type TaskView } from '../../shared/model/tasks.ts';
+import { planProgress } from '../../shared/model/task-plan.ts';
 import { excerpt } from '../../shared/text/chat-names.ts';
 import { dueText, todoWhen } from './time.ts';
 import { attachmentLines } from './render.ts';
@@ -56,6 +57,16 @@ export function taskAge(task: Task, zone: string, now: number): string {
   return isFinished(task.status) ? created : `${created} · Idle since ${dueText(task.ledger.movedAt ?? task.createdAt, zone, now)}`;
 }
 
+export function checklistSummary(task: Task, nextLimit = 100): string | undefined {
+  const { done, total, next } = planProgress(task.ledger.plan);
+  if (total) return `☑ ${done}/${total}${next ? ` · Next: ${excerpt(next, nextLimit)}` : ''}`;
+}
+
+export const checklistSuffix = (task: Task): string => {
+  const summary = checklistSummary(task);
+  return summary ? ` · ${summary}` : '';
+};
+
 /** The whole quest or to-do under `heading`. */
 export function renderTask(services: RuntimeServices, task: TaskView, zone: string, heading: string): string {
   const now = services.clock.now();
@@ -80,7 +91,7 @@ export function renderTask(services: RuntimeServices, task: TaskView, zone: stri
   const files = fileLines(services, task, zone, now);
   if (files.length) lines.push(`Files:\n${files.join('\n')}`);
   const plan = task.ledger.plan ?? [];
-  if (plan.length) lines.push(`Plan (${plan.filter((line) => line.startsWith('✓')).length}/${plan.length}):\n${plan.slice(0, 20).map((line) => excerpt(line, 300)).join('\n')}`);
+  if (plan.length) lines.push(`Checklist: ${checklistSummary(task, 300)}\n${plan.slice(0, 20).map((line) => excerpt(line, 300)).join('\n')}`);
   const facts = (task.ledger.facts ?? []).slice(-MAX_FACTS);
   if (facts.length) lines.push(`Facts:\n${facts.map((fact) => `- ${excerpt(fact, 300)}`).join('\n')}`);
   if (task.result) {
