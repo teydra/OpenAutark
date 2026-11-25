@@ -12,11 +12,13 @@
 
 import { APP_ID_PATTERN } from '../../shared/model/apps.ts';
 import type { ToolContext, ToolDef, ToolOutput } from '../tools/types.ts';
-import { failure } from '../tools/types.ts';
+import { failure, json } from '../tools/types.ts';
+import { safeRedact } from '../tools/outputs.ts';
 import { handlesIn, maskValues } from '../secrets/handles.ts';
 import type { AppToolHost, Connector, McpCallResult, McpToolDef } from './types.ts';
 import { APP_TOOL_PREFIX, appLabel, appToolDescription, appToolNames, appToolSchema, cleanServerText } from './tools-schema.ts';
 import { withMailRun } from './mail/loops.ts';
+import { projectRows } from './result-projection.ts';
 import { errorOutput, mapResult, signInLine } from './tools-result.ts';
 
 export { APP_TOOL_PREFIX, appToolName, appToolNames } from './tools-schema.ts';
@@ -59,25 +61,54 @@ function toolDef(connector: Connector, tool: McpToolDef, name: string, host: App
   const read = tool.annotations?.readOnlyHint === true;
   const title = cleanServerText(tool.title ?? tool.annotations?.title, 80) || cleanServerText(mcpName, 80);
   const label = () => appLabel(host.state(appId)?.connector.name ?? connector.name);
+  const current = () => host.state(appId)?.connector;
+  const protectedNow = () => host.projectionEnabled?.() === true &&
+    (connector.resultProjection !== undefined || current()?.resultProjection !== undefined);
   return {
     name,
+    suppressResultReplay: protectedNow,
     description: appToolDescription(connector.name, tool),
     inputSchema: schema,
     category: read ? 'read' : 'write_system',
     describe: () => ({ summary: `${label()}: ${title}`, resource: `app://${appId}`, external: !read }),
     async run(args, ctx): Promise<ToolOutput> {
+      // A retained definition must not bypass a changed policy, even on an auth retry.
+      const protect = protectedNow();
+      const protectedFailure = (status: 'blocked' | 'error', sent = false): ToolOutput => ({
+        ...json({ status }), isError: true, effect: { status: sent && !read ? 'unknown' : 'failed' },
+      });
+      const policy = protect ? connector.resultProjection?.get(mcpName) : undefined;
+      if (protect && (!policy || !host.storeProjection || current() !== connector || !connector.enabled ||
+          ['off', 'signin', 'waiting'].includes(host.state(appId)?.status ?? '') || ctx.signal.aborted)) return protectedFailure('blocked');
       const app = label();
-      const refused = refusal(host, appId, app);
-      if (refused) return failure(refused);
+      if (!protect) {
+        const refused = refusal(host, appId, app);
+        if (refused) return failure(refused);
+      }
       const plain = new Map<string, string>();
       let result: McpCallResult;
+      let sent = false;
       try {
         const input = await filled(args ?? {}, ctx, plain) as Record<string, unknown>;
+        if (protect ? current() !== connector || ctx.signal.aborted : protectedNow()) return protectedFailure('blocked');
+        sent = true;
         // B-059: a mailbox's call in a run a mail started sends with Auto-Submitted (mail/loops.ts; in-process only).
-        result = await host.call(appId, mcpName, withMailRun(connector, input, ctx.origin, (id) => host.state(id)?.connector), ctx.signal);
+        result = await host.call(appId, mcpName, withMailRun(connector, input, ctx.origin, (id) => host.state(id)?.connector), ctx.signal, undefined, protect ? connector : undefined);
       } catch (error) {
-        return masked(errorOutput(error, app, !read, ctx.signal.aborted), plain);
+        return protect || protectedNow() ? protectedFailure('error', sent) : masked(errorOutput(error, app, !read, ctx.signal.aborted), plain);
       }
+      if (protect) {
+        try {
+          if (current() !== connector || ctx.signal.aborted) return protectedFailure('error', sent);
+          const rows = projectRows(result, policy!, (value) => safeRedact(ctx.services.secrets, maskValues(value, plain)));
+          if (!rows) return protectedFailure('error', sent);
+          const reference = host.storeProjection!(rows);
+          return json({ status: 'ok', count: rows.length, reference });
+        } catch {
+          return protectedFailure('error', sent);
+        }
+      }
+      if (protectedNow()) return protectedFailure('error', sent);
       return masked(mapResult(result, app), plain);
     },
   };

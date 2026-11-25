@@ -20,6 +20,7 @@ export interface AppsServices {
   /** The tool registry; `unregister` exists on the real one (runtime/tools/registry.ts). */
   tools: { register(tool: ToolDef): void; unregister?(name: string): void };
   log?: Logger;
+  settings?: Pick<import('../contracts.ts').SettingsService, 'get'>;
   /** The data folder watcher (absent: the files are read at start only). */
   rootWatcher?: Pick<RootWatcher, 'register'>;
 }

@@ -120,6 +120,8 @@ export interface Settings {
   providers?: Record<string, ProviderEntry>;
   /** Owner 19.11.2026: the security mode and its switches (shared/model/security-settings.ts); read it with securityOf. */
   security?: SecuritySettings;
+  /** Company-local opt-in for explicitly configured MCP connector result projections. */
+  apps?: { resultProjection: boolean };
 }
 
 /** The company's security settings: the stored section, or Trust AI mode's defaults when a file has none yet. */

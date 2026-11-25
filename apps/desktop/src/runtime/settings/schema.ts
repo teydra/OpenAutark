@@ -112,6 +112,9 @@ export const SECTIONS: readonly SectionDef[] = [
     text('timezone', 'Your time zone', 'an IANA time zone such as "Europe/Berlin"', { maxLength: 64, default: fromPc('timezone') }),
     text('notes', 'How you want to be spoken to, kept by the AI (a language per topic, a form of address) – every agent reads it', `text up to ${NOTES_MAX} characters`, { maxLength: NOTES_MAX, default: '' }),
   ] },
+  { key: 'apps', title: 'Apps – connected tools', keys: [
+    flag('resultProjection', 'Keep only the locally approved fields from MCP connectors that declare a result projection', false),
+  ] },
   { key: 'preferences', title: 'Window and app', keys: [
     choice('theme', 'Colour scheme of the window', ['system', 'light', 'dark'], 'system'),
     flag('sidebarOpen', 'The sidebar on the left is open', true),

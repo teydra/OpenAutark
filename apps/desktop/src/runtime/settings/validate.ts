@@ -109,6 +109,7 @@ const NAV_KEY = new RegExp(PATTERNS.navKey);
 
 /** Validates a complete Settings object (after merging). Throws WorkforceError('bad_request'). */
 export function validateSettings(s: Settings): void {
+  if (s.apps !== undefined) { if (!isPlain(s.apps)) bad('apps', 'an object'); boolean(s.apps.resultProjection, 'apps.resultProjection'); }
   const p = s.profile;
   str(p.name, 'profile.name');
   str(p.company, 'profile.company', 200);
