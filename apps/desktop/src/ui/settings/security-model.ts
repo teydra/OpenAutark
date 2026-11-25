@@ -6,7 +6,7 @@
 // Owns: these words and rules. Never: reads signals, calls the runtime or renders.
 
 import {
-  CRITICAL_TOPICS, MAX_SCOPE_ITEMS, SECURE_EXTRA_TOPICS, SECURITY_LABELS, SECURITY_SWITCHES, TRUST_SWITCHES, securityDefaults,
+  CRITICAL_TOPICS, MAX_SCOPE_ITEMS, SECURE_EXTRA_TOPICS, SECURITY_LABELS, SECURITY_SWITCHES, TRUST_SWITCHES, securityDefaults, siteOfUrl,
   type ApprovalAnswer, type SecurityMode, type SecuritySettings, type SecuritySwitch, type SecurityTopic,
 } from '../../shared/model/security-settings.ts';
 import type { ApprovalRequest } from '../../shared/api/methods-security-mode.ts';
@@ -43,6 +43,17 @@ export const SWITCH_HINT: Readonly<Record<SecuritySwitch, string>> = {
   otherPcs: 'Tools and files that agents on other PCs use on this PC',
 };
 
+/**
+ * Konrad 25.11.2026: commands set to Yes in Secure mode is a deliberate opening – a shell reads past the folder rules
+ * (Codex and Claude Code alike) – so the row says so while it is open.
+ */
+export const COMMANDS_OPEN_HINT = 'Open: commands run without asking and can read any file this user can, including keys';
+
+/** The line under a switch in this mode with this value. */
+export function switchHint(mode: SecurityMode, key: SecuritySwitch, value: string): string {
+  return mode === 'secure' && key === 'commands' && value === 'yes' ? COMMANDS_OPEN_HINT : SWITCH_HINT[key];
+}
+
 /** Spending money in Secure mode: one fixed note instead of a choice. */
 export const MONEY_CLOSED = 'Closed in Secure mode';
 export const MONEY_CLOSED_HINT = 'No payment and no stored card, whatever a chat says';
@@ -56,6 +67,8 @@ const YES_ASK_NO: readonly Choice[] = [...YES_ASK, { value: 'no', label: 'No' }]
 export function switchChoices(key: SecuritySwitch): readonly Choice[] {
   if (key === 'read' || key === 'write') return [{ value: 'all', label: 'Everywhere' }, { value: 'chosen', label: 'Chosen folders' }];
   if (key === 'computer') return [{ value: 'yes', label: 'All apps' }, { value: 'chosen', label: 'Chosen apps' }, { value: 'ask', label: 'Ask' }];
+  // 25.11.2026: searching stays open; a new site asks once and joins the list
+  if (key === 'web') return [{ value: 'yes', label: 'All sites' }, { value: 'chosen', label: 'Chosen sites' }, { value: 'ask', label: 'Ask' }];
   return key === 'otherPcs' ? YES_ASK_NO : YES_ASK;
 }
 
@@ -64,9 +77,9 @@ export function choiceLabel(key: SecuritySwitch, value: string): string {
   return switchChoices(key).find((choice) => choice.value === value)?.label ?? value;
 }
 
-/** The list a switch keeps (folders or apps), if any. */
-export function listKey(key: SecuritySwitch): 'readFolders' | 'writeFolders' | 'computerApps' | undefined {
-  return key === 'read' ? 'readFolders' : key === 'write' ? 'writeFolders' : key === 'computer' ? 'computerApps' : undefined;
+/** The list a switch keeps (folders, apps or sites), if any. */
+export function listKey(key: SecuritySwitch): 'readFolders' | 'writeFolders' | 'computerApps' | 'webDomains' | undefined {
+  return key === 'read' ? 'readFolders' : key === 'write' ? 'writeFolders' : key === 'computer' ? 'computerApps' : key === 'web' ? 'webDomains' : undefined;
 }
 
 /** The switch's list counts: Chosen folders / Chosen apps is the value. */
@@ -126,7 +139,7 @@ export function switchMode(current: SecuritySettings, to: SecurityMode): Securit
   if (to === 'trust') return { ...current, mode: 'trust' };
   const open = securityDefaults('trust');
   const untouched = SECURITY_SWITCHES.every((key) => TRUST_SWITCHES.includes(key) || current[key] === open[key])
-    && !current.readFolders.length && !current.writeFolders.length && !current.computerApps.length;
+    && !current.readFolders.length && !current.writeFolders.length && !current.computerApps.length && !current.webDomains?.length;
   return untouched ? { ...securityDefaults('secure'), ...(current.otherPcs ? { otherPcs: current.otherPcs } : {}) } : { ...current, mode: 'secure' }; // otherPcs: both modes
 }
 
@@ -152,6 +165,14 @@ export function cleanApp(raw: string): string | null {
   return name && name.length <= 80 && !/[\0"<>|]/.test(name) ? name : null;
 }
 
+/** A site typed or pasted ("https://www.example.com/page", "Example.com"): its host as the list keeps it – else null. */
+export function cleanSite(raw: string): string | null {
+  const text = raw.trim();
+  if (!text || /\s/.test(text)) return null;
+  const site = siteOfUrl(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`);
+  return site && site.length <= 253 && /^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|[0-9a-f:]+)$/.test(site) ? site : null;
+}
+
 /** The list with one more entry (same entry once, case-insensitive for folders on Windows), or null when it is full or there. */
 export function addTo(list: readonly string[], entry: string): string[] | null {
   if (list.length >= MAX_SCOPE_ITEMS || list.some((item) => item.toLowerCase() === entry.toLowerCase())) return null;
@@ -175,7 +196,7 @@ export function answerOptions(request: Pick<ApprovalRequest, 'capability' | 'pla
 
 /** A place for a button: an app by its name, a folder by its last part ("Docs" for C:\Users\Ada\Docs). */
 export function placeName(place: NonNullable<ApprovalRequest['place']>): string {
-  if (place.kind === 'app') return place.value;
+  if (place.kind === 'app' || place.kind === 'site') return place.value;
   return place.value.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || place.value;
 }
 
@@ -184,7 +205,7 @@ export function placeName(place: NonNullable<ApprovalRequest['place']>): string 
 const FIELD_NAMES: Readonly<Record<string, string>> = {
   securityMode: 'Mode', mode: 'Mode', pcAccess: 'Access to this PC', forEveryAgent: 'For every agent',
   libraryPublish: 'Share in the public library', readFolders: 'Chosen folders for reading', writeFolders: 'Chosen folders for changes',
-  computerApps: 'Chosen apps',
+  computerApps: 'Chosen apps', webDomains: 'Chosen sites',
 };
 const VALUE_WORDS: Readonly<Record<string, string>> = {
   trust: 'Trust AI', secure: 'Secure', yes: 'Yes', ask: 'Ask', all: 'Everywhere', chosen: 'Chosen', on: 'On', off: 'Off',

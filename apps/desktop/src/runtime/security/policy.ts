@@ -7,15 +7,20 @@
 // setup (switch `setup`), and so is the shared skill library <workspace>/skills; the agent's own home stays open.
 // Hard-closed in Secure mode, whatever a switch says and with no request: spending money, <data>/security (the topic texts,
 // changed by the person in Settings › Security), and Autark's own window for computer use.
+// 25.11.2026 (Andrea Griffiths' VM test of Secure mode, Konrad's decisions): (1) the web in Secure mode starts 'chosen' –
+// a search and a step in a tab already open are open, the first visit to any other site asks, "always" adds the site to
+// webDomains (subdomains count with it); (2) the only temp folder of the own folders is <data>/tmp – the OS temp folder
+// is shared with every other program on the PC, so it is "elsewhere" like any folder (the engines' TMP/TEMP point to the
+// own one, engines/temp-env.ts); (3) a workspace inside <data> (a further company's, root/companies.ts) is the team's own
+// folder like any other workspace, not Autark's setup – unless it holds <data> itself.
 // Owns: decide(), the own folders, the place a request offers, the helper's guard config and the vault's money refusal.
 // Never: asks, waits, reads settings or file contents (runtime/security/service.ts does), or maps tool calls (tool-gate.ts).
 
-import os from 'node:os';
 import type { SecurityMode } from '../../shared/model/security-settings.ts';
 import path from 'node:path';
 import { realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { otherPcsOf, SECURITY_DIR, SECURITY_LABELS, type SecuritySettings, type SecuritySwitch } from '../../shared/model/security-settings.ts';
+import { otherPcsOf, SECURITY_DIR, SECURITY_LABELS, siteListed, siteOf, webDomainsOf, type ApprovalPlace, type SecuritySettings, type SecuritySwitch } from '../../shared/model/security-settings.ts';
 import { AGENT_CORE_DIR } from '../../shared/model/agent-core.ts';
 import { HUMAN_ID, SYSTEM_ID } from '../../shared/ids.ts';
 import { ROOT_CHATS, ROOT_ENTRIES, ROOT_SECRETS } from '../root/layout.ts';
@@ -34,7 +39,7 @@ export interface Places {
   data: string;
   workspace: string;
   resources: string;
-  /** Temp folders: <data>/tmp and the OS temp folder. */
+  /** The company's own temp folder <data>/tmp (tempFolders; never the OS temp folder, which every program shares). */
   temp: readonly string[];
   /** Autark's own process name (lower case, without .exe): its window is never operated in Secure mode. */
   ownApp?: string;
@@ -45,6 +50,14 @@ export interface CheckInput {
   capability: SecuritySwitch;
   path?: string;
   app?: string;
+  /** web: the site a step reaches (a host name, siteOf); undefined with `web` for a step that reaches no new site. */
+  site?: string;
+  /**
+   * web without a site: 'search' – a web search (the search provider gets the query); 'tab' – a step in a browser tab
+   * already open (reading it, a click, a form), whose site was let through when it was opened. Neither: a step whose
+   * destination is unknown (a stored link, the page's own JavaScript), which asks when web is 'chosen'.
+   */
+  web?: 'search' | 'tab';
 }
 
 /** The verdict and the switch that decides it (a write into Autark's setup is `setup`, not `write`). */
@@ -114,10 +127,12 @@ export const securityFolder = (places: Pick<Places, 'data'>): string => path.joi
 
 /** Is `target` part of Autark's own setup: <data> outside the agent's own parts, and the shared skill library. */
 function isSetup(places: Places, agentId: string, target: string): boolean {
+  if (inside(path.join(places.workspace, 'skills'), target)) return true;
   const home = agentHome(places, agentId);
   if (home && inside(home, target)) return false;
   if (inside(path.join(places.data, 'memory'), target) || inAny(places.temp, target)) return false;
-  return inside(places.data, target) || inside(path.join(places.workspace, 'skills'), target);
+  if (inside(places.workspace, target) && !inside(places.workspace, places.data)) return false; // 25.11.2026: a workspace inside <data> is the team's own
+  return inside(places.data, target);
 }
 
 const allow = (value: 'yes' | 'ask'): Verdict => (value === 'yes' ? 'open' : 'ask');
@@ -151,6 +166,12 @@ export function decide(settings: SecuritySettings, places: Places, input: CheckI
       // 'chosen': a listed app is open; an unknown target is left to the helper's guard, which knows the window at input time
       return result(!app || settings.computerApps.map(appName).includes(app) ? 'open' : 'ask');
     }
+    case 'web': {
+      if (settings.web === 'yes') return result('open');
+      if (settings.web !== 'chosen') return result('ask');
+      if (input.web) return result('open'); // a search, or a step in a tab already open
+      return result(input.site && siteListed(webDomainsOf(settings), input.site) ? 'open' : 'ask');
+    }
     case 'otherPcs': { // Umzug 21.11.2026: 'no' is refused before the gate with its own text (devices/other-pcs.ts)
       const value = otherPcsOf(settings);
       return result(value === 'yes' ? 'open' : value === 'ask' ? 'ask' : 'closed');
@@ -160,8 +181,9 @@ export function decide(settings: SecuritySettings, places: Places, input: CheckI
   }
 }
 
-/** What "always for this place" would add: the file's folder (or the folder itself), or the app. */
-export function placeOf(capability: SecuritySwitch, input: { path?: string; app?: string; isFolder?: boolean }, workspace: string): { kind: 'folder' | 'app'; value: string } | undefined {
+/** What "always for this place" would add: the file's folder (or the folder itself), the app, or the site. */
+export function placeOf(capability: SecuritySwitch, input: { path?: string; app?: string; site?: string; isFolder?: boolean }, workspace: string): ApprovalPlace | undefined {
+  if (capability === 'web') { const site = input.site ? siteOf(input.site) : ''; return site ? { kind: 'site', value: site } : undefined; }
   if ((capability === 'read' || capability === 'write') && input.path) {
     const full = realPath(input.path, workspace);
     const folder = input.isFolder ? full : path.dirname(full);
@@ -172,12 +194,19 @@ export function placeOf(capability: SecuritySwitch, input: { path?: string; app?
 }
 
 /** The settings after "always": the switch opened ('setting') or the place added to its list ('place'). */
-export function opened(settings: SecuritySettings, capability: SecuritySwitch, place?: { kind: 'folder' | 'app'; value: string }): SecuritySettings {
+export function opened(settings: SecuritySettings, capability: SecuritySwitch, place?: ApprovalPlace): SecuritySettings {
   const next: SecuritySettings = structuredClone(settings);
   if (!place) {
     if (capability === 'read' || capability === 'write') next[capability] = 'all';
     else if (capability === 'computer') next.computer = 'yes';
     else next[capability] = 'yes';
+    return next;
+  }
+  if (place.kind === 'site') {
+    const site = siteOf(place.value);
+    const listed = webDomainsOf(next);
+    if (site && !listed.includes(site)) next.webDomains = [...listed, site];
+    if (next.web === 'ask') next.web = 'chosen'; // "always this site" is the list mode
     return next;
   }
   if (place.kind === 'app') {
@@ -237,7 +266,10 @@ export function closedText(why: ClosedWhy, name: string, pc = 'this PC'): string
   }
 }
 
-/** The OS temp folder and <data>/tmp. */
+/**
+ * The company's own temp folder <data>/tmp – the only one of the own folders (25.11.2026: no longer the OS temp folder,
+ * which every program on the PC shares; the engines' TMP/TEMP point to this one).
+ */
 export function tempFolders(dataTemp: string): string[] {
-  return [dataTemp, os.tmpdir()];
+  return [dataTemp];
 }

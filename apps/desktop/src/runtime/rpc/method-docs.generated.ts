@@ -403,7 +403,7 @@ export const TYPE_DOCS: Record<string, string> = {
   "PhoneUseAttach": "interface PhoneUseAttach { model?: string; screen?: { width: number; height: number }; ready?: boolean; }",
   "PhoneUseReply": "interface PhoneUseReply { id: string; result?: unknown; error?: { code: string; message: string }; }",
   "PointerAction": "type PointerAction = 'move' | 'click' | 'type' | 'scroll' | 'select' | 'drag'",
-  "Preferences": "interface Preferences { theme: 'system' | 'light' | 'dark'; sidebarOpen: boolean; sidebarWidth: number; workspaceOpen: boolean; workspaceWidth: number; enterSends: boolean; openAtLogin: boolean; autoDownloadUpdates: boolean; keepPcAwake: boolean; navOrder?: string[]; }",
+  "Preferences": "interface Preferences { theme: 'system' | 'light' | 'dark'; sidebarOpen: boolean; sidebarWidth: number; workspaceOpen: boolean; workspaceWidth: number; enterSends: boolean; openAtLogin: boolean; autoDownloadUpdates: boolean; keepPcAwake: boolean; navOrder?: string[]; declinedLogins?: string[]; }",
   "Profile": "interface Profile { name: string; company: string; avatarFileId?: string; language: string; timezone: string; notes?: string; }",
   "ProposedAgent": "interface ProposedAgent { key: string; name: string; role: string; instructions: string; mode: string; template?: string; skills: string[]; reportsTo?: string; companionOf?: string; tasks?: ProposedTask[]; include: boolean; }",
   "ProposedTask": "interface ProposedTask { title: string; body: string }",
@@ -424,7 +424,7 @@ export const TYPE_DOCS: Record<string, string> = {
   "SecretGroupRef": "interface SecretGroupRef { id: string; label: string; kind: SecretGroupKind }",
   "SecretInfo": "interface SecretInfo { id: string; description?: string; conversationId?: string; label: string; kind: 'api_key' | 'password' | 'card' | 'token' | 'note' | 'totp' | 'text'; hint?: string; source?: string; route?: string; tags?: string[]; createdAt: number; lastUsedAt?: number; uses?: number; group?: SecretGroupRef; field?: string; createdBy?: string; usedByApp?: boolean; }",
   "SecurityMode": "type SecurityMode = 'trust' | 'secure'",
-  "SecuritySettings": "interface SecuritySettings { mode: SecurityMode; read: FileScope; readFolders: string[]; write: FileScope; writeFolders: string[]; commands: Allow; web: Allow; computer: AppScope; computerApps: string[]; phone: Allow; message: Allow; publish: Allow; accounts: Allow; setup: Allow; team: Allow; money: Allow; otherPcs?: OtherPcs; }",
+  "SecuritySettings": "interface SecuritySettings { mode: SecurityMode; read: FileScope; readFolders: string[]; write: FileScope; writeFolders: string[]; commands: Allow; web: WebScope; webDomains?: string[]; computer: AppScope; computerApps: string[]; phone: Allow; message: Allow; publish: Allow; accounts: Allow; setup: Allow; team: Allow; money: Allow; otherPcs?: OtherPcs; }",
   "SecurityTopic": "type SecurityTopic = typeof SECURITY_TOPICS[number]",
   "SendMessageInput": "interface SendMessageInput { conversationId: string; secrets?: string[]; body: string; attachments?: Attachment[]; mentions?: string[]; priority?: 'normal' | 'important'; replyTo?: string; model?: string; effort?: string; clientId?: string; } & interface SendMessageInput { speech?: SpeechMeta; marks?: TextMarks; } & interface SendMessageInput { silent?: boolean; pin?: boolean; } & interface SendMessageInput { ultra?: boolean; }",
   "Settings": "interface Settings { day?: DaySettings; calendar?: CalendarSettings; } & interface Settings { lifecycle?: LifecycleSettings; } & interface Settings { profile: Profile; preferences: Preferences; notifications: NotificationSettings; voice: VoiceSettings; routing: RoutingSettings; onboarding: { completed: boolean; step: OnboardingStep }; feedback: { includeDiagnostics: boolean }; pwa: { enabled: boolean; bind: 'localhost' | 'lan' | 'tailscale' }; devices: DeviceSettings; library?: LibrarySettings; providers?: Record<string, ProviderEntry>; security?: SecuritySettings; }",
@@ -455,4 +455,5 @@ export const TYPE_DOCS: Record<string, string> = {
   "UiBlock": "interface UiBlock { type: BlockType; id?: string; title?: string; todo?: boolean; important?: boolean; due?: string; priority?: 'normal' | 'high'; why?: string; [prop: string]: unknown; }",
   "Verification": "type Verification = 'reported_by_human' | 'claimed_by_agent' | 'verified'",
   "VoiceSettings": "interface VoiceSettings { ttsVoice?: string; vocabulary: string[]; realtime: 'auto' | 'off'; talker?: boolean; localStt?: string; localTts?: string; }",
+  "WebScope": "type WebScope = 'yes' | 'chosen' | 'ask'",
 };

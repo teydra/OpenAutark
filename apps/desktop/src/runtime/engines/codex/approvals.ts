@@ -11,7 +11,7 @@
 // 0.167.0-alpha.3.2) and the Secure-mode mapping of a request to a gate step. Never: decides (the gate does) or answers
 // a Secure-mode request for the session.
 
-import type { Allow } from '../../../shared/model/security-settings.ts';
+import type { Allow, WebScope } from '../../../shared/model/security-settings.ts';
 import type { SecurityService } from '../../security/service.ts';
 import { isRecord, str } from '../shared.ts';
 import type { TurnAccess } from './isolation.ts';
@@ -43,8 +43,8 @@ export function declineUserInput(): Record<string, unknown> {
   return { answers: {} };
 }
 
-/** What a Secure-mode turn's sandbox is built from (isolation.ts turnPermissions). */
-export interface SecureSandbox { write: 'all' | string[]; commands: Allow }
+/** What a Secure-mode turn's sandbox is built from (isolation.ts turnPermissions); `web` absent counts as open (older callers). */
+export interface SecureSandbox { write: 'all' | string[]; commands: Allow; web?: WebScope }
 
 /** A Secure-mode agent turn: its sandbox and the gate its approval requests go through. */
 export interface CodexSecure { sandbox: SecureSandbox; gate: CodexGate }
@@ -55,8 +55,8 @@ export function codexSecure(lookup: SecurityLookup | undefined, turn: NativeTurn
   const security = secureService(lookup);
   if (!security) return undefined;
   let sandbox: SecureSandbox;
-  try { const scope = security.fileScope(turn.agentId); sandbox = { write: scope.write, commands: scope.commands }; }
-  catch { sandbox = { write: [], commands: 'ask' }; } // no scope: writes stay in the turn's folder, every command asks
+  try { const scope = security.fileScope(turn.agentId); sandbox = { write: scope.write, commands: scope.commands, web: scope.web }; }
+  catch { sandbox = { write: [], commands: 'ask', web: 'ask' }; } // no scope: writes stay in the turn's folder, every command asks
   return { sandbox, gate: new CodexGate(security, turn, sandbox.commands, signal) };
 }
 
@@ -124,7 +124,7 @@ export class CodexGate {
       const command = Array.isArray(params.command) ? list(params.command).join(' ') : str(params.command) ?? '';
       const network = isRecord(params.networkApprovalContext) ? str(params.networkApprovalContext.host) : undefined;
       const fingerprint = nativeFingerprint('codex', 'command', { command, cwd: params.cwd, kind: params.kind, more: params.additionalPermissions ?? null, network: network ?? null });
-      if (network) return { capability: 'web', summary: clip(`Reach ${network}${command ? ` for: ${command}` : ''}`), fingerprint };
+      if (network) return { capability: 'web', site: network, summary: clip(`Reach ${network}${command ? ` for: ${command}` : ''}`), fingerprint }; // 25.11.2026: per site
       if (this.commands === 'ask' || params.kind === 'humanCommand' || params.kind === 'writeStdin') return { capability: 'commands', summary: clip(`Run: ${command || 'a command'}`), fingerprint };
       return { capability: 'write', paths: writePaths(params.additionalPermissions), summary: clip(`Run outside the sandbox: ${command || 'a command'}`), fingerprint };
     }

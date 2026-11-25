@@ -4,7 +4,8 @@
 // (t1, t2 …), the active tab, downloads into <workspace>/downloads/<agentId>, each tab's console and network log
 // (devtools.ts), and the agent's last look per tab (the change lists of diff.ts). Umzug 21.11.2026: profileHooks – what
 // keeps an agent's sign-ins the same on its other PCs (devices/sync/share-browser.ts) hears a profile right after it
-// opened (before its first page) and right before it is closed here.
+// opened (before its first page) and right before it is closed here. 25.11.2026: in Secure mode with the web on 'chosen'
+// each session's context carries the navigation guard (nav-guard.ts) from the first step after it turned on.
 // Owns: the sessions map, launching, the idle timer, tab ids and the change listeners of the live view (view.ts).
 // Never: acts on a page (service.ts does) or touches the person's own browser profile.
 
@@ -16,8 +17,9 @@ import type { ContextLike, PageLike } from './page.ts';
 import { defaultLauncher, launchError, launchOptions, type Launcher } from './launch.ts';
 import { saveDownload } from './downloads.ts';
 import { PageLog } from './devtools.ts';
+import { installGuard, type GuardState, type NavGuard, type RoutableContext } from './nav-guard.ts';
 
-export interface Session {
+export interface Session extends GuardState {
   agentId: string;
   context: ContextLike;
   ids: WeakMap<PageLike, string>;
@@ -71,6 +73,8 @@ export interface BrowserSessionsDeps {
   channel?: () => BrowserChannel;
   idleMs?: number; // default 10 min
   actionTimeoutMs?: number; // default 10 s
+  /** 25.11.2026: Secure mode's check of a tab's move to another site (nav-guard.ts); absent: none. */
+  guard?: NavGuard;
   /** An agent's browser closed ('closed': idle, on request or by itself; 'shutdown'). */
   closed(agentId: string, reason: 'closed' | 'shutdown'): void;
 }
@@ -93,7 +97,7 @@ export class BrowserSessions {
   /** The agent's browser, launched when none is open; counts as use. */
   async session(agentId: string): Promise<Session> {
     const existing = this.sessions.get(agentId);
-    if (existing) { this.touch(existing); return existing; }
+    if (existing) { this.touch(existing); await installGuard(this.deps.guard, existing, existing.context as RoutableContext); return existing; }
     let launching = this.launching.get(agentId);
     if (!launching) {
       launching = this.launch(agentId).finally(() => this.launching.delete(agentId));
@@ -101,6 +105,7 @@ export class BrowserSessions {
     }
     const session = await launching;
     this.touch(session);
+    await installGuard(this.deps.guard, session, session.context as RoutableContext); // Secure mode turned on after the launch: from this step on
     return session;
   }
 

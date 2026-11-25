@@ -13,6 +13,9 @@
 // page that shows my browser the check too comes back as a failed fetch, with no added line; while the person has my
 // browser, the answer says so with the direct fetch's own answer. A failed fetch names its cause ("getaddrinfo ENOTFOUND
 // <host>"). The request headers stay as they are – nothing hides that I am automated.
+// 25.11.2026 (Secure mode, web not open everywhere): redirects are followed hop by hop, each only to the site the gate let
+// through or one open without asking (redirectCheck); a redirect elsewhere is reported, not followed – an open redirect
+// of an allowed site would otherwise carry data on to any site.
 // Owns: http(s) fetching with a byte cap and timeout, HTML → text extraction, the header checks, the bot-check fallback.
 // Never: follows non-http schemes, sends the person's cookies, puts a secret value anywhere but the request,
 // or presents page text as instructions (it is labelled untrusted content).
@@ -22,6 +25,7 @@ import { failure, text } from '../types.ts';
 import { WorkforceError } from '../../../shared/errors.ts';
 import { handlesIn, judgeHandles, resolveMasked, withHandles } from '../../secrets/handles.ts';
 import { defineTool } from './util.ts';
+import { siteListed, siteOf } from '../../../shared/model/security-settings.ts';
 import { webSearchTool, type SearchFetch } from './web-search.ts';
 import type { BrowserRead } from '../../browser/read-page.ts';
 
@@ -42,6 +46,26 @@ function checkHeaders(headers: Record<string, string> | undefined): Record<strin
 }
 
 const hostOfUrl = (url: string): string | undefined => { try { return new URL(url).hostname || undefined; } catch { return undefined; } };
+
+/**
+ * 25.11.2026 (Secure mode, the web not open everywhere): whether a redirect may go on to a host – the site the gate let
+ * through (and its subdomains), or one the policy opens without asking. undefined: no check (Trust AI mode, web open).
+ */
+function redirectCheck(ctx: ToolContext, first: string): ((host: string) => boolean) | undefined {
+  const security = ctx.services.security;
+  if (!security) return undefined;
+  try {
+    const now = security.current();
+    if (now.mode !== 'secure' || now.web === 'yes') return undefined;
+  } catch { return undefined; }
+  const start = siteOf(first);
+  return (host) => {
+    const site = siteOf(host);
+    if (!site) return false;
+    if (siteListed([start], site)) return true;
+    try { return security.check({ agentId: ctx.agent.id, capability: 'web', site, fingerprint: '' }) === 'open'; } catch { return false; }
+  };
+}
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
@@ -164,8 +188,21 @@ export function webTools(deps: { fetch?: FetchFn } = {}): ToolDef[] {
       const max = args.maxChars ?? 40_000;
       let why: string | undefined; // B-080: the direct fetch was turned away as a bot
       let answer: ToolOutput;
+      const check = secret ? undefined : redirectCheck(ctx, url.hostname);
       try {
-        const response = await doFetch(url.toString(), { signal: controller.signal, redirect: secret ? 'manual' : 'follow', headers: { 'user-agent': 'Mozilla/5.0 (Autark agent)', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5', ...headers } });
+        const init = { signal: controller.signal, redirect: secret || check ? 'manual' as const : 'follow' as const, headers: { 'user-agent': 'Mozilla/5.0 (Autark agent)', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5', ...headers } };
+        let response = await doFetch(url.toString(), init);
+        let held: string | undefined; // 25.11.2026: a redirect to a site Secure mode has not opened to me
+        for (let hop = 0, at = url; check && hop < 10 && response.status >= 300 && response.status < 400; hop++) {
+          const location = response.headers.get('location');
+          let next: URL;
+          try { next = new URL(location ?? '', at); } catch { break; }
+          if (!location) break;
+          if ((next.protocol !== 'http:' && next.protocol !== 'https:') || !check(next.hostname)) { held = next.toString(); break; }
+          await response.body?.cancel().catch(() => undefined);
+          at = next;
+          response = await doFetch(next.toString(), init);
+        }
         const moved = secret && response.status >= 300 && response.status < 400 ? response.headers.get('location') : null;
         const type = response.headers.get('content-type') ?? '';
         const reader = response.body?.getReader();
@@ -182,7 +219,8 @@ export function webTools(deps: { fetch?: FetchFn } = {}): ToolDef[] {
         const raw = new TextDecoder().decode(Buffer.concat(chunks));
         const body = mask(/html|xml/i.test(type) || /^\s*</.test(raw) ? htmlToText(mask(raw)) : raw); // before clipping
         const clipped = body.length > max ? `${body.slice(0, max)}\n… [${body.length - max} more chars]` : body;
-        const redirect = moved ? `\n[redirect to ${moved.slice(0, 500)} not followed: the request carries a stored secret]` : '';
+        const redirect = moved ? `\n[redirect to ${moved.slice(0, 500)} not followed: the request carries a stored secret]`
+          : held ? `\n[redirect to ${held.slice(0, 500)} not followed: Secure mode has not opened that site to me yet – I fetch it directly, and the app asks the person first]` : '';
         if (!secret && botCheck(response.status, response.headers, raw)) why = `the direct fetch got HTTP ${response.status}, a bot check`;
         answer = {
           content: [{ type: 'text', text: mask(`[untrusted web content from ${url.host}, HTTP ${response.status}${capped ? ', truncated at 2 MB' : ''}]\n${clipped}${redirect}`) }],

@@ -63,6 +63,9 @@ export interface NativeStep extends NativeTurn {
   summary: string;
   /** The files the step names (absolute when the CLI gave them so). */
   paths?: readonly string[];
+  /** web (25.11.2026): the site the step reaches (a host), or 'search' for a web search – policy.ts CheckInput. */
+  site?: string;
+  web?: 'search';
   fingerprint: string;
   signal?: AbortSignal;
 }
@@ -86,7 +89,8 @@ export async function gateNative(security: SecurityService, step: NativeStep): P
     }
     return await security.gate({
       agentId: step.agentId, capability: step.capability, summary: step.summary.slice(0, 300), fingerprint: step.fingerprint,
-      ...(path ? { path } : {}), ...(step.runId ? { runId: step.runId } : {}), ...(step.signal ? { signal: step.signal } : {}),
+      ...(path ? { path } : {}), ...(step.site ? { site: step.site } : {}), ...(step.web ? { web: step.web } : {}),
+      ...(step.runId ? { runId: step.runId } : {}), ...(step.signal ? { signal: step.signal } : {}),
     });
   } catch {
     return { ok: false, text: GATE_FAILED };

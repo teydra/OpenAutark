@@ -17,8 +17,8 @@
 import { statSync } from 'node:fs';
 import path from 'node:path';
 import type { RuntimeServices } from '../contracts.ts';
-import type { Allow, ApprovalAnswer, SecurityMode, SecuritySettings, SecuritySwitch } from '../../shared/model/security-settings.ts';
-import { effective, SECURITY_LABELS } from '../../shared/model/security-settings.ts';
+import type { Allow, ApprovalAnswer, SecurityMode, SecuritySettings, SecuritySwitch, WebScope } from '../../shared/model/security-settings.ts';
+import { effective, SECURITY_LABELS, webDomainsOf } from '../../shared/model/security-settings.ts';
 import type { ApprovalRequest } from '../../shared/api/methods-security-mode.ts';
 import { securityOf } from '../../shared/model/system.ts';
 import { WorkforceError } from '../../shared/errors.ts';
@@ -40,6 +40,9 @@ export interface GateRequest {
   /** A file path (read/write) or an app (computer) the request is about; the service derives the offered place. */
   path?: string;
   app?: string;
+  /** web: the site the step reaches, or what it is when it reaches none (policy.ts CheckInput). */
+  site?: string;
+  web?: 'search' | 'tab';
   /** Same tool + same arguments → same fingerprint ("once" lets one later identical call through). */
   fingerprint: string;
   chatId?: string;
@@ -59,7 +62,9 @@ export interface FileScope {
   read: 'all' | string[];
   write: 'all' | string[];
   commands: Allow;
-  web: Allow;
+  web: WebScope;
+  /** The sites open when web is 'chosen' (siteOf form; their subdomains count with them; absent: none). */
+  sites?: string[];
   /** Folders no agent may change except through the app: <data>/security in Secure mode (empty in Trust AI mode). */
   closed: string[];
   /**
@@ -73,7 +78,7 @@ export interface SecurityService {
   /** effective(securityOf(settings)) */
   current(): SecuritySettings;
   /** Synchronous: 'open' (go), 'ask' (gate would ask), 'closed' (hard no). */
-  check(req: Pick<GateRequest, 'agentId' | 'capability' | 'path' | 'app' | 'fingerprint'>): 'open' | 'ask' | 'closed';
+  check(req: Pick<GateRequest, 'agentId' | 'capability' | 'path' | 'app' | 'site' | 'web' | 'fingerprint'>): 'open' | 'ask' | 'closed';
   /** open → { ok: true } at once; closed → refusal; ask → request + wait ≤ WAIT_MS. */
   gate(req: GateRequest): Promise<GateResult>;
   fileScope(agentId: string): FileScope;
@@ -103,7 +108,7 @@ export class Security implements SecurityService {
     return effective(securityOf(this.services().settings.get()));
   }
 
-  check(req: Pick<GateRequest, 'agentId' | 'capability' | 'path' | 'app' | 'fingerprint'>): 'open' | 'ask' | 'closed' {
+  check(req: Pick<GateRequest, 'agentId' | 'capability' | 'path' | 'app' | 'site' | 'web' | 'fingerprint'>): 'open' | 'ask' | 'closed' {
     return decide(this.current(), this.places(), req).verdict;
   }
 
@@ -138,6 +143,7 @@ export class Security implements SecurityService {
       write: settings.write === 'all' ? 'all' : real([...own.write, ...settings.writeFolders]),
       commands: settings.commands,
       web: settings.web,
+      sites: webDomainsOf(settings),
       closed: secure ? real([securityFolder(places)]) : [],
       guarded: settings.setup === 'yes' ? [] : real([path.join(places.workspace, 'skills'), ...(settings.write === 'all' ? [places.data] : [])]),
     };
@@ -179,7 +185,7 @@ export class Security implements SecurityService {
   private open(req: GateRequest, capability: SecuritySwitch): StoredRequest {
     const s = this.services();
     const isFolder = req.path ? folderExists(path.resolve(s.paths.workspace, req.path)) : false;
-    const place = placeOf(capability, { path: req.path, app: req.app, isFolder }, s.paths.workspace);
+    const place = placeOf(capability, { path: req.path, app: req.app, site: req.site, isFolder }, s.paths.workspace);
     const where = this.whereFrom(req);
     const request: StoredRequest = {
       id: newId('apr', s.clock.now()), agentId: req.agentId, agentName: s.org?.get(req.agentId)?.name ?? req.agentName?.slice(0, 80) ?? req.agentId, at: s.clock.now(),

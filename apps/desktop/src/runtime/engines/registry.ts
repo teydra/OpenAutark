@@ -84,7 +84,7 @@ export function createEngineRegistry(deps: {
   let shared: NodeJS.ProcessEnv | undefined;
   const env = () => (shared ??= agentEnv(deps.paths.data));
   const factories: EngineFactories = {
-    codex: () => new CodexEngine({ supervisor: deps.supervisor, finder: deps.finder, cwd: processCwd, version: deps.version, onLimits: deps.onLimits, log: deps.warn, env: env(), security: deps.security, managed: deps.managed }),
+    codex: () => new CodexEngine({ supervisor: deps.supervisor, finder: deps.finder, cwd: processCwd, version: deps.version, onLimits: deps.onLimits, log: deps.warn, env: env(), security: deps.security, tempDir: deps.paths.temp, managed: deps.managed }),
     // B-048 E2: rebuilt transcripts live in the app's data folder; only the app's own homes may take the 'project' tier.
     claude: () => new ClaudeEngine({
       supervisor: deps.supervisor, finder: deps.finder, tempDir: deps.paths.temp, env: env(),

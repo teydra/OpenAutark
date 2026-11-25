@@ -34,7 +34,13 @@ export function approvalWidget(request: Pick<ApprovalRequest, 'agentName' | 'sum
     ...(request.place ? [{ value: 'place', label: `Always: ${request.place.value}` }] : []),
     { value: 'decline', label: 'Decline' },
   ];
-  return { type: 'choice', question: `${request.agentName}: ${request.summary}`, options } as unknown as UiBlock;
+  return { type: 'choice', question: questionOf(request), options } as unknown as UiBlock;
+}
+
+/** The question: a new site (web 'chosen', 25.11.2026) in its own words, everything else as "<agent>: <step>". */
+export function questionOf(request: Pick<ApprovalRequest, 'agentName' | 'summary' | 'capability' | 'place'>): string {
+  if (request.capability === 'web' && request.place?.kind === 'site') return `${request.agentName} wants to open ${request.place.value} for the first time. Allow this site?`;
+  return `${request.agentName}: ${request.summary}`;
 }
 
 /** Makes the to-do; its id, or undefined where there is no task service (tests, a headless start before it). */
@@ -43,7 +49,7 @@ export function openApprovalTodo(s: TodoServices, request: ApprovalRequest): str
   // TaskServiceImpl's own options (tasks/create.ts CreateOptions): the client id, and the widget is the runtime's
   const options: { fromRun?: string } & Record<string, unknown> = { clientId: `${PREFIX}${request.id}`, runtimeWidget: true };
   const view = s.tasks.create({
-    title: `${request.agentName} asks: ${request.summary}`.slice(0, 200), assigneeKind: 'human', widget: approvalWidget(request),
+    title: (request.place?.kind === 'site' && request.capability === 'web' ? questionOf(request) : `${request.agentName} asks: ${request.summary}`).slice(0, 200), assigneeKind: 'human', widget: approvalWidget(request),
     notes: `${SECURITY_LABELS[request.capability]} is closed on ${pcName(s)} until you answer.`, createdBy: SYSTEM_ID, priority: 1,
     origin: { source: 'security', label: 'Security request' },
   }, options);

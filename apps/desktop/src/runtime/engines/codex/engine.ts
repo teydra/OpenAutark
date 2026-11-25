@@ -33,6 +33,7 @@ import { dropThread } from './terminals.ts'; // L3 / C4: a thread nobody resumes
 import { threadIsolation, trustKeys, turnAccess } from './isolation.ts';
 import { codexSecure } from './approvals.ts';
 import { securityMode, type SecurityLookup } from './native-gate.ts';
+import { secureShellEnv } from '../temp-env.ts';
 import { imageThread, openAgentThread, startHelperThread, untilStopped } from './helper-thread.ts';
 import { ERR, ToolNames, nearestEffort, sameFolder, str } from '../shared.ts';
 import { normalizeCodexLimits } from '../../accounts/limits.ts';
@@ -65,6 +66,7 @@ export interface CodexEngineDeps {
   shellEnv?: Record<string, string>;
   /** Sicher-Runde 19.11.2026: services.security – Secure mode's sandbox and approval gate for agent turns (approvals.ts codexSecure). */
   security?: SecurityLookup;
+  tempDir?: string; // 25.11.2026: <data>/tmp – TMP/TEMP/TMPDIR of a Secure-mode thread's shells (temp-env.ts secureShellEnv)
   managed?: ManagedPathStore; // 0.3.19: the persistent managed-shell marks (managed-path.ts); none: process memory only
 }
 
@@ -268,7 +270,7 @@ export class CodexEngine implements Engine {
     return {
       ...(input.model ? { model: input.model } : {}), cwd: input.cwd,
       ...(input.system ? { baseInstructions: input.system.stable } : {}),
-      approvalPolicy: 'never', ...threadIsolation(trustKeys(input.cwd, real), this.deps.shellEnv, input.agentId),
+      approvalPolicy: 'never', ...threadIsolation(trustKeys(input.cwd, real), secureShellEnv(this.deps.shellEnv, this.deps.tempDir, securityMode(this.deps.security) === 'secure'), input.agentId),
     };
   }
 

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { LEAN_SETTINGS } from '../../../src/runtime/engines/claude/lean.ts';
 import { nativeStep, rulePath, secureArgs, secureSettings } from '../../../src/runtime/engines/claude/permissions.ts';
 import { turnInput } from './fakes.ts';
-import { claudeAccount, claudeSetup, until } from './claude-fixture.ts';
+import { TEMP, claudeAccount, claudeSetup, until } from './claude-fixture.ts';
 import { WAITING, fakeSecurity } from './security-fake.ts';
 
 const HUB = { url: 'http://127.0.0.1:4555/mcp', token: 'hub-token-for-test' };
@@ -29,7 +29,7 @@ test('claude secure: rule paths are Claude Code\'s absolute form (// + POSIX; Wi
 test('claude secure: settings allow the open folders, the hub, open switches – and deny edits in the closed folder', () => {
   const chosen = JSON.parse(secureSettings({ mode: 'secure', read: ['/work', '/docs'], write: ['/work'], commands: 'ask', web: 'yes', closed: ['/data/security'] }, 'linux'));
   assert.equal(chosen.disableAllHooks, true, 'still no hooks');
-  assert.deepEqual(chosen.permissions.allow, ['mcp__workforce', 'Read(//work/**)', 'Read(//docs/**)', 'Edit(//work/**)', 'WebSearch']);
+  assert.deepEqual(chosen.permissions.allow, ['mcp__workforce', 'Read(//work/**)', 'Read(//docs/**)', 'Edit(//work/**)', 'WebSearch', 'WebFetch']);
   assert.deepEqual(chosen.permissions.deny, ['Edit(//data/security/**)']);
   const open = JSON.parse(secureSettings({ mode: 'secure', read: 'all', write: 'all', commands: 'yes', web: 'ask', closed: [] }, 'linux'));
   assert.deepEqual(open.permissions.allow, ['mcp__workforce', 'Read', 'Edit', 'Bash', 'PowerShell']);
@@ -39,6 +39,16 @@ test('claude secure: settings allow the open folders, the hub, open switches –
   assert.deepEqual(secureArgs({ mode: 'secure', read: ['/work', '/docs'], write: [], commands: 'ask', web: 'ask', closed: [] }),
     ['--permission-mode', 'default', '--permission-prompts', 'host', '--add-dir', '/work', '--add-dir', '/docs']);
   assert.deepEqual(secureArgs({ mode: 'secure', read: 'all', write: [], commands: 'ask', web: 'ask', closed: [] }), ['--permission-mode', 'default', '--permission-prompts', 'host']);
+});
+
+test('claude secure (25.11.2026): web chosen – a search is allowed, WebFetch only for the chosen sites, the rest goes to the gate', () => {
+  const scope = { mode: 'secure' as const, read: ['/work'], write: ['/work'], commands: 'ask' as const, closed: [] as string[] };
+  const chosen = JSON.parse(secureSettings({ ...scope, web: 'chosen', sites: ['example.com', 'bad site/x'] }, 'linux'));
+  assert.deepEqual(chosen.permissions.allow.filter((rule: string) => rule.startsWith('Web')), ['WebSearch', 'WebFetch(domain:example.com)'], 'a malformed entry makes no rule');
+  const asks = JSON.parse(secureSettings({ ...scope, web: 'ask' }, 'linux'));
+  assert.deepEqual(asks.permissions.allow.filter((rule: string) => rule.startsWith('Web')), [], 'ask: a search asks too');
+  assert.deepEqual(nativeStep('WebFetch', { url: 'https://WWW.Example.com/page', prompt: 'x' }).site, 'example.com');
+  assert.equal(nativeStep('WebSearch', { query: 'autark' }).web, 'search', 'a search names no site and passes in chosen');
 });
 
 test('claude secure: native tools map to switches with their files', () => {
@@ -61,6 +71,17 @@ test('claude secure: a Trust-mode company and no service keep bypassPermissions 
     assert.equal(flag(call.args, '--settings'), LEAN_SETTINGS);
     assert.equal(call.args.includes('--permission-prompts'), false);
     assert.equal(call.args.includes('--add-dir'), false);
+  }
+});
+
+test('claude secure (25.11.2026): an agent turn in Secure mode runs with TMP, TEMP and TMPDIR at the own temp folder; Trust keeps the PC\'s', async () => {
+  for (const mode of ['secure', 'trust'] as const) {
+    const h = claudeSetup({}, { security: fakeSecurity({ mode, gate: () => ({ ok: true }) }).lookup });
+    await h.engine.run(input().input);
+    const env = h.cli.of('turn')[0].options.env ?? {};
+    const temps = Object.entries(env).filter(([key]) => /^(tmp|temp|tmpdir)$/i.test(key));
+    if (mode === 'secure') assert.deepEqual(temps.sort(), [['TEMP', TEMP], ['TMP', TEMP], ['TMPDIR', TEMP]], 'each once, at <data>/tmp');
+    else assert.ok(temps.every(([, value]) => value !== TEMP), 'Trust: the PC\'s own temp, untouched');
   }
 });
 

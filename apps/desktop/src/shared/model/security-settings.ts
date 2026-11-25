@@ -23,6 +23,12 @@ export type Allow = 'yes' | 'ask';
 export type FileScope = 'all' | 'chosen';
 /** Computer use: 'yes' every app (never Autark itself in Secure mode), 'chosen' the listed apps, 'ask' each time. */
 export type AppScope = 'yes' | 'chosen' | 'ask';
+/**
+ * The web (25.11.2026, Secure mode after Andrea Griffiths' VM test – data could leave through any URL): 'yes' every site,
+ * 'chosen' the sites in webDomains and a search (its receiver is the search provider, not a site of the agent's
+ * choosing) – the app asks before the first visit to any other site and an "always" adds it to the list –, 'ask' each time.
+ */
+export type WebScope = 'yes' | 'chosen' | 'ask';
 /** Calls from agents on other PCs (the person's own, and a firm's PC this one joined as an employee): 'yes' run like this PC's own agents' calls, 'ask' each time, 'no' refused. */
 export type OtherPcs = 'yes' | 'ask' | 'no';
 export const OTHER_PCS: readonly OtherPcs[] = ['yes', 'ask', 'no'];
@@ -38,7 +44,12 @@ export interface SecuritySettings {
   /** Running commands in a shell (PowerShell, Bash, cmd). */
   commands: Allow;
   /** Browsing, searching and fetching from the web. */
-  web: Allow;
+  web: WebScope;
+  /**
+   * Sites open when web is 'chosen' (host names in lower case, without "www."; a site's subdomains count with it). Absent
+   * = none (a section kept before this key existed; read it with webDomainsOf).
+   */
+  webDomains?: string[];
   /** Operating apps on this PC (computer use). */
   computer: AppScope;
   /** Process names, e.g. "excel", "chrome" (lower case, without .exe). */
@@ -69,6 +80,38 @@ export type SecuritySwitch = typeof SECURITY_SWITCHES[number] | 'otherPcs';
 /** What calls from agents on other PCs get here. */
 export function otherPcsOf(settings: Pick<SecuritySettings, 'otherPcs'> | undefined): OtherPcs {
   return settings?.otherPcs ?? 'yes';
+}
+
+/** The sites open when web is 'chosen' (absent: none). */
+export function webDomainsOf(settings: Pick<SecuritySettings, 'webDomains'> | undefined): string[] {
+  return settings?.webDomains ?? [];
+}
+
+/**
+ * A site as the list keeps it and the app asks about it: the host name in lower case, without a trailing dot and a
+ * leading "www.", an IPv6 address without its brackets; '' when `host` is none.
+ */
+export function siteOf(host: string): string {
+  return host.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1').replace(/\.+$/, '').replace(/^www\./, '');
+}
+
+/** The WHATWG URL parts siteOfUrl uses (shared has no DOM or Node types; every layer's runtime has the global). */
+declare const URL: new (input: string) => { protocol: string; hostname: string };
+
+/** The site of a URL (a bare "example.com/x" counts as https); '' when it names none (data:, about:, an invalid one). */
+export function siteOfUrl(url: string): string {
+  const raw = url.trim();
+  try {
+    const parsed = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'ws:' || parsed.protocol === 'wss:' || parsed.protocol === 'ftp:' ? siteOf(parsed.hostname) : '';
+  } catch { return ''; }
+}
+
+/** True when `site` is one of `domains` or lies below one ("docs.example.com" under "example.com"); never for ''. */
+export function siteListed(domains: readonly string[], site: string): boolean {
+  const host = siteOf(site);
+  if (!host) return false;
+  return domains.some((domain) => { const listed = siteOf(domain); return Boolean(listed) && (host === listed || host.endsWith(`.${listed}`)); });
 }
 
 /** The switches Trust mode keeps for the gravest steps (Yes / Ask). */
@@ -124,13 +167,13 @@ const TRUST: Omit<SecuritySettings, 'mode'> = {
   phone: 'yes', message: 'yes', publish: 'yes', accounts: 'yes', setup: 'yes', team: 'yes', money: 'yes',
 };
 const SECURE: Omit<SecuritySettings, 'mode'> = {
-  read: 'chosen', readFolders: [], write: 'chosen', writeFolders: [], commands: 'ask', web: 'yes', computer: 'ask', computerApps: [],
+  read: 'chosen', readFolders: [], write: 'chosen', writeFolders: [], commands: 'ask', web: 'chosen', computer: 'ask', computerApps: [],
   phone: 'ask', message: 'ask', publish: 'ask', accounts: 'ask', setup: 'ask', team: 'yes', money: 'ask',
 };
 
 /** The switches a mode starts with (the first run's choice; switching modes in Settings keeps the person's own values). */
 export function securityDefaults(mode: SecurityMode): SecuritySettings {
-  return { mode, ...(mode === 'secure' ? SECURE : TRUST), readFolders: [], writeFolders: [], computerApps: [] };
+  return { mode, ...(mode === 'secure' ? SECURE : TRUST), readFolders: [], writeFolders: [], computerApps: [] }; // webDomains: absent = none
 }
 
 /**
@@ -145,6 +188,9 @@ export function effective(settings: SecuritySettings): SecuritySettings {
   if (settings.otherPcs) open.otherPcs = settings.otherPcs;
   return open;
 }
+
+/** What "always for this place" adds: a folder (read/write), an app (computer) or a site (web 'chosen', its webDomains). */
+export interface ApprovalPlace { kind: 'folder' | 'app' | 'site'; value: string }
 
 /** How a person answers an approval request. */
 export type ApprovalAnswer = 'once' | 'setting' | 'place' | 'decline';

@@ -4,7 +4,8 @@
 // company's call (the caller's agent, this company's settings). By name and arguments first, then by category:
 // files.read/list/search → read (the path; a search without one reaches the home folder), files.write → write,
 // shell.exec → commands and write for its folder, computer.* → computer (the app the outputs showed), phone.* → phone,
-// browser.* / web.* → web, agents.create/archive/update of another agent and spaces.save → team, modes.save, app.install,
+// browser.* / web.* → web (25.11.2026, webNeed: a search, the site of a URL it opens, a step in an open tab, or – eval, a
+// stored link – no site), agents.create/archive/update of another agent and spaces.save → team, modes.save, app.install,
 // devices.connect, skills.save into the shared library and other system changes → setup, secrets and sign-ins → accounts,
 // a connected app's writing tool → message, communicate → message, publish → publish, spend → money. A stored secret
 // named by its handle in any argument → accounts, card data → money. Files a call names and the map above does not cover
@@ -29,11 +30,12 @@ import type { SecurityService } from './service.ts';
 import { WorkforceError } from '../../shared/errors.ts';
 import { HUMAN_ID, SYSTEM_ID } from '../../shared/ids.ts';
 import { compareAppVersions } from '../../shared/model/devices.ts';
+import { siteOfUrl } from '../../shared/model/security-settings.ts';
 import { exportTarget } from '../secrets/export.ts';
 import { fingerprintOf, isPayment } from './policy.ts';
 
-/** One switch a call needs, with what it is about. */
-export interface Need { capability: SecuritySwitch; path?: string; app?: string }
+/** One switch a call needs, with what it is about (web: its site, or what it is when it reaches none – policy.ts CheckInput). */
+export interface Need { capability: SecuritySwitch; path?: string; app?: string; site?: string; web?: 'search' | 'tab' }
 
 /** What needsOf knows of the caller: its agent, the PC it runs on, the skill a skills.save would write over and the data folder. */
 export interface NeedContext { agentId: string; deviceId?: string; skill?: (name: string) => SkillInfo | undefined; data?: string }
@@ -78,7 +80,7 @@ export function needsOf(tool: Pick<ToolDef, 'name' | 'category'>, args: Record<s
     needs.push({ capability: 'computer', ...(app ? { app } : {}) });
   } else if (name.startsWith('phone.')) needs.push({ capability: 'phone' });
   else if (ACCOUNT_TOOLS.has(name) || tool.category === 'account' || tool.category === 'secret') needs.push({ capability: 'accounts' });
-  else if (name.startsWith('browser.') || name.startsWith('web.')) needs.push({ capability: 'web' });
+  else if (name.startsWith('browser.') || name.startsWith('web.')) needs.push(webNeed(name, args));
   else if (name === 'agents.update') { if ((str(args.agentId) ?? ctx.agentId) !== ctx.agentId) needs.push({ capability: 'team' }); }
   else if (TEAM_TOOLS.has(name)) needs.push({ capability: 'team' });
   else if (SETUP_TOOLS.has(name)) needs.push({ capability: 'setup' });
@@ -97,6 +99,29 @@ export function needsOf(tool: Pick<ToolDef, 'name' | 'category'>, args: Record<s
     if (!needs.some((need) => need.capability === 'accounts')) needs.push({ capability: 'accounts' });
   }
   return needs;
+}
+
+/** Tools that send the agent to a URL it names: the site of that URL is what the step reaches. */
+const OPENING: ReadonlySet<string> = new Set(['web.fetch', 'browser.open', 'browser.show']);
+/** Browser tools that work in a tab already open (its site was let through when it was opened; a move to another site is the browser's guard, browser/nav-guard.ts). */
+const IN_TAB: ReadonlySet<string> = new Set(['browser.snapshot', 'browser.act', 'browser.batch', 'browser.screenshot', 'browser.extract', 'browser.tabs', 'browser.find', 'browser.console', 'browser.network', 'browser.wait']);
+
+/**
+ * The web need of a browser.* / web.* call (25.11.2026, web 'chosen'): a search; an open of a URL with its site; a step in
+ * an open tab; anything else – browser.eval (the page's JavaScript reaches any site), a stored link (secret://, its site
+ * is unknown here), a tool not named here – without a site, so it asks unless the web is open everywhere.
+ */
+export function webNeed(name: string, args: Record<string, unknown>): Need {
+  if (name === 'web.search') return { capability: 'web', web: 'search' };
+  if (IN_TAB.has(name)) return { capability: 'web', web: 'tab' };
+  if (OPENING.has(name)) {
+    const url = str(args.url);
+    if (!url) return name === 'browser.show' ? { capability: 'web', web: 'tab' } : { capability: 'web' }; // show without url: my own browser, live
+    if (url === 'about:blank') return { capability: 'web', web: 'tab' };
+    const site = /^secret:/i.test(url) ? '' : siteOfUrl(url);
+    return site ? { capability: 'web', site } : { capability: 'web' };
+  }
+  return { capability: 'web' };
 }
 
 /** skills.save that writes the shared library (not `main`, over a shared skill that is not read-only): that folder; else undefined (my own copy). */
@@ -166,7 +191,7 @@ export async function gateToolCall(security: SecurityService | undefined, tool: 
   for (const need of needs) {
     const result = await security.gate({
       agentId: ctx.agent.id, agentName: ctx.agent.name, capability: need.capability, summary: action.summary, fingerprint: needFingerprint(tool.name, need, args),
-      ...(need.path ? { path: need.path } : {}), ...(need.app ? { app: need.app } : {}),
+      ...(need.path ? { path: need.path } : {}), ...(need.app ? { app: need.app } : {}), ...(need.site ? { site: need.site } : {}), ...(need.web ? { web: need.web } : {}),
       ...(ctx.conversationId ? { chatId: ctx.conversationId } : {}), ...(ctx.taskId ? { taskId: ctx.taskId } : {}), runId: ctx.runId, signal: ctx.signal,
     });
     if (!result.ok) return result.text;

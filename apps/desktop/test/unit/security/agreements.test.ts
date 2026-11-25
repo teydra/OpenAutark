@@ -51,8 +51,8 @@ test('Secure mode: one fact line per switch in order with its note below; money 
   assert.match(lines[1], /These agreements and the security settings are Ada's; the app keeps them closed to me\.$/);
   const facts = lines.filter((line) => line.startsWith('- ')).map((line) => line.split(':')[0]);
   assert.deepEqual(facts, ['- Reading files', '- Changing and deleting files', '- Running commands', '- The web', '- Operating apps on this PC', '- Operating Ada\'s phone', '- Messages to people outside the company', '- Publishing', '- Accounts, sign-ins and passwords', '- Autark\'s own setup', '- Hiring and changing agents', '- Spending money']);
-  assert.ok(text.includes('- Reading files: open in the team\'s own folders: the workspace and its projects, the company\'s data folder (not its keys, secrets, sign-ins or database), the app\'s resources and the temp folders and in C:\\Users\\Ada\\Docs, D:\\Work; elsewhere the app asks Ada first.\n  Tax papers are private.\n  The rest is fine.\n- Changing'), 'the note under its fact line');
-  assert.ok(text.includes('- Changing and deleting files: open in the team\'s own folders: the workspace and its projects (not its shared skills), my home and the memory in the company\'s data folder, and the temp folders; elsewhere the app asks Ada first.'));
+  assert.ok(text.includes('- Reading files: open in the team\'s own folders: the workspace and its projects, the company\'s data folder (not its keys, secrets, sign-ins or database), the app\'s resources and the company\'s own temp folder (my shells\' TEMP; not the PC\'s shared temp) and in C:\\Users\\Ada\\Docs, D:\\Work; elsewhere the app asks Ada first.\n  Tax papers are private.\n  The rest is fine.\n- Changing'), 'the note under its fact line');
+  assert.ok(text.includes('- Changing and deleting files: open in the team\'s own folders: the workspace and its projects (not its shared skills), my home and the memory in the company\'s data folder, and the company\'s own temp folder (my shells\' TEMP; not the PC\'s shared temp); elsewhere the app asks Ada first.'));
   assert.ok(text.includes('- Running commands: the app asks Ada before each command.'));
   assert.ok(text.includes('- The web: open.'));
   assert.ok(text.includes('- Operating apps on this PC: open for excel, chrome; for any other app the app asks Ada first; Autark\'s own window is never mine to operate.'));
@@ -61,6 +61,14 @@ test('Secure mode: one fact line per switch in order with its note below; money 
   assert.ok(text.endsWith('\n\n### When I check with Ada\nI picture Ada watching.\n\n### Bot checks ("I\'m not a robot")\nNo bot checks.'));
   const money = agreementsSection(input({ ...security, money: 'yes' }));
   assert.ok(money.includes('- Spending money: closed'), 'closed whatever the switch says');
+});
+
+test('25.11.2026: Secure mode – web chosen names its sites; a search is open, a new site asks once', () => {
+  const none = agreementsSection(input(securityDefaults('secure')));
+  assert.ok(none.includes('- The web: searching is open; before my first visit to any other site the app asks Ada – once, or always for that site.'));
+  const some = agreementsSection(input({ ...securityDefaults('secure'), webDomains: ['example.com', 'github.com'] }));
+  assert.ok(some.includes('- The web: searching is open, and so are example.com, github.com with their subdomains; before my first visit to any other site the app asks Ada – once, or always for that site.'));
+  assert.ok(agreementsSection(input({ ...securityDefaults('secure'), web: 'ask' })).includes('- The web: the app asks Ada before each search, page or download.'));
 });
 
 test('Secure mode: computer all apps or ask, files everywhere; no name reads "the person"', () => {

@@ -10,14 +10,15 @@
 // Rule paths follow Claude Code's form for absolute paths: `//` + the POSIX spelling (Windows `C:\a` → `//c/a`); a folder
 // whose name holds a parenthesis gets no rule (its steps take the round trip, the gate answers at once).
 // Mapping: Read/Glob/Grep → read (the file or folder), Edit/Write/NotebookEdit → write (the file), Bash/PowerShell →
-// commands (what a command touches is not checkable), WebSearch/WebFetch → web, anything else → commands.
+// commands (what a command touches is not checkable), WebSearch → web (a search), WebFetch → web with its URL's site
+// (25.11.2026: web 'chosen' asks once per new site; the chosen sites are `WebFetch(domain:…)` rules), anything else → commands.
 // Owns: the Secure-mode start arguments and settings, the can_use_tool → GateRequest mapping and the host's answers
 // (control_response; a control_cancel_request stops the wait). Never: answers without the gate, widens a Trust-mode turn,
 // or touches helper turns (they keep `--permission-prompts none`).
 
 import * as path from 'node:path';
 import type { FileScope, SecurityService } from '../../security/service.ts';
-import type { SecuritySwitch } from '../../../shared/model/security-settings.ts';
+import { siteOfUrl, type SecuritySwitch } from '../../../shared/model/security-settings.ts';
 import { effectOf, GATE_FAILED, gateNative, nativeFingerprint, type NativeTurn } from '../codex/native-gate.ts';
 import { isRecord, str } from '../shared.ts';
 import { HUB_SERVER } from './stream.ts';
@@ -59,7 +60,11 @@ export function secureSettings(scope: FileScope, platform: NodeJS.Platform = pro
   allow.push(...(scope.read === 'all' ? ['Read'] : folderRules('Read', scope.read, platform)));
   allow.push(...(scope.write === 'all' ? ['Edit'] : folderRules('Edit', scope.write, platform)));
   if (scope.commands === 'yes') allow.push('Bash', 'PowerShell');
-  if (scope.web === 'yes') allow.push('WebSearch');
+  // 25.11.2026: a search is open unless the web asks each time; WebFetch for every site when the web is open everywhere,
+  // else only for the chosen sites (`WebFetch(domain:…)`; any other goes to the gate, which asks once per new site)
+  if (scope.web !== 'ask') allow.push('WebSearch');
+  if (scope.web === 'yes') allow.push('WebFetch');
+  else if (scope.web === 'chosen') allow.push(...(scope.sites ?? []).filter((site) => /^[a-z0-9.:-]+$/.test(site)).map((site) => `WebFetch(domain:${site})`));
   const deny = folderRules('Edit', scope.closed, platform);
   // Folders inside open ones whose edits still ask (Autark's setup there, e.g. <workspace>/skills): `ask` beats `allow`.
   // Read when the service's FileScope names them (`guarded`, see build/S3.md); none until then.
@@ -76,7 +81,7 @@ export function secureArgs(scope: FileScope): string[] {
 const clip = (text: string, max = 200) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /** What a can_use_tool request is about: its switch, its files and one line for the person. */
-export function nativeStep(tool: string, input: Record<string, unknown>, blocked?: string): { capability: SecuritySwitch; paths: string[]; summary: string } {
+export function nativeStep(tool: string, input: Record<string, unknown>, blocked?: string): { capability: SecuritySwitch; paths: string[]; summary: string; site?: string; web?: 'search' } {
   const file = str(input.file_path) ?? str(input.notebook_path) ?? str(input.path) ?? blocked;
   const paths = [file, blocked].filter((one, i, all): one is string => Boolean(one) && all.indexOf(one) === i);
   const where = file ? ` in ${file}` : '';
@@ -86,7 +91,12 @@ export function nativeStep(tool: string, input: Record<string, unknown>, blocked
   }
   if (WRITES.has(tool)) return { capability: 'write', paths, summary: clip(`${tool === 'Write' ? 'Write' : 'Edit'} ${file ?? 'a file'}`) };
   if (SHELLS.has(tool)) return { capability: 'commands', paths: [], summary: clip(`Run: ${str(input.command) ?? tool}`) };
-  if (WEB.has(tool)) return { capability: 'web', paths: [], summary: clip(tool === 'WebFetch' ? `Open ${str(input.url) ?? 'a page'}` : `Search the web: ${str(input.query) ?? ''}`) };
+  if (tool === 'WebSearch') return { capability: 'web', paths: [], summary: clip(`Search the web: ${str(input.query) ?? ''}`), web: 'search' };
+  if (WEB.has(tool)) {
+    const url = str(input.url);
+    const site = url ? siteOfUrl(url) : '';
+    return { capability: 'web', paths: [], summary: clip(`Open ${url ?? 'a page'}`), ...(site ? { site } : {}) };
+  }
   return { capability: 'commands', paths, summary: clip(`Use ${tool}`) };
 }
 
@@ -94,7 +104,7 @@ export function nativeStep(tool: string, input: Record<string, unknown>, blocked
 export function secureTurn(security: SecurityService, turn: NativeTurn, platform: NodeJS.Platform = process.platform): ClaudeSecure {
   let scope: FileScope;
   try { scope = security.fileScope(turn.agentId); }
-  catch { scope = { mode: 'secure', read: [], write: [], commands: 'ask', web: 'ask', closed: [] }; } // no scope: every step goes to the gate
+  catch { scope = { mode: 'secure', read: [], write: [], commands: 'ask', web: 'ask', sites: [], closed: [] }; } // no scope: every step goes to the gate
   return {
     args: secureArgs(scope),
     settings: secureSettings(scope, platform),
