@@ -23,6 +23,7 @@ public final class SpokenAudioTest {
         cut();
         frames();
         turns();
+        voiced();
         System.out.println("SpokenAudioTest: " + assertions + " assertions passed");
     }
 
@@ -88,6 +89,47 @@ public final class SpokenAudioTest {
         check(last == SpokenAudio.Turns.Edge.END, "a steady sound does not hold a line open forever");
         hum.reset();
         check(!hum.speaking(), "reset forgets the line");
+    }
+
+    /** 24.11.2026 ("Colearning Salzburg" at the end of a dictation): a piece without voice goes to no recognizer, one with
+     *  voice is heard from just before its first to just after its last voiced moment – not through its pause before Stop. */
+    private static void voiced() {
+        short[] silence = new short[SpokenAudio.samples(8_000)];
+        check(SpokenAudio.voicedSpan(silence, 0, silence.length) == null, "digital silence holds no voice");
+        short[] room = quiet(8_000);
+        check(SpokenAudio.voicedSpan(room, 0, room.length) == null, "room noise holds no voice");
+        short[] tap = quiet(3_000);
+        for (int i = 0; i < SpokenAudio.FRAME; i++) tap[SpokenAudio.samples(1_000) + i] = (short) (i % 2 == 0 ? 20_000 : -20_000);
+        check(SpokenAudio.voicedSpan(tap, 0, tap.length) == null, "one tap is no voice");
+        check(SpokenAudio.voicedSpan(new short[10], 0, 10) == null, "a piece shorter than a frame holds none");
+
+        // 2 s of speech, then the 3 s pause before Stop: the piece ends half a second after the speech
+        short[] spoken = concat(voice(2_000), quiet(3_000));
+        int[] span = SpokenAudio.voicedSpan(spoken, 0, spoken.length);
+        check(span != null && span[0] == 0, "speech at the start keeps the start");
+        check(span != null && span[1] >= SpokenAudio.samples(2_000) && span[1] <= SpokenAudio.samples(2_000 + SpokenAudio.VOICE_KEEP_MS + 40),
+            "the pause is cut off: ends at " + (span == null ? -1 : span[1] * 1000 / SpokenAudio.RATE) + " ms");
+
+        // 2 s of room noise, 1.5 s of speech, 2 s of room noise: both ends are trimmed, the speech is whole inside
+        short[] middle = concat(quiet(2_000), voice(1_500), quiet(2_000));
+        int[] inner = SpokenAudio.voicedSpan(middle, 0, middle.length);
+        check(inner != null && inner[0] >= SpokenAudio.samples(2_000 - SpokenAudio.VOICE_KEEP_MS - 40) && inner[0] <= SpokenAudio.samples(2_000)
+            && inner[1] >= SpokenAudio.samples(3_500) && inner[1] <= SpokenAudio.samples(3_500 + SpokenAudio.VOICE_KEEP_MS + 40), "the speech with half a second around it");
+
+        // a range inside a longer buffer is read as a piece of its own
+        int[] ranged = SpokenAudio.voicedSpan(concat(voice(500), spoken), SpokenAudio.samples(500), SpokenAudio.samples(500) + spoken.length);
+        check(ranged != null && ranged[0] == SpokenAudio.samples(500), "from/to are respected");
+        byte[] wav = SpokenAudio.wav(spoken, span[0], span[1]);
+        check(wav.length == 44 + 2 * (span[1] - span[0]) && wav.length < 44 + 2 * spoken.length, "the WAV holds the voiced part only");
+    }
+
+    private static short[] concat(short[]... parts) {
+        int total = 0;
+        for (short[] part : parts) total += part.length;
+        short[] all = new short[total];
+        int at = 0;
+        for (short[] part : parts) { System.arraycopy(part, 0, all, at, part.length); at += part.length; }
+        return all;
     }
 
     private static SpokenAudio.Turns.Edge feed(SpokenAudio.Turns turns, short[] pcm) {

@@ -36,6 +36,19 @@ final class SpokenAudio {
 
     private SpokenAudio() {}
 
+    /** Voice in a piece (24.11.2026, owner: "Colearning Salzburg" stood at the end of a dictation he never said – the plan
+     *  login's name, written by the ChatGPT recognizer for the pause before Stop): the rule of shared/voice/voiced.ts with
+     *  the same numbers – high-passed at VOICE_HIGH_PASS_HZ, 32 ms frames, a frame is voice at VOICE_MIN_LEVEL and
+     *  VOICE_FLOOR_RATIO over the piece's floor (its 20th percentile) or VOICE_LOUD outright; VOICE_MIN_MS of it is voice. */
+    static final int VOICE_HIGH_PASS_HZ = 100;
+    static final double VOICE_MIN_LEVEL = 0.004;
+    static final double VOICE_FLOOR_RATIO = 1.8;
+    static final double VOICE_LOUD = 0.05;
+    static final int VOICE_MIN_MS = 160;
+    /** What a heard piece keeps before its first and after its last voiced frame (a word's soft start and end). */
+    static final int VOICE_KEEP_MS = 500;
+
+
     static int samples(int ms) { return (int) ((long) RATE * ms / 1000); }
 
     /** pcm[from, to) as a WAV file (16 kHz, mono, 16 bit). */
@@ -62,6 +75,57 @@ final class SpokenAudio {
             if (energy < best) { best = energy; at = w + WINDOW / 2; }
         }
         return at;
+    }
+
+    /** The part of pcm[from, to) a recognizer hears: from VOICE_KEEP_MS before its first voiced frame to VOICE_KEEP_MS after
+     *  its last, as {start, end}; null when it holds no voice (then no recognizer hears it: silence and room noise are
+     *  where one writes words of its own). */
+    static int[] voicedSpan(short[] pcm, int from, int to) {
+        int count = Math.max(0, to - from);
+        int frames = count / FRAME;
+        if (frames == 0) return null;
+        double[] filtered = new double[count];
+        for (int i = 0; i < count; i++) filtered[i] = pcm[from + i] / 32768.0;
+        double rc = 1 / (2 * Math.PI * VOICE_HIGH_PASS_HZ);
+        double a = rc / (rc + 1.0 / RATE);
+        for (int pass = 0; pass < 2; pass++) {
+            double previousIn = filtered[0];
+            double previousOut = 0;
+            for (int i = 0; i < count; i++) {
+                double input = filtered[i];
+                previousOut = a * (previousOut + input - previousIn);
+                previousIn = input;
+                filtered[i] = previousOut;
+            }
+        }
+        double[] levels = new double[frames];
+        boolean[] loud = new boolean[frames];
+        for (int f = 0; f < frames; f++) {
+            double sum = 0;
+            double raw = 0;
+            for (int i = f * FRAME; i < (f + 1) * FRAME; i++) {
+                sum += filtered[i] * filtered[i];
+                double sample = pcm[from + i] / 32768.0;
+                raw += sample * sample;
+            }
+            levels[f] = Math.sqrt(sum / FRAME);
+            loud[f] = Math.sqrt(raw / FRAME) >= VOICE_LOUD;
+        }
+        double[] sorted = levels.clone();
+        java.util.Arrays.sort(sorted);
+        double bar = Math.max(VOICE_MIN_LEVEL, sorted[(int) Math.floor((frames - 1) * 0.2)] * VOICE_FLOOR_RATIO);
+        int first = -1;
+        int last = -1;
+        int voiced = 0;
+        for (int f = 0; f < frames; f++) {
+            if (!loud[f] && levels[f] < bar) continue;
+            voiced++;
+            if (first < 0) first = f;
+            last = f;
+        }
+        if ((long) voiced * FRAME * 1000 / RATE < VOICE_MIN_MS) return null;
+        int keep = samples(VOICE_KEEP_MS);
+        return new int[] { Math.max(from, from + first * FRAME - keep), Math.min(to, from + (last + 1) * FRAME + keep) };
     }
 
     /** files.upload's params for one WAV piece. */

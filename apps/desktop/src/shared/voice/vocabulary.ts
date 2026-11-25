@@ -4,6 +4,8 @@
 // Owns: reading the list, adding to it (withWords) and the form a word is kept in (wordOf). Never: stores it or
 // learns words by itself.
 
+import { isAccountWord } from './hint.ts';
+
 /** The longest learned word a recognizer is given. */
 export const WORD_CHARS = 80;
 /** As many learned words as settings.json keeps (settings/validate.ts, the Settings word list). */
@@ -32,9 +34,10 @@ export function withWords(list: readonly string[], words: readonly string[]): st
 }
 
 /** The learned words as one recognizer prompt ("Teydra, FastConformer, …"), at most `max` characters. */
-export function vocabularyPrompt(list: unknown, max = 800): string | undefined {
+export function vocabularyPrompt(list: unknown, max = 800, accountTerms: readonly string[] = []): string | undefined {
   let prompt = '';
-  for (const word of vocabularyWords(list)) {
+  // 25.11.2026: never an address or an account's name (shared/voice/hint.ts) – a recognizer writes a hint it finds no speech for
+  for (const word of vocabularyWords(list).filter((entry) => !isAccountWord(entry, accountTerms))) {
     const next = prompt ? `${prompt}, ${word}` : word;
     if (next.length > max) break;
     prompt = next;
