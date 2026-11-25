@@ -76,9 +76,9 @@ function nextOfPerson(open: Task[], zone: string, now: number): string {
 }
 
 /** One quest as a line of "## My quests" (see the header). */
-export function questLine(quest: TaskView, me: string, names: NoteNames, now: number, nextNote?: number): string {
+export function questLine(quest: TaskView, me: string, names: NoteNames, now: number, nextNote?: number, showAge = true): string {
   const open = quest.steps.filter((todo) => !isFinished(todo.status));
-  const parts = [excerpt(quest.title, 100), quest.id, taskAge(quest, names.zone, now)];
+  const parts = [excerpt(quest.title, 100), quest.id];
   const checklist = checklistSuffix(quest);
   if (checklist) parts.push(checklist.slice(3));
   const owner = ownerOf(quest);
@@ -98,6 +98,7 @@ export function questLine(quest: TaskView, me: string, names: NoteNames, now: nu
   if (others.size) parts.push([...others].map(([who, count]) => `${names.nameOf(who)} ${count}`).join(', '));
   if (!open.length) parts.push('no open to-dos');
   parts.push(nextNote !== undefined ? `next note ${dueText(nextNote, names.zone, now)}` : 'no next note');
+  if (showAge) parts.push(taskAge(quest, names.zone, now));
   return `- ${parts.join(' · ')}`;
 }
 
@@ -121,7 +122,7 @@ function openState(todo: Task, names: NoteNames, now: number): string {
 }
 
 /** "## My quests" (see the header). */
-export function myQuestsSection(s: QuestDeps, agentId: string, zone: string): string {
+export function myQuestsSection(s: QuestDeps, agentId: string, zone: string, showAge = false): string {
   const now = s.clock.now();
   const names = namesFor(s, zone);
   const { quests, other } = myWork(s, agentId);
@@ -131,14 +132,14 @@ export function myQuestsSection(s: QuestDeps, agentId: string, zone: string): st
     const ids = [quest.id, ...quest.steps.map((todo) => todo.id)];
     ids.forEach((id) => covered.add(id));
     const next = Math.min(...ids.map((id) => notes.byTask.get(id) ?? Infinity));
-    return questLine(quest, agentId, names, now, Number.isFinite(next) ? next : undefined);
+    return questLine(quest, agentId, names, now, Number.isFinite(next) ? next : undefined, showAge);
   });
   if (other.length) {
     lines.push('Other:');
     for (const task of other.slice(0, OTHER_MAX)) {
       covered.add(task.id);
       const owner = ownerOf(task);
-      lines.push(`- ${task.id} · ${owner === agentId ? '' : `${names.nameOf(owner)} · `}${todoState(task, names, now)} · ${excerpt(task.title, 100)} · ${taskAge(task, zone, now)}${checklistSuffix(task)}`);
+      lines.push(`- ${task.id} · ${owner === agentId ? '' : `${names.nameOf(owner)} · `}${todoState(task, names, now)} · ${excerpt(task.title, 100)}${showAge ? ` · ${taskAge(task, zone, now)}` : ''}${checklistSuffix(task)}`);
     }
     if (other.length > OTHER_MAX) lines.push(`(+${other.length - OTHER_MAX} more – tasks.list)`);
   }
@@ -171,7 +172,7 @@ function threadSince(s: QuestDeps, ids: readonly string[], titles: ReadonlyMap<s
  * The quest as it stands now (a to-do in a quest: its quest; a lone to-do: itself): done-when, every owner's open to-dos
  * with their state, the person's done ones counted, and the thread lines since my last line there.
  */
-export function questSnapshot(s: QuestDeps, task: TaskView, readerId: string, zone: string): string[] {
+export function questSnapshot(s: QuestDeps, task: TaskView, readerId: string, zone: string, showAge = false): string[] {
   const now = s.clock.now();
   const names = namesFor(s, zone);
   const quest = isQuest(task) ? task : task.parentId ? s.tasks.get(task.parentId) ?? task : task;
@@ -185,7 +186,7 @@ export function questSnapshot(s: QuestDeps, task: TaskView, readerId: string, zo
   const todos = quest.steps;
   const byOwner = new Map<string, Task[]>();
   for (const todo of todos) if (!isFinished(todo.status)) byOwner.set(ownerOf(todo), [...(byOwner.get(ownerOf(todo)) ?? []), todo]);
-  const todoLine = (todo: Task) => `  - "${excerpt(todo.title, 100)}" · ${todo.id} · ${todoState(todo, names, now)} · ${taskAge(todo, zone, now)}${checklistSuffix(todo)}`;
+  const todoLine = (todo: Task) => `  - "${excerpt(todo.title, 100)}" · ${todo.id} · ${todoState(todo, names, now)}${showAge ? ` · ${taskAge(todo, zone, now)}` : ''}${checklistSuffix(todo)}`;
   const personDone = todos.filter((todo) => ownerOf(todo) === HUMAN_ID && todo.status === 'done').sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
   const last = personDone.at(-1);
   const personOpen = byOwner.get(HUMAN_ID) ?? [];

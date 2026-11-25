@@ -32,6 +32,8 @@ import { chatIfAny, clip, defineTool, internal } from './util.ts';
 import { isQuest, ownerOf } from '../../context/quest-text.ts';
 import { AGENT_TIME, DAY_LENGTH, QUEST_TIME, answer, isPerson, keepPersonLine, personTimeRefused, questOf, receiverOf, requireTask, timeOf, turnTask } from './tasks-util.ts';
 import { isDayOnly } from '../../../shared/model/day-settings.ts';
+import { namesFor } from '../../tasks/names.ts';
+import { similarOpen } from '../../tasks/related.ts';
 import { nextFollowUp } from '../../tasks/follow-up.ts';
 import { profileZone } from '../../context/time.ts';
 import { listTool } from './tasks-list.ts';
@@ -187,7 +189,12 @@ const addTool = defineTool<AddArgs>({
       ...(to !== ctx.agent.id && ctx.conversationId ? { givenIn: ctx.conversationId } : {}),
     }, to, to !== ctx.agent.id && !isPerson(to) && args.effort ? { route: { effort: args.effort } } : {});
     keepPersonLine(ctx, task.id);
-    return json(answer(ctx, ctx.services.tasks.get(task.id) ?? task, wait?.followUp ? { followUp: wait.followUp } : {}));
+    const hit = similarOpen(ctx.services, task);
+    const owner = hit?.assigneeId ? namesFor(ctx.services, profileZone(ctx.services)).nameOf(hit.assigneeId) : 'unassigned';
+    return json(answer(ctx, ctx.services.tasks.get(task.id) ?? task, {
+      ...(wait?.followUp ? { followUp: wait.followUp } : {}),
+      ...(hit ? { similar: `Similar open: ${hit.id} ‘${clip(hit.title, 120)}’ (${owner}). Consider adding a checklist point there if it is the same work.` } : {}),
+    }));
   },
 });
 

@@ -1,4 +1,5 @@
 // Checklist items use the existing string-only ledger.plan and RPC. Older PCs still read the same strings.
+// Owns: the conversion between plan strings and checklist items. Never: writes a task.
 export interface PlanItem { text: string; done: boolean }
 
 export function readPlan(lines: readonly string[] = []): PlanItem[] {

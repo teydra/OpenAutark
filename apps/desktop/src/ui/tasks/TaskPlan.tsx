@@ -1,4 +1,5 @@
 // Task checklist UI using the same string-backed plan as agent tools and the existing guarded update.
+// Owns: task checklist rendering and the guarded toggle interaction. Never: marks the task itself done.
 import { useState } from 'preact/hooks';
 import type { Task } from '../../shared/model/tasks.ts';
 import { planProgress, readPlan, writePlan } from '../../shared/model/task-plan.ts';

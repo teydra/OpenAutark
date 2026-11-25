@@ -11,6 +11,8 @@
 
 import type { RuntimeServices } from '../contracts.ts';
 import type { Task, TaskKind } from '../../shared/model/tasks.ts';
+import { HUMAN_ID } from '../../shared/ids.ts';
+import { similarity } from '../subconscious/text.ts';
 import { WordIndex, type WordDoc, type WordText } from '../knowledge/words.ts';
 
 /** A found quest or lone to-do, best first (score relative to the best hit, 0..1). */
@@ -20,7 +22,7 @@ export type RelatedRow = Pick<Task, 'id' | 'kind' | 'title' | 'assigneeKind' | '
 
 interface Row {
   id: string; kind: string; parent_id: string | null; status: string; title: string; rev: number;
-  assignee_kind: Task['assigneeKind']; assignee_id: string | null;
+  assignee_kind: Task['assigneeKind']; assignee_id: string | null; private: number;
 }
 /** The long columns, read only for a text whose version changed. */
 interface Long { notes: string; done_when: string | null; ledger: string }
@@ -29,7 +31,7 @@ type Deps = Pick<RuntimeServices, 'db'> & Partial<Pick<RuntimeServices, 'tasks'>
 
 const OPEN = `status IN ('open', 'waiting')`;
 /** The unfinished rows, and every to-do (finished ones too) of an unfinished quest – their titles say what the quest is about. */
-const READ = `SELECT id, kind, parent_id, status, title, rev, assignee_kind, assignee_id
+const READ = `SELECT id, kind, parent_id, status, title, rev, assignee_kind, assignee_id, private
   FROM tasks WHERE ${OPEN} OR parent_id IN (SELECT id FROM tasks WHERE parent_id IS NULL AND ${OPEN})`;
 
 const indexes = new WeakMap<object, WordIndex>();
@@ -61,6 +63,26 @@ export function relatedWork(services: Deps, text: string, limit = 3, skip?: (row
     return !!found && !skip?.(found.hit);
   };
   return index.search(text, limit, keep).map((hit) => ({ ...work.get(hit.id)!.hit, score: hit.score }));
+}
+
+const titleIndexes = new WeakMap<object, WordIndex>();
+
+/** Like relatedWork, but index titles individually (including steps), never their parent's notes or finished steps. */
+export function similarOpen(services: Deps, task: Task): Pick<Task, 'id' | 'title' | 'assigneeId'> | undefined {
+  const rows = services.db.all<Row>(READ).filter((row) => !row.private && (row.status === 'open' || row.status === 'waiting'));
+  let index = titleIndexes.get(services.db);
+  if (!index) { index = new WordIndex(); titleIndexes.set(services.db, index); }
+  const candidates = new Map(rows.map((row) => [row.id, row]));
+  index.sync(rows.map((row) => ({ id: row.id, version: String(row.rev), text: () => ({ title: row.title, description: '', body: '' }) })));
+  const owner = task.assigneeId ?? (task.assigneeKind === 'human' ? HUMAN_ID : undefined);
+  const hit = index.search(task.title, 1, (id) => {
+    const row = candidates.get(id);
+    if (!row || id === task.id) return false;
+    const other = row.assignee_id ?? (row.assignee_kind === 'human' ? HUMAN_ID : undefined);
+    return ((owner !== undefined && owner === other) || (task.parentId !== undefined && task.parentId === row.parent_id)) && similarity(task.title, row.title) >= 1 / 3;
+  })[0];
+  const row = hit && candidates.get(hit.id);
+  return row ? { id: row.id, title: row.title, assigneeId: row.assignee_id ?? (row.assignee_kind === 'human' ? HUMAN_ID : undefined) } : undefined;
 }
 
 /** A quest's text: title 10, its to-dos' titles and plan lines 4, notes, done-when and facts 1 (the word index's weights). */

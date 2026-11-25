@@ -27,9 +27,9 @@ const THREAD_LINES = 30;
 const LONE_MAX = 30;
 
 /** A lone to-do (or one found on its own) as a line: id · owner · state · title · its quest. */
-function todoLine(task: Task, me: string, names: NoteNames, now: number): string {
+function todoLine(task: Task, me: string, names: NoteNames, now: number, includeAge = true): string {
   const owner = ownerOf(task);
-  return `- ${task.id} · ${owner === me ? 'me' : names.nameOf(owner)} · ${todoState(task, names, now)} · ${excerpt(task.title, 120)}${task.parentId ? ` · in ${task.parentId}` : ''} · ${taskAge(task, names.zone, now)}${checklistSuffix(task)}`;
+  return `- ${task.id} · ${owner === me ? 'me' : names.nameOf(owner)} · ${todoState(task, names, now)} · ${excerpt(task.title, 120)}${task.parentId ? ` · in ${task.parentId}` : ''}${includeAge ? ` · ${taskAge(task, names.zone, now)}` : ''}${checklistSuffix(task)}`;
 }
 
 /** One quest or to-do whole (see the header). */
@@ -40,7 +40,7 @@ function whole(ctx: ToolContext, id: string): string {
   const now = s.clock.now();
   const names = namesFor(s, zone);
   const quest = isQuest(task);
-  const lines = [renderTask(s, task, zone, quest ? '## Quest' : '## To-do'), quest ? 'Now:' : task.parentId ? 'Its quest now:' : 'Now:', ...questSnapshot(s, task, ctx.agent.id, zone)];
+  const lines = [renderTask(s, task, zone, quest ? '## Quest' : '## To-do'), quest ? 'Now:' : task.parentId ? 'Its quest now:' : 'Now:', ...questSnapshot(s, task, ctx.agent.id, zone, true)];
   const ended = quest ? task.steps.filter((todo) => isFinished(todo.status)) : [];
   if (ended.length) lines.push('Ended:', ...ended.map((todo) => `  - "${excerpt(todo.title, 100)}" · ${todo.id} · ${names.nameOf(ownerOf(todo))} · ${todo.status} ${dueText(todo.completedAt ?? todo.updatedAt, zone, now)}`));
   const thread = s.chats.get(task.id) ? s.chats.messages(task.id, { limit: THREAD_LINES }) : [];
@@ -108,14 +108,14 @@ export const listTool = defineTool<{ id?: string; who?: string; search?: string;
     if (args.done) {
       const ended = s.tasks.list({ ...owner, completedSince: now - DONE_DAYS * DAY, ...(args.search ? { search: args.search } : {}), includeSteps: true, limit: 50 })
         .filter((task) => ownerId === undefined || ownerOf(task) === ownerId);
-      return text(ended.length ? ended.map((task) => `${todoLine(task, ctx.agent.id, names, now)}${task.result ? ` – ${excerpt(task.result.summary, 160)}` : ''}`).join('\n') : 'Nothing ended in that time.');
+      return text(ended.length ? ended.map((task) => `${todoLine(task, ctx.agent.id, names, now, false)}${task.result ? ` – ${excerpt(task.result.summary, 160)}` : ''} · ${taskAge(task, zone, now)}`).join('\n') : 'Nothing ended in that time.');
     }
     if (args.search?.trim()) {
       const hits = relatedWork(s, args.search, 10, ownerId === undefined ? undefined : (row) => ownerOf(row) !== ownerId);
       const found = hits.map((hit) => s.tasks.get(hit.id)).filter((task): task is TaskView => !!task);
       return text(found.length ? found.map((task) => (isQuest(task) ? questLine(task, ctx.agent.id, names, now) : todoLine(task, ctx.agent.id, names, now))).join('\n') : 'No open work fits these words.');
     }
-    if (who === 'me') return text(myQuestsSection(s, ctx.agent.id, zone));
+    if (who === 'me') return text(myQuestsSection(s, ctx.agent.id, zone, true));
     const found = s.tasks.list({ ...owner, status: [...UNFINISHED], includeSteps: true, limit: 500 });
     const lines = openLines(ctx, found, ownerId);
     return text(lines.length ? lines.join('\n') : 'Nothing open there.');
