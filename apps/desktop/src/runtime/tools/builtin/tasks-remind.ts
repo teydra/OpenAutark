@@ -44,7 +44,7 @@ function made(schedule: Schedule, ctx: ToolContext): Record<string, unknown> {
 
 export const remindTool = defineTool<{ text?: string; at?: string; repeat?: RepeatArgs; about?: string; list?: boolean; all?: boolean; cancel?: string }>({
   name: 'tasks.remind',
-  description: 'Sends me my own note at a time, once or repeating, in the words I want to read then. It arrives with the quest\'s open to-dos under it. Every open quest of mine has its next note; when I leave none, the next morning brings it.',
+  description: 'Sends me my own note at a time, once or repeating, in the words I want to read then. It arrives with the quest\'s open to-dos under it. When I leave no note for an open quest or a standalone to-do, the next morning brings it up (except standalone to-dos that are paused or waiting on another task).',
   inputSchema: {
     type: 'object',
     properties: {

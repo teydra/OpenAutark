@@ -1,10 +1,10 @@
-// The morning pass (Quests round 20.11.2026): once a day at 07:00 in the profile zone, every active agent at home on this
-// PC that owns open quests – or holds open to-dos in them – without an active reminder on the quest or its to-dos gets ONE
-// wake listing them: "These quests of mine have no next note: …", each quest as it stands (context/quest-text.ts
-// questSnapshot: done-when, every owner's open to-dos with their waits and since when, the thread since my last line). Idempotent per agent and local date (kv tasks/morning:<agentId>); missed while the PC was off or asleep,
-// it runs a minute after the next start or resume that day. A quest made the same local day is left out – the catch-up
-// after a start included (FIXREAL 6b, real run 20.11.: it woke an agent 35 s after it made its first quest); tomorrow's
-// pass names it. Nothing else wakes an agent periodically.
+// The morning pass: once a day at 07:00 in the profile zone, an active agent at home on this PC gets one wake
+// listing its open quests with no active reminder of its own on the quest or any of its to-dos, and its
+// open standalone to-dos with no active reminder of its own. Here, its quests are those it owns or has an open
+// to-do in. Paused or dependency-blocked standalone to-dos stay quiet. Each item is listed as
+// it stands (context/quest-text.ts questSnapshot). Idempotent per agent and local date (kv tasks/morning:<agentId>).
+// If missed while the PC was off or asleep, the pass runs a minute after start or resume that day. Quests and
+// to-dos made the same local day are left out, including on catch-up (FIXREAL 6b).
 // Owns: that pass, its timer and its mark. Never: changes a task or a schedule, or wakes an archived agent.
 
 import type { Task } from '../../shared/model/tasks.ts';
@@ -59,14 +59,27 @@ export class MorningPass {
     for (const agent of this.agentsHere()) {
       if (kv.get<string>(KV_NS, markKey(agent.id)) === today) continue;
       kv.set(KV_NS, markKey(agent.id), today, now);
-      let quests: Task[];
-      try { quests = this.t.repo.questsWithoutNote(agent.id); } catch (error) { this.s.log?.warn('morning pass: quests not read', { agentId: agent.id, error: String(error) }); continue; }
-      quests = quests.filter((quest) => wallOf(quest.createdAt, zone).date !== today); // made today: no nudge before tomorrow
-      if (!quests.length) continue;
-      const note = ['These quests of mine have no next note:', ...quests.flatMap((quest) => {
-        const view = this.s.tasks.get(quest.id);
-        return view ? ['', ...questSnapshot(this.s, view, agent.id, zone)] : [];
-      })].join('\n');
+      let quests: Task[], todos: Task[];
+      try {
+        quests = this.t.repo.questsWithoutNote(agent.id);
+        todos = this.t.repo.todosWithoutNote(agent.id);
+      } catch (error) {
+        this.s.log?.warn('morning pass: tasks not read', { agentId: agent.id, error: String(error) });
+        continue;
+      }
+      const snapshotBlock = (heading: string, tasks: Task[]) => {
+        const snapshots = tasks.flatMap((task) => {
+          if (wallOf(task.createdAt, zone).date === today) return []; // no nudge before tomorrow
+          const view = this.s.tasks.get(task.id);
+          return view ? ['', ...questSnapshot(this.s, view, agent.id, zone)] : [];
+        });
+        return snapshots.length ? [heading, ...snapshots].join('\n') : '';
+      };
+      const note = [
+        snapshotBlock('These quests of mine have no next note:', quests),
+        snapshotBlock('These to-dos of mine have no quest and no next note:', todos),
+      ].filter(Boolean).join('\n\n');
+      if (!note) continue;
       this.s.wakes.wake({ agentId: agent.id, reason: 'schedule', note, coalesceKey: 'morning', dueAt: now });
       woken++;
     }

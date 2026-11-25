@@ -10,7 +10,7 @@ import { nul, opt } from '../store/rows.ts';
 import { foldText, ftsQuery } from '../../shared/text/normalize.ts';
 import type { UiBlock } from '../../shared/blocks/catalog.ts';
 import type { Attachment } from '../../shared/model/chat.ts';
-import type { Task, TaskFilter, TaskLedger, TaskResult } from '../../shared/model/tasks.ts';
+import { isPaused, type Task, type TaskFilter, type TaskLedger, type TaskResult } from '../../shared/model/tasks.ts';
 import type { Origin } from '../../shared/model/origin.ts';
 import { readableTasksSql } from '../people/access.ts';
 import { isOlder, markOlder, olderPiece, questsRead } from '../bridge/quests-2011.ts';
@@ -233,6 +233,17 @@ export class TaskRepo {
        ORDER BY q.priority DESC, q.created_at LIMIT 50`,
       [agentId, agentId, agentId],
     ).map(toTask);
+  }
+
+  /** An agent's unfinished to-dos outside a quest, with neither a reminder nor a pause or dependency wait. */
+  todosWithoutNote(agentId: string): Task[] {
+    return this.db.all<Row>(
+      `SELECT t.* FROM tasks t WHERE t.kind = 'todo' AND t.parent_id IS NULL AND t.${UNFINISHED_SQL}
+         AND t.assignee_kind = 'agent' AND t.assignee_id = ?
+         AND NOT EXISTS (SELECT 1 FROM schedules s WHERE s.owner_id = ? AND s.kind = 'reminder' AND s.active = 1 AND s.task_id = t.id)
+       ORDER BY t.priority DESC, t.created_at`,
+      [agentId, agentId],
+    ).map(toTask).filter((todo) => !isPaused(todo) && todo.waitingOn?.on !== 'task');
   }
 
   /** The unfinished tasks that come after `id` (tasks/depends.ts). */
