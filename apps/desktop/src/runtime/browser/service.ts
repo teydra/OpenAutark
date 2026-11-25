@@ -22,7 +22,7 @@ import { snapshotChanges } from './diff.ts';
 import { isChallengeAnswer, isHumanCheck } from './human-check.ts';
 import { runSteps, type BatchStep } from './batch.ts';
 import type { BatchOutcome, Mark, PageState, Reviewed, TabInfo } from './states.ts';
-import { passSite, takeHeld, type NavGuard } from './nav-guard.ts';
+import { takeHeld, withPass, type NavGuard } from './nav-guard.ts';
 
 export type { BatchStep } from './batch.ts';
 export type { BatchOutcome, Mark, PageState, Reviewed, TabInfo } from './states.ts';
@@ -52,7 +52,7 @@ export class BrowserService {
 
   constructor(deps: BrowserDeps) {
     this.deps = deps;
-    this.pool = new BrowserSessions({ ...deps, closed: (agentId, reason) => this.takeovers.forget(agentId, reason) });
+    this.pool = new BrowserSessions({ ...deps, personHas: (agentId) => this.takeovers.active(agentId), closed: (agentId, reason) => this.takeovers.forget(agentId, reason) });
   }
 
   // ------------------------------------------------------------------ the agent's steps
@@ -74,11 +74,11 @@ export class BrowserService {
       : input.tab ? this.pool.page(session, input.tab) : activePage(session) ?? await session.context.newPage();
     this.pool.track(session, page);
     session.active = page;
-    passSite(session, url); // its site passed the gate (browser.open) or the person opened it (nav-guard.ts)
     takeHeld(session);
     let response: unknown;
     try {
-      response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      // 25.11.2026: its site passed the gate (browser.open) or the person opened it – open for this call alone (nav-guard.ts)
+      response = await withPass(session, url, () => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }));
     } catch (error) {
       const held = takeHeld(session); // a redirect of the page's own script to another site
       throw held ? new WorkforceError('forbidden', held) : translateError(error, undefined);

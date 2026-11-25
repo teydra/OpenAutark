@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { securityDefaults, siteListed, siteOf, siteOfUrl, type SecuritySettings } from '../../../src/shared/model/security-settings.ts';
-import { guardRoute, heldSite, installGuard, passSite, takeHeld, type GuardState, type NavGuard, type RequestLike, type RouteLike } from '../../../src/runtime/browser/nav-guard.ts';
+import { asPerson, guardPage, guardRoute, heldSite, installGuard, takeHeld, withPass, type GuardState, type NavGuard, type RequestLike, type RouteLike } from '../../../src/runtime/browser/nav-guard.ts';
 import { webTools, type FetchFn } from '../../../src/runtime/tools/builtin/web.ts';
 import { questionOf } from '../../../src/runtime/tasks/approval-todo.ts';
 import { validateSecurity } from '../../../src/runtime/settings/security-keys.ts';
@@ -69,8 +69,8 @@ test('nav guard: a top-level move to a site not open is held back and named; ope
   assert.equal(heldSite(guard, state, 'https://evil.io/?d=secret'), 'evil.io');
   assert.equal(heldSite(guard, state, 'data:text/html,x'), undefined, 'no site reached');
   assert.equal(heldSite(guardOf([], false), state, 'https://evil.io/'), undefined, 'Trust AI mode or web open: no guard');
-  passSite(state, 'https://www.Other.org/start');
-  assert.equal(heldSite(guard, state, 'https://other.org/next'), undefined, 'a site this session passed through the gate');
+  assert.equal(heldSite(guard, state, 'https://shop.other.org/x', 'other.org'), undefined, 'within the site the tab shows');
+  assert.equal(heldSite(guard, state, 'https://evil.io/x', 'other.org'), 'evil.io');
 
   const held = route();
   await guardRoute(guard, state)(held.r, request('https://evil.io/upload?d=1'));
@@ -86,16 +86,78 @@ test('nav guard: a top-level move to a site not open is held back and named; ope
   assert.deepEqual(resource.done, ['fallback']);
 });
 
-test('nav guard: installed once and only while active (routing costs the HTTP cache)', async () => {
+test('nav guard (c): "Allow once" opens the site for that one open only, never for the session', async () => {
+  const guard = guardOf(['example.com']);
+  const state: GuardState = { agentId: 'ag_a' };
+  const during = await withPass(state, 'https://www.Other.org/start', async () => heldSite(guard, state, 'https://other.org/next'));
+  assert.equal(during, undefined, 'the open running now – its redirect within that site too');
+  assert.equal(heldSite(guard, state, 'https://other.org/later'), 'other.org', 'a later move there goes through the gate again');
+  assert.equal(state.passes?.size, 0);
+  await assert.rejects(withPass(state, 'https://other.org/', async () => { throw new Error('load failed'); }));
+  assert.equal(state.passes?.size, 0, 'a failed open leaves no pass behind');
+});
+
+test('nav guard: the person\'s own steps (takeover, live view) are never held back', async () => {
+  const guard = guardOf([]);
+  let person = false;
+  const state: GuardState = { agentId: 'ag_a', person: () => person };
+  assert.equal(heldSite(guard, state, 'https://evil.io/'), 'evil.io');
+  person = true;
+  assert.equal(heldSite(guard, state, 'https://evil.io/'), undefined, 'the person has taken the browser over');
+  person = false;
+  assert.equal(await asPerson(state, async () => heldSite(guard, state, 'https://evil.io/')), undefined, 'a live-view step');
+  assert.equal(heldSite(guard, state, 'https://evil.io/'), 'evil.io', 'and only while it runs');
+});
+
+/** A DevTools session that records what the guard answers to each paused document request. */
+function fakeCdp(mainFrame = 'F1') {
+  const sent: Array<[string, Record<string, unknown> | undefined]> = [];
+  let paused: ((event: never) => void) | undefined;
+  const cdp = {
+    send: async (method: string, params?: Record<string, unknown>) => { sent.push([method, params]); return method === 'Page.getFrameTree' ? { frameTree: { frame: { id: mainFrame } } } : {}; },
+    on: (event: string, listener: (payload: never) => void) => { if (event === 'Fetch.requestPaused') paused = listener; },
+  };
+  const pause = async (requestId: string, url: string, frameId = mainFrame) => { paused?.({ requestId, request: { url }, frameId } as never); await new Promise((r) => setTimeout(r, 5)); };
+  const answers = () => sent.filter(([m]) => m.startsWith('Fetch.') && m !== 'Fetch.enable').map(([m, p]) => `${m.slice(6)}:${String(p?.requestId)}`);
+  return { cdp, sent, pause, answers };
+}
+
+test('nav guard (b): every redirect hop of a document is checked, not only the first request', async () => {
+  const guard = guardOf(['example.com']);
+  const state: GuardState = { agentId: 'ag_a' };
+  const page = { url: () => 'https://example.com/start' };
+  const f = fakeCdp();
+  await guardPage(guard, state, page, f.cdp);
+  assert.deepEqual(f.sent.at(-1), ['Fetch.enable', { patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Request' }] }]);
+  await f.pause('r1', 'https://example.com/redirect?to=evil');
+  await f.pause('r1', 'https://evil.io/collect?d=secret'); // the hop the server redirects to
+  await f.pause('r2', 'https://ads.evil.io/frame', 'F2'); // a frame inside the page
+  assert.deepEqual(f.answers(), ['continueRequest:r1', 'failRequest:r1', 'continueRequest:r2']);
+  assert.equal(f.sent.find(([m]) => m === 'Fetch.failRequest')?.[1]?.errorReason, 'BlockedByClient');
+  assert.match(takeHeld(state), /evil\.io/);
+});
+
+test('nav guard: installed once and only while active, on the context and each page (routing costs the HTTP cache)', async () => {
   const routes: unknown[] = [];
-  const context = { route: async (_url: unknown, handler: unknown) => { routes.push(handler); } };
+  const watched: string[] = [];
+  let newPage: ((page: { url(): string }) => void) | undefined;
+  const context = {
+    route: async (_url: unknown, handler: unknown) => { routes.push(handler); },
+    pages: () => [{ url: () => 'https://a.example/' }],
+    on: (_event: 'page', listener: (page: { url(): string }) => void) => { newPage = listener; },
+    newCDPSession: async (page: { url(): string }) => { watched.push(page.url()); return fakeCdp().cdp; },
+  };
   const state: GuardState = { agentId: 'ag_a' };
   await installGuard(guardOf([], false), state, context);
   assert.equal(routes.length, 0);
+  assert.equal(watched.length, 0, 'Trust AI mode: no DevTools session, nothing paused');
   await installGuard(guardOf([]), state, context);
   await installGuard(guardOf([]), state, context);
   assert.equal(routes.length, 1);
   assert.equal(state.guarded, true);
+  newPage?.({ url: () => 'about:blank' });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(watched, ['https://a.example/', 'about:blank'], 'a new tab is watched too');
 });
 
 // ------------------------------------------------------------------ web.fetch and redirects
