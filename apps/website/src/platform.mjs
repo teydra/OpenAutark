@@ -2,7 +2,7 @@
 // the facts of the file, the install steps and the way back to the other platforms.
 // Never: install wording (data/install.mjs) or file names and versions (config.mjs, release facts).
 import { site, release, platforms, appUrl } from './config.mjs';
-import { page, pageHero, esc, platformRows } from './layout.mjs';
+import { page, pageHero, esc, platformRows, countNotice } from './layout.mjs';
 import { icon } from './icons.mjs';
 import { installSteps } from './data/install.mjs';
 
@@ -113,7 +113,7 @@ ${p.id === 'windows' ? `<aside class="wrap" aria-label="Windows security notice"
         <p><code>${esc(f.check)}</code> <button class="btn btn--sm btn--ghost" type="button" data-copy="${esc(f.check)}" style="margin-left:8px;vertical-align:middle">Copy</button></p>` : ''}
         <h2 id="updates">Updates</h2>
         <p>${f.update}</p>
-        <p class="small muted">This link always serves the newest public release. <a href="${release.releasesUrl}" rel="noopener">All releases on GitHub</a> · <a href="${root}changelog/">Changelog</a> · <a href="${root}download/">All downloads</a></p>
+        <p class="small muted">This link always serves the newest public release. <a href="${release.releasesUrl}" rel="noopener">All releases on GitHub</a> · <a href="${root}changelog/">Changelog</a> · <a href="${root}download/">All downloads</a>${p.file && countNotice(root) ? ` · ${countNotice(root)}` : ''}</p>
       </div>
     </div>
   </div>

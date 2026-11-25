@@ -12,6 +12,9 @@ export const BASE = new URL(`${site.url}/`).pathname;
 export const rootOf = () => BASE;
 export const abs = (slug = '') => `${site.url}/${slug ? `${slug}/` : ''}`;
 
+// The counting notice next to download buttons (build without a counting key: nothing is counted, so no notice).
+export const countNotice = (root) => (counts ? `A click on a download button is counted anonymously, as a number only: <a href="${root}privacy/#counts">what and why</a>` : '');
+
 // The giant word: A's are drawn as the mark (Λ + dot).
 export function kword(cls = '') {
   const letters = site.name.toUpperCase().split('');
@@ -65,7 +68,7 @@ function footer(root) {
     <div class="ftr__giant">${kword().replace('class="kword ', 'class="kword ftr__kword ')}</div>
     <div class="ftr__base">
       <span>© ${new Date().getFullYear()} ${maker.company} · ${maker.location}</span>
-      <nav aria-label="Legal"><a href="${maker.imprintUrl}" rel="noopener">Imprint</a><a href="${maker.privacyUrl}" rel="noopener">Privacy</a><a href="https://toolradar.com/tools/autark">Autark on Toolradar</a></nav>
+      <nav aria-label="Legal"><a href="${maker.imprintUrl}" rel="noopener">Imprint</a><a href="${root}privacy/">Privacy</a><a href="https://toolradar.com/tools/autark">Autark on Toolradar</a></nav>
     </div>
   </div>
 </footer>`;

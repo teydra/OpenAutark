@@ -21,7 +21,8 @@ function render(env) {
   const code = `const rel = ${JSON.stringify(rel)};
     const home = (await import(${JSON.stringify(pathToFileURL(join(root, 'src/pages/home.mjs')).href)})).default(rel);
     const stats = (await import(${JSON.stringify(pathToFileURL(join(root, 'src/pages/stats.mjs')).href)})).default(rel);
-    process.stdout.write(JSON.stringify({ home, stats }));`;
+    const plats = Object.fromEntries((await import(${JSON.stringify(pathToFileURL(join(root, 'src/platform.mjs')).href)})).platformPages(rel).map((p) => [p.slug, p.html]));
+    process.stdout.write(JSON.stringify({ home, stats, plats }));`;
   const clean = { ...process.env }; for (const k of ['COUNTS_API_KEY', 'COUNTS_AUTH_KEY', 'COUNTS_PROJECT']) delete clean[k];
   return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { env: { ...clean, ...env }, cwd: root, maxBuffer: 1 << 26 }).toString());
 }
@@ -41,6 +42,16 @@ test('without a usable key nothing is counted, and without the sign-in key the s
   assert.ok(off.stats.includes('Not configured in this build.'));
   const noAuth = render({ COUNTS_API_KEY: KEY });
   assert.ok(noAuth.home.includes('__COUNT') && noAuth.stats.includes('Not configured in this build.'));
+});
+
+test('the footer links to our own privacy page, and every page with a counted download says it is counted', () => {
+  const on = render({ COUNTS_API_KEY: KEY });
+  assert.match(on.home, /<nav aria-label="Legal">[^]*?<a href="\/privacy\/">Privacy<\/a>/);
+  assert.ok(!/<nav aria-label="Legal">[^]*?teydralab\.com\/privacy-policy[^]*?<\/nav>/.test(on.home), 'the footer no longer points at the company policy');
+  for (const id of ['windows', 'mac', 'linux', 'android']) assert.match(on.plats[`download/${id}`], /counted anonymously[^]*?href="\/privacy\/#counts"/, id);
+  assert.ok(!on.plats['download/iphone'].includes('counted anonymously'), 'the iPhone page has no download button to count');
+  const off = render({ COUNTS_API_KEY: '‹secret:google-api-key›' });
+  assert.ok(!off.plats['download/mac'].includes('counted anonymously'), 'no key, no counting, no notice');
 });
 
 test('the stats page is noindex, outside the sitemap, and loads Google only on demand', () => {
