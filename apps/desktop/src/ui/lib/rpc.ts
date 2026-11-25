@@ -40,11 +40,11 @@ import { bridge, platform } from './platform.ts';
 import { RefusalMemory } from './refusal.ts';
 import type { Refusal } from './refusal.ts';
 import { CallQueue } from './rpc-queue.ts';
-import { RpcError } from './rpc-error.ts';
+import { LOST_TEXT as LOST, NOT_SENT_DESKTOP, NOT_SENT_PHONE, RpcError } from './rpc-error.ts';
 import { readToken } from './rpc-token.ts';
 import { RuntimeEpochs, requestPort } from './runtime-port.ts';
 
-export { RpcError, errorText } from './rpc-error.ts';
+export { RpcError, connectionFailure, errorText } from './rpc-error.ts';
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 
 interface Pending {
@@ -82,9 +82,9 @@ const OPEN_LIMIT = 8_000;
 /** Silent minutes a waiting call gets before the socket counts as dead: a large answer on a slow link has five minutes. */
 const WAIT_LIMIT = 5;
 /** A pending call's error when the connection went away under it (the status line says the rest, never as a line of its own). */
-export const LOST_TEXT = 'Connection to the runtime was lost.';
-/** A queued call's error after QUEUE_LIMIT_MS without a connection. */
-export const NOT_SENT = platform === 'desktop' ? 'Autark’s engine is not answering – nothing was sent.' : 'Your PC is not reachable right now – nothing was sent.';
+export const LOST_TEXT = LOST;
+/** A queued call's error after QUEUE_LIMIT_MS without a connection (also never a line of its own: rpc-error.ts connectionFailure). */
+export const NOT_SENT = platform === 'desktop' ? NOT_SENT_DESKTOP : NOT_SENT_PHONE;
 const epochs = new RuntimeEpochs();
 
 function handleFrame(raw: unknown): void {

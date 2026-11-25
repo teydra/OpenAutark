@@ -6,11 +6,13 @@
 // They show as lines of the status line (shell/StatusLine.tsx). B-082: a toast may carry one `action` (its button, e.g.
 // a kept recording's "Transcribe again"); such a toast is the last one a newer toast pushes out. Feedback c0b0a7d6
 // (19.11.2026): to-dos falling due ("Due: …") are one grouped toast that goes after DUE_SHOW_MS, Open → the Tasks page.
+// Konrad 24.11.2026: an action that failed only because the connection was away is no toast (toastError, `unsent`).
 // Owns: the toast queue. Never: OS notifications (main process), their look or persistent state.
 
 import { signal } from '@preact/signals';
 import { DUE_SHOW_MS } from '../pwa/due-notice.ts';
 import type { EventMap } from '../../shared/api/events.ts';
+import { connectionFailure } from './rpc-error.ts';
 
 export interface Toast {
   id: number;
@@ -94,8 +96,22 @@ export function toastStartNotice(notice: { text: string; failed?: true }): void 
   else pushToast({ title: notice.text });
 }
 
-/** Shows a short error toast for a failed action. */
+/**
+ * What did not go out while the connection was away (connectionFailure 'unsent'): the titles of those failed actions,
+ * each once. The connection line's watch (shell/connection-line.ts reportUnsent) says them in one quiet toast once the
+ * connection is back, and empties this – never a red toast per action while it is away.
+ */
+export const unsent = signal<string[]>([]);
+
+/** Shows a short error toast for a failed action – but a failure that only says the connection was away is no toast
+ *  (Konrad 24.11.2026: one quiet line for all of them, the status line's connection line): 'lost' (it was on its way and
+ *  may have arrived) says nothing more, 'unsent' is said once afterwards (unsent). */
 export function toastError(error: unknown, title = 'Action failed'): void {
+  const failure = connectionFailure(error);
+  if (failure) {
+    if (failure === 'unsent' && !unsent.peek().includes(title)) unsent.value = [...unsent.peek(), title];
+    return;
+  }
   const body = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined;
   pushToast({ title, body, tone: 'error' });
 }

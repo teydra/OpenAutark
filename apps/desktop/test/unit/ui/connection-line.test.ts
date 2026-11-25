@@ -27,8 +27,8 @@ const text = (extra: Partial<ConnectionFacts>) => connectionLine(facts(extra), a
 test('the PC away: one calm line, the same while connecting and closed, with the time of the shown data', () => {
   assert.equal(text({}), `Office-PC not reachable · reconnecting by itself · as of ${time(AT)}`);
   assert.equal(text({ status: 'connecting' }), text({ status: 'closed' }), 'a retry does not change the line');
-  assert.equal(connectionLine(facts({ status: 'connecting' }), act)?.tone, 'warn');
-  assert.equal(connectionLine(facts({ status: 'closed' }), act)?.tone, 'warn');
+  assert.equal(connectionLine(facts({ status: 'connecting' }), act)?.tone, 'info');
+  assert.equal(connectionLine(facts({ status: 'closed' }), act)?.tone, 'info');
   assert.equal(text({ cachedAt: AT - 3_600_000, downSince: NOW }), `Office-PC not reachable · reconnecting by itself · as of ${time(AT - 3_600_000)}`, 'the saved copy\'s time first');
   assert.equal(text({ loaded: false, cachedAt: null }), 'Office-PC not reachable · reconnecting by itself', 'no data shown: no "as of"');
   assert.equal(text({ pc: '' }), `Your PC not reachable · reconnecting by itself · as of ${time(AT)}`);

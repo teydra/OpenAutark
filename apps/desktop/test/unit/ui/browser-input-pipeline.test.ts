@@ -101,7 +101,7 @@ test('the remote view: 8 inputs on their way, its picture box in every pull, the
   const surface = readFileSync(path.join(dir, 'BrowserSurface.tsx'), 'utf8');
   assert.match(tab, /export const REMOTE_IN_FLIGHT = 8;/);
   assert.match(tab, /<BrowserSurface [^>]*inFlight=\{REMOTE_IN_FLIGHT\}/);
-  assert.match(surface, /createInputSender\([^]*?\{ window: props\.inFlight \}\)/, 'the agents\' browsers keep window 1 (no inFlight)');
+  assert.match(surface, /createInputSender\([^]*?\{ window: props\.inFlight, lost: /, 'the agents\' browsers keep window 1 (no inFlight)');
   assert.match(tab, /rpc\.call\('side\.pull', \{[^}]*\.\.\.\(view \? \{ view \} : \{\}\)/, 'the pull names the box');
   assert.match(tab, /new ResizeObserver\([^]*?feed\.refresh\(key\)/, 'a changed box pulls at once');
   assert.match(tab, /<div ref=\{box\} class="workspace-screen-view remote-web-view">/, 'the box is the picture\'s room');

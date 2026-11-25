@@ -5,7 +5,10 @@
 // know this phone's token (4404 – one the company's roster has not reached yet) or no longer accepts it (4401) is a line
 // too, with Choose PC and Pair again in the phone apps (Pair again pairs over this company, pwa/native.ts); the pairing
 // screen comes only for a removed phone (4403, App.tsx). On the desktop the line names Autark's engine. "Connection to the
-// runtime was lost." (rpc LOST_TEXT) is never a line of its own.
+// runtime was lost." (rpc LOST_TEXT) is never a line of its own. Konrad 24.11.2026 (Stanislaus: red banners and
+// "Reconnecting" on every short drop): the grace is 5 s, the line is quiet (info), and it stands for every action that
+// failed meanwhile – none of them is a toast of its own (lib/toasts.ts toastError); what did not go out at all is said
+// once in one quiet toast when the connection is back (unsentToast).
 // Owns: the line's text, tone and actions (connectionLine, pure), the facts it reads (connectionFacts) and the down
 // timer (watchConnection). Never: renders (StatusLine.tsx via notices.ts connectionNotice), reconnects or pairs itself.
 
@@ -16,12 +19,13 @@ import type { Refusal } from '../lib/refusal.ts';
 import { logTime } from '../lib/format.ts';
 import { platform } from '../lib/platform.ts';
 import { cachedAt, systemInfo } from '../lib/store.ts';
+import { pushToast, unsent } from '../lib/toasts.ts';
 import { isAndroidApp, isPhoneApp, pairAgain } from '../pwa/native.ts';
 import { phoneCompanies, phoneStatus, showPcs } from '../pwa/phone-companies.ts';
 import type { Notice, NoticeAction } from './notices.ts';
 
-/** How long the connection is down before the line shows. */
-export const DOWN_GRACE_MS = 2_500;
+/** How long the connection is down before the line shows (Konrad 24.11.2026: a drop under 5 s shows nothing at all). */
+export const DOWN_GRACE_MS = 5_000;
 /** The line's place in the status line: above everything else (NOTICE_PRIORITY.connection). */
 export const CONNECTION_PRIORITY = 100;
 
@@ -65,12 +69,13 @@ export function connectionLine(facts: ConnectionFacts, act: ConnectionActions): 
     return facts.loadError && facts.loadError !== facts.lostText ? line('error', facts.loadError, [tryNow]) : null;
   }
   if (!facts.down) return null;
+  // the connection away: one quiet line (info, never red or amber – Konrad 24.11.2026), the same for every failed action
   if (facts.desktop) {
-    return facts.loaded ? line('warn', 'Autark’s engine is not answering · reconnecting by itself', [tryNow]) : line('info', 'Autark’s engine is starting…', []);
+    return facts.loaded ? line('info', 'Autark’s engine is not answering · reconnecting by itself', [tryNow]) : line('info', 'Autark’s engine is starting…', []);
   }
   const asOf = facts.cachedAt ?? (facts.loaded ? facts.downSince : null);
   const text = `${pc} not reachable · reconnecting by itself${asOf ? ` · as of ${logTime(asOf, facts.now)}` : ''}`;
-  return line('warn', text, facts.android ? [tryNow, choosePc] : [tryNow]);
+  return line('info', text, facts.android ? [tryNow, choosePc] : [tryNow]);
 }
 
 /** When the connection went away (null while open) and whether that is longer than DOWN_GRACE_MS. */
@@ -94,9 +99,16 @@ export function connectionFacts(state: Pick<ConnectionFacts, 'status' | 'loaded'
 
 export const CONNECTION_ACTIONS: ConnectionActions = { tryNow: refresh, choosePc: showPcs, pairAgain };
 
+/** The one quiet toast for what did not go out while the connection was away (lib/toasts.ts unsent), or null. */
+export function unsentToast(titles: readonly string[]): { title: string; body: string; tone: 'info' } | null {
+  if (!titles.length) return null;
+  return { title: titles.length === 1 ? 'Not sent while the connection was away' : `${titles.length} things not sent while the connection was away`, body: titles.join(' · '), tone: 'info' };
+}
+
 /**
  * Follows the connection's status: the first moment it is not open (the retries' connecting/closed flips keep it), and
- * one timeout to DOWN_GRACE_MS after it – never polling. Returns the stop.
+ * one timeout to DOWN_GRACE_MS after it – never polling. While it is open, what did not go out meanwhile (unsent) is said
+ * once in one quiet toast. Returns the stop.
  */
 export function watchConnection(status: { value: ConnectionStatus }, now: () => number = Date.now): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -105,6 +117,8 @@ export function watchConnection(status: { value: ConnectionStatus }, now: () => 
       if (timer) { clearTimeout(timer); timer = null; }
       downSince.value = null;
       down.value = false;
+      const toast = unsentToast(unsent.value);
+      if (toast) { unsent.value = []; pushToast(toast); }
       return;
     }
     if (downSince.peek() !== null) return;

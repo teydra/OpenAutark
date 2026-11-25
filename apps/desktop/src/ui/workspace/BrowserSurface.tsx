@@ -24,6 +24,7 @@
 import type { Ref } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { BrowserFrame, BrowserInput } from '../../shared/model/browser.ts';
+import { connectionFailure } from '../lib/rpc-error.ts';
 import { frameSrc } from './browser-feed.ts';
 import { buttonOf, createInputSender, drawnArea, framePoint, keyInput, modifiersOf, pasteText, wheelPixels, type FramePoint } from './browser-input.ts';
 import { padGestures } from './browser-pad.ts';
@@ -82,7 +83,9 @@ export function BrowserSurface(props: BrowserSurfaceProps) {
     const pic = image.current;
     return box && pic && pic.offsetWidth > 0 ? { box: { width: box.clientWidth, height: box.clientHeight }, picture: { left: pic.offsetLeft, top: pic.offsetTop, width: pic.offsetWidth, height: pic.offsetHeight } } : undefined;
   };
-  const sender = useMemo(() => createInputSender((tab, input) => latest.current.send(tab, input), (error) => latest.current.onError(error), { window: props.inFlight }), [frame.agentId, props.inFlight]);
+  // an input the dropped connection took with it drops nothing behind it (Konrad 24.11.2026): the rest goes once it is back
+  const sender = useMemo(() => createInputSender((tab, input) => latest.current.send(tab, input), (error) => latest.current.onError(error),
+    { window: props.inFlight, lost: (error) => connectionFailure(error) === 'lost' }), [frame.agentId, props.inFlight]);
   const toPage = (input: BrowserInput) => { const tab = latest.current.frame.tab; if (tab) sender.push(tab, input); };
   const [touch, pad] = useMemo(() => {
     const scale = () => {
