@@ -17,7 +17,7 @@ test('list separates the original creation instant from the last movement after 
   for (const args of [{ id: task.id }, { who: 'all' }, {}]) {
     const { text } = await h.call('ag_tom', 'tasks.list', args);
     assert.ok(text.toLowerCase().includes(`created on ${dueText(task.createdAt, zone, now)}`.toLowerCase()), text);
-    assert.ok(text.toLowerCase().includes(`idle since ${dueText(now, zone, now)}`.toLowerCase()), text);
+    assert.ok(text.toLowerCase().includes(`stuck since ${dueText(now, zone, now)}`.toLowerCase()), text);
   }
   assert.equal(h.tasks.get(task.id)?.createdAt, task.createdAt);
 });
