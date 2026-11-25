@@ -19,7 +19,8 @@ import { GLOBAL_SPACE, browserUrl } from '../../shared/api/workspace-browser.ts'
 import { cursorColor, tilted } from '../../shared/model/agent-cursor.ts';
 import { DEFAULT_MOTION, thinSteps, type MotionStep } from '../../shared/model/pointer-motion.ts';
 import { POINTER_PATH_MAX, surfaceKey, type PointerAction } from '../../shared/model/pointers.ts';
-import type { SideBrowserCall, SideBrowserResult } from '../../shared/model/side-browser.ts';
+import type { SideBrowserCall, SideBrowserResult, SideWeb } from '../../shared/model/side-browser.ts';
+import { siteOfUrl } from '../../shared/model/security-settings.ts';
 import type { PageOpener } from '../../shared/api/workspace-browser.ts';
 import { SideError, type ContentsLike } from './cdp.ts';
 import { dialogError, evaluate, pageText, responseBody, screenshot, takeLook } from './read.ts';
@@ -29,11 +30,14 @@ import type { SideDriverDeps } from './surface.ts';
 import { SideTab, type PersonInput } from './tab.ts';
 import { checkCall } from './validate.ts';
 import { waitFor } from './wait.ts';
+import type { TabGuardHooks } from '../workspace-guard.ts';
 
 export const PERSON_PRIORITY_MS = 2000;
 const LOAD_MS = 15_000;
 const LOOKS_MAX = 64;
 const BUSY = 'The person is using this tab right now – wait a moment, then try again.';
+/** 25.11.2026: the calls that move or change a tab – Secure mode's guard goes on with them (guard.ts). */
+const DRIVES: ReadonlySet<SideBrowserCall['action']> = new Set(['open', 'act', 'eval']);
 const NO_BROWSER = 'The side browser is not available right now.';
 
 export class SideDriver {
@@ -82,7 +86,10 @@ export class SideDriver {
 
   private personInput(tab: SideTab, input: PersonInput): void {
     this.lastPersonTab = tab.id;
-    if (input.action === 'click' || input.action === 'type') this.deps.browser()?.sideKeep?.(tab.id);
+    if (input.action === 'click' || input.action === 'type') {
+      tab.guard.off(); // 25.11.2026: the person drives this tab now – Secure mode's guard is for an agent's moves (guard.ts)
+      this.deps.browser()?.sideKeep?.(tab.id);
+    }
     if (input.x === undefined || input.y === undefined) return;
     const person = this.deps.person?.() ?? { kind: 'person', id: 'owner', name: 'Owner' };
     this.deps.pointer?.({ surface: surfaceKey('side', tab.id), actor: person, x: input.x, y: input.y, action: input.action, ...(input.target ? { target: input.target } : {}) });
@@ -115,6 +122,59 @@ export class SideDriver {
     return tab && tab.contents === contents ? tab : this.make(id, contents);
   }
 
+  /** 25.11.2026: the hooks the workspace browser asks (main/workspace-guard.ts). */
+  guardHooks(): TabGuardHooks {
+    return { beforeLoad: (id, contents, from) => this.beforeLoad(id, contents, from), mayOpen: (from, url) => this.mayOpen(from, url), personUsed: (id) => this.personUsed(id) };
+  }
+
+  /** 25.11.2026: the person used tab `id` from the pane (their own address, back, forward, reload): its guard goes off. */
+  personUsed(id: string): void {
+    this.tabs.get(id)?.guard.off();
+  }
+
+  /**
+   * 25.11.2026: may tab `from`'s page open a new tab at `url`? Not while an agent drives it in Secure mode and the site is
+   * held back (the agent's next answer says so).
+   */
+  mayOpen(from: string, url: string): boolean {
+    const parent = this.tabs.get(from);
+    if (!parent?.guard.on) return true;
+    const held = parent.guard.heldSite(url);
+    if (held) parent.guard.note(held);
+    return !held;
+  }
+
+  /**
+   * 25.11.2026: the workspace browser is about to load a page in tab `id` – an agent's open running now (open()), or a new
+   * tab that tab `from`'s page opened. In Secure mode the tab's guard goes on first, so even the first load's redirect hops
+   * are checked: the promise says whether to load (false: the guard could not go on). Undefined: load at once.
+   */
+  beforeLoad(id: string, contents: ContentsLike, from?: string): Promise<boolean> | undefined {
+    const opening = this.opening;
+    const known = this.tabs.get(id);
+    if (opening && !opening.web) { if (known?.contents === contents) known.guard.off(); return undefined; }
+    const parent = !opening && from ? this.tabs.get(from) : undefined;
+    const web = opening?.web ?? parent?.guard.sites;
+    if (!web) return undefined;
+    if (known && known.contents !== contents) known.dispose();
+    const tab = known && known.contents === contents ? known : this.make(id, contents);
+    if (opening) { tab.guard.take(); opening.release.push(tab.guard.pass(opening.url)); } // this open's site, for this call alone
+    else if (parent) tab.guard.onHeld = (site) => parent.guard.note(site);
+    const opener = parent ? siteOfUrl(parent.cdp.mainUrl) : undefined;
+    return tab.cdp.ready().then(() => tab.guard.set(web, opener)).then(() => true, () => false);
+  }
+
+  /** The agent's open running now (open() around sideOpen): what beforeLoad gives the tab. */
+  private opening?: { web?: SideWeb; url: string; release: Array<() => void> };
+
+  /** The guard as this call wants it: on for a call that drives the tab, kept up to date while on, off without `web`. */
+  private async guardFor(tab: SideTab, call: SideBrowserCall): Promise<void> {
+    if (!DRIVES.has(call.action) && !tab.guard.on) return;
+    try { await tab.guard.set(call.web); } catch {
+      if (call.web) throw new SideError('Secure mode could not watch where this tab goes, so nothing ran there – try again.');
+    }
+  }
+
   /** Checks, then runs the call; every failure comes back as one sentence. */
   async call(raw: unknown): Promise<SideBrowserResult> {
     const checked = checkCall(raw);
@@ -143,6 +203,7 @@ export class SideDriver {
     }
     const tab = this.choose(call.tab, call.space ?? GLOBAL_SPACE, call.agent.id);
     await tab.cdp.ready();
+    await this.guardFor(tab, call); // 25.11.2026: Secure mode's guard (guard.ts)
     const key = `${call.agent.id}|${tab.id}`;
     switch (call.action) {
       case 'snapshot': {
@@ -210,30 +271,55 @@ export class SideDriver {
     let url: string;
     try { url = new URL(browserUrl(call.url!)).href; } catch (error) { throw new SideError(error instanceof Error ? error.message : 'Use an HTTP or HTTPS address.'); }
     let tab: SideTab;
-    if (call.newTab !== false) {
-      const browser = this.deps.browser();
-      if (!browser) throw new SideError(NO_BROWSER);
-      let id: string;
-      const opener: PageOpener = { agentId: call.agent.id, agentName: call.agent.name, ...(call.chat ? { chatId: call.chat } : {}) };
-      try { id = browser.sideOpen(url, opener, call.show === true, call.space, call.newTab === true); } catch (error) { throw new SideError(error instanceof Error ? error.message : 'The page could not be opened.'); }
-      tab = this.choose(id, call.space ?? GLOBAL_SPACE, call.agent.id);
-      tab.domReady = false; // the load already started: its document counts as not parsed until it says so (a reused preview tab still holds its last one)
-      await tab.cdp.ready();
-    } else {
-      tab = this.choose(call.tab, call.space ?? GLOBAL_SPACE, call.agent.id);
-      if (tab.personActive(PERSON_PRIORITY_MS)) throw new SideError(BUSY, { personActive: true });
-      tab.domReady = false;
-      const out = await tab.cdp.send('Page.navigate', { url }) as { errorText?: string };
-      if (out.errorText) throw new SideError(`The page could not be loaded (${out.errorText}).`);
+    // 25.11.2026: Secure mode – this open's site passes the tab's guard for this call alone (beforeLoad, guard.ts)
+    const release: Array<() => void> = [];
+    try {
+      if (call.newTab !== false) {
+        const browser = this.deps.browser();
+        if (!browser) throw new SideError(NO_BROWSER);
+        let id: string;
+        const opener: PageOpener = { agentId: call.agent.id, agentName: call.agent.name, ...(call.chat ? { chatId: call.chat } : {}) };
+        this.opening = { ...(call.web ? { web: call.web } : {}), url, release };
+        try { id = browser.sideOpen(url, opener, call.show === true, call.space, call.newTab === true); } catch (error) { throw new SideError(error instanceof Error ? error.message : 'The page could not be opened.'); }
+        finally { this.opening = undefined; }
+        tab = this.choose(id, call.space ?? GLOBAL_SPACE, call.agent.id);
+        if (call.web) release.push(tab.guard.pass(url)); // also when the page loads without asking beforeLoad first
+        tab.domReady = false; // the load already started: its document counts as not parsed until it says so (a reused preview tab still holds its last one)
+        await tab.cdp.ready();
+        await this.guardFor(tab, call); // on already when the workspace browser asked first (beforeLoad); kept up to date
+      } else {
+        tab = this.choose(call.tab, call.space ?? GLOBAL_SPACE, call.agent.id);
+        if (tab.personActive(PERSON_PRIORITY_MS)) throw new SideError(BUSY, { personActive: true });
+        await tab.cdp.ready();
+        await this.guardFor(tab, call);
+        if (call.web) release.push(tab.guard.pass(url));
+        tab.guard.take();
+        tab.domReady = false;
+        const out = await tab.cdp.send('Page.navigate', { url }) as { errorText?: string };
+        if (out.errorText) throw new SideError(tab.guard.take() || `The page could not be loaded (${out.errorText}).`);
+      }
+      const ready = await this.loaded(tab, LOAD_MS);
+      const held = tab.guard.take(); // a redirect of this open to a site not open yet
+      if (held) return { ok: false, ...this.where(tab), error: held };
+      const { look, human } = await takeLook(tab);
+      this.remember(`${call.agent.id}|${tab.id}`, look);
+      return { ok: true, ...this.where(tab), text: `${ready ? '' : 'The page is still loading.\n'}${look.lines.join('\n')}`, ...(human ? { humanCheck: true } : {}) };
+    } finally {
+      for (const done of release) done();
     }
-    const ready = await this.loaded(tab, LOAD_MS);
-    const { look, human } = await takeLook(tab);
-    this.remember(`${call.agent.id}|${tab.id}`, look);
-    return { ok: true, ...this.where(tab), text: `${ready ? '' : 'The page is still loading.\n'}${look.lines.join('\n')}`, ...(human ? { humanCheck: true } : {}) };
+  }
+
+  /** The steps, with a move Secure mode held back on the way said first (25.11.2026, guard.ts). */
+  private async act(tab: SideTab, call: SideBrowserCall, key: string): Promise<SideBrowserResult> {
+    tab.guard.take();
+    const result = await this.steps(tab, call, key);
+    const held = tab.guard.take();
+    if (held) result.changes = [held, result.changes].filter(Boolean).join('\n');
+    return result;
   }
 
   /** Steps in order, stopping at the first that fails; then what changed since the agent's last look. */
-  private async act(tab: SideTab, call: SideBrowserCall, key: string): Promise<SideBrowserResult> {
+  private async steps(tab: SideTab, call: SideBrowserCall, key: string): Promise<SideBrowserResult> {
     const agent = call.agent;
     const style = call.motion ?? DEFAULT_MOTION; // like everywhere: a hand unless the call passes glide or instant
     const group = newStepGroup(); // this act's own object group, so a parallel act's release never frees these nodes

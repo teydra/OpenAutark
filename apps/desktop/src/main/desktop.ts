@@ -338,7 +338,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   });
   appWindow = mainWindow;
   workspaceBrowser = new WorkspaceBrowser(() => mainWindow.browserWindow, { // tabs and panels survive restarts
-    onTab: (id, contents) => sideDriver.tab(id, contents), // B-055 F1
+    onTab: (id, contents) => sideDriver.tab(id, contents), guard: sideDriver.guardHooks(), // B-055 F1; 25.11.2026: Secure mode's guard (workspace-guard.ts)
     keep: id => caster.watched(id), // B-076: a page watched from another PC or a phone stays loaded
     pick: (id, on) => void sideDriver.pick(id, on), // B-081: the Pin button – the tab's element picker (side-driver/pick-script.ts)
     tabsFile: path.join(paths.data, 'side-tabs.json'),

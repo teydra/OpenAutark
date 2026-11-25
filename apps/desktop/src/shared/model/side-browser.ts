@@ -64,7 +64,18 @@ export interface SideBrowserCall {
   region?: { x: number; y: number; width: number; height: number };
   maxEdge?: number;
   motion?: MotionStyle;
+  /**
+   * 25.11.2026 (Secure mode with the web not open everywhere): the sites open without asking. With it, the tab this call
+   * drives (open, act, eval) holds back every top-level move – a click, a form, the page's script, a redirect hop, a
+   * new tab it opens – to any other site than these, the one this open goes to (for this call only) and the one the
+   * tab shows, until the person uses that tab. Without it the tab's guard goes off (Trust AI mode, web open).
+   */
+  web?: SideWeb;
 }
+
+/** What Secure mode lets an agent's side tab reach without asking (side-driver/guard.ts). */
+export interface SideWeb { sites: string[] }
+export const SIDE_WEB_SITES_MAX = 500;
 
 export interface SideTabInfo { id: string; url: string; title: string; active: boolean; by?: string }
 

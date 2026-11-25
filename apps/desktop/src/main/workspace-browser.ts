@@ -11,7 +11,7 @@
 // workspace-session.ts; the page menu: workspace-page-menu.ts; closed tabs: workspace-tab-memory.ts. Agents work here
 // through main/side-driver (sideTabs, sideContents, sideOpen, sideKeep, sideClose, sideRelease); a tab an agent opens carries the agent
 // and the chat (`opener`), and so do the pages it opens; an agent's page is its preview tab in that space until the person
-// uses it or keeps it (workspace-marks.ts).
+// uses it or keeps it (workspace-marks.ts). Secure mode's guard on a tab an agent drives: workspace-guard.ts.
 // Owns: tab lifetime, events, viewport and trusted IPC. Never: reads page content (except a picture for Send page to
 // chat), cookies or tokens, or grants runtime ports.
 
@@ -31,6 +31,7 @@ import { attachPageMenu } from './workspace-page-menu.ts';
 import { ClosedTabs } from './workspace-tab-memory.ts';
 import { ShownTabs, fit } from './workspace-shown.ts';
 import { TabMarks } from './workspace-marks.ts';
+import { TabGuards, type TabGuardHooks } from './workspace-guard.ts';
 
 interface Tab { view: WebContentsView; error?: string; favicon?: string; iconAsk: number; closing?: boolean }
 
@@ -38,13 +39,11 @@ interface Tab { view: WebContentsView; error?: string; favicon?: string; iconAsk
 export const MAX_LIVE = 5;
 
 export interface WorkspaceBrowserOptions {
-  /** <data>/side-tabs.json */
-  tabsFile?: string;
+  tabsFile?: string; // <data>/side-tabs.json
   /** The flat list it replaces, moved over once. */
   oldTabsFile?: string;
   /** <data>/browser-history.json and <data>/workspace-zoom.json (without them both last until the app closes). */
-  historyFile?: string;
-  zoomFile?: string;
+  historyFile?: string; zoomFile?: string;
   /** <workspace>/downloads/personal (without it downloads are refused). */
   downloadsDir?: string;
   /** How long a hidden tab keeps its page (memory saver). */
@@ -53,6 +52,7 @@ export interface WorkspaceBrowserOptions {
   onTab?(id: string, contents: WebContents | null): void;
   keep?(id: string): boolean; // B-076: someone watches the page from another PC or a phone – it stays loaded
   pick?(id: string, on: boolean): void; // B-081: the Pin button – main/side-driver switches the tab's picker (workspace-chrome.ts)
+  guard?: TabGuardHooks; // 25.11.2026: Secure mode's guard on a tab an agent drives (workspace-guard.ts)
 }
 
 export class WorkspaceBrowser {
@@ -77,11 +77,11 @@ export class WorkspaceBrowser {
   /** The space whose next shown tab gets the keyboard (the page there that had it went). */
   private focusNext: string | null = null;
   private readonly onTab: WorkspaceBrowserOptions['onTab'];
-  private readonly watched: WorkspaceBrowserOptions['keep'];
+  private readonly watched: WorkspaceBrowserOptions['keep']; private readonly guard: TabGuards;
 
   constructor(getWindow: () => BrowserWindow | null, options: WorkspaceBrowserOptions = {}) {
     this.getWindow = getWindow;
-    this.onTab = options.onTab; this.watched = options.keep;
+    this.onTab = options.onTab; this.watched = options.keep; this.guard = new TabGuards(options.guard);
     this.saved = new PersonalTabs({ file: options.tabsFile, oldFile: options.oldTabsFile });
     if (options.tabsFile) watchTabsFile(options.tabsFile, () => this.fileChanged());
     this.rules = new WorkspaceSession(this.browserSession, { tabOf: (contents) => this.idOf(contents), changed: () => this.publish() }, {
@@ -106,7 +106,7 @@ export class WorkspaceBrowser {
       catch (error) { return { ok: false, error: { code: 'bad_request', message: error instanceof Error ? error.message : 'Could not update the browser.' } }; }
     });
     nativeTheme.on('updated', () => { for (const tab of this.tabs.values()) { const page = livePage(tab); if (page) this.scheme(page); } });
-    handle(WORKSPACE_BROWSER.command, (value) => this.command(browserCommand(value)));
+    handle(WORKSPACE_BROWSER.command, (value) => { const command = browserCommand(value); this.guard.person(command); return this.command(command); });
     handle(WORKSPACE_BROWSER.capture, (id) => captureTab(tabId(id), this.tabs.get(tabId(id))));
     handle(WORKSPACE_BROWSER.layout, () => this.saved.layout());
     handle(WORKSPACE_BROWSER.history, (request) => this.chrome.historyRequest(request));
@@ -258,8 +258,8 @@ export class WorkspaceBrowser {
     contents.on('will-frame-navigate', event => { if (!allow(event.url) && event.url !== 'about:blank') event.preventDefault(); });
     contents.on('will-redirect', (event, url) => { if (!allow(url)) event.preventDefault(); });
     contents.setWindowOpenHandler(({ url, disposition }) => {
-      // in the background on a Ctrl / middle click or from a page the person does not look at; an agent's page passes its opener on
-      if (allow(url)) try { this.openTab(url, this.saved.spaceOf(id), disposition !== 'background-tab' && this.slots.isShown(id), this.marks.opener(id)); } catch { /* the space is full */ }
+      // in the background on a Ctrl / middle click or from a page the person does not look at; an agent's page passes its opener (and its Secure-mode guard) on
+      if (allow(url)) this.guard.opening(id, url, () => this.openTab(url, this.saved.spaceOf(id), disposition !== 'background-tab' && this.slots.isShown(id), this.marks.opener(id)));
       return { action: 'deny' };
     });
     attachPageMenu(contents, { window: () => this.getWindow(), openLink: (url) => this.openLink(url, this.saved.spaceOf(id)), electron: { Menu, clipboard } });
@@ -416,7 +416,7 @@ export class WorkspaceBrowser {
   private load(id: string, url: string, space: string): void {
     const tab = this.tabs.get(id) ?? this.create(id, space, this.marks.opener(id)?.agentId);
     tab.error = undefined;
-    void tab.view.webContents.loadURL(url).catch(() => {}); // did-fail-load publishes the visible failure
+    this.guard.load(id, tab.view.webContents, url, (why) => { tab.error = why; this.publish(); }); // Secure mode's guard first; did-fail-load publishes a failure
     this.publish();
   }
 

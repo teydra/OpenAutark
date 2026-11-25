@@ -57,6 +57,8 @@ export class TabCdp {
   readonly contents: ContentsLike;
   /** The main frame's id (Page.getFrameTree, then main-frame navigations). */
   mainFrame = '';
+  /** 25.11.2026: the main frame's committed address (the same events) – the site a tab shows (guard.ts). */
+  mainUrl = '';
   private readying: Promise<void> | null = null;
   private readonly listeners = new Map<string, Set<Listener>>();
   /** Our world's execution contexts: id → frame id. */
@@ -92,8 +94,9 @@ export class TabCdp {
     await Promise.all([
       this.raw('Page.enable'), this.raw('Runtime.enable'), this.raw('Log.enable'), this.raw('Network.enable', NETWORK_BUFFER),
     ]);
-    const tree = await this.raw('Page.getFrameTree') as { frameTree?: { frame?: { id?: string } } };
+    const tree = await this.raw('Page.getFrameTree') as { frameTree?: { frame?: { id?: string; url?: string } } };
     this.mainFrame = tree.frameTree?.frame?.id ?? '';
+    this.mainUrl = String(tree.frameTree?.frame?.url ?? '');
     await this.raw('Runtime.addBinding', { name: BINDING, executionContextName: WORLD });
     await this.raw('Page.addScriptToEvaluateOnNewDocument', { source: pageScript(BINDING), worldName: WORLD, runImmediately: true });
   }
@@ -104,7 +107,10 @@ export class TabCdp {
       if (context?.name === WORLD && typeof context.id === 'number') this.worlds.set(context.id, String(context.auxData?.frameId ?? ''));
     } else if (method === 'Runtime.executionContextDestroyed') this.worlds.delete(params?.executionContextId);
     else if (method === 'Runtime.executionContextsCleared') this.worlds.clear();
-    else if (method === 'Page.frameNavigated' && params?.frame && !params.frame.parentId) this.mainFrame = String(params.frame.id ?? this.mainFrame);
+    else if (method === 'Page.frameNavigated' && params?.frame && !params.frame.parentId) {
+      this.mainFrame = String(params.frame.id ?? this.mainFrame);
+      this.mainUrl = String(params.frame.url ?? '');
+    } else if (method === 'Page.navigatedWithinDocument' && params?.frameId === this.mainFrame) this.mainUrl = String(params.url ?? this.mainUrl);
   }
 
   /** Is this context our world in the main frame (the person's reports with coordinates come from there)? */

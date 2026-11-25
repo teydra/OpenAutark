@@ -7,11 +7,14 @@
 // first with one 'find' in that tab and goes on with the ref of the one element that matches (or the nth); several or
 // none answer with the lines found. A css selector stays my own browser's. A stored secret's value is taken from the
 // vault here and typed there (the tool output passes the vault's redaction). Without the host op (no desktop app here)
-// the call fails with one sentence.
+// the call fails with one sentence. 25.11.2026: in Secure mode with the web not open everywhere each call carries the
+// sites open without asking (`web`, sideWeb), so the tab an agent drives holds back a move anywhere else
+// (main/side-driver/guard.ts).
 // Owns: that mapping. Never: talks to main except through the host.
 
 import { WorkforceError } from '../../shared/errors.ts';
-import type { SideActStep, SideBrowserCall, SideBrowserResult, SideStepAction } from '../../shared/model/side-browser.ts';
+import { webDomainsOf } from '../../shared/model/security-settings.ts';
+import type { SideActStep, SideBrowserCall, SideBrowserResult, SideStepAction, SideWeb } from '../../shared/model/side-browser.ts';
 import type { ToolContext } from '../tools/types.ts';
 import { describeTarget } from './page.ts';
 
@@ -85,7 +88,8 @@ export async function sideCall(ctx: ToolContext, call: Omit<SideBrowserCall, 'ag
   if (!host.sideBrowser) throw new WorkforceError('unavailable', SIDE_MISSING);
   let result: SideBrowserResult;
   try {
-    result = await host.sideBrowser({ ...call, agent: { id: ctx.agent.id, name: ctx.agent.name }, ...(ctx.conversationId ? { chat: ctx.conversationId } : {}) });
+    const web = sideWeb(ctx);
+    result = await host.sideBrowser({ ...call, agent: { id: ctx.agent.id, name: ctx.agent.name }, ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), ...(web ? { web } : {}) });
   } catch (error) {
     if (error instanceof WorkforceError && error.code === 'unavailable') throw new WorkforceError('unavailable', SIDE_MISSING);
     throw error;
@@ -96,6 +100,17 @@ export async function sideCall(ctx: ToolContext, call: Omit<SideBrowserCall, 'ag
     throw new WorkforceError(result.personActive ? 'conflict' : 'unavailable', why);
   }
   return result;
+}
+
+/**
+ * 25.11.2026: what Secure mode lets an agent's side tab reach without asking – the chosen sites ('chosen'), none ('ask');
+ * undefined when nothing is held back (Trust AI mode, the web open everywhere).
+ */
+export function sideWeb(ctx: Pick<ToolContext, 'services'>): SideWeb | undefined {
+  let now;
+  try { now = ctx.services.security?.current(); } catch { return undefined; }
+  if (!now || now.mode !== 'secure' || now.web === 'yes') return undefined;
+  return { sites: now.web === 'chosen' ? webDomainsOf(now) : [] };
 }
 
 /** The tab line facts of a side result. */
