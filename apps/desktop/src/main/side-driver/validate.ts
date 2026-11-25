@@ -2,7 +2,7 @@
 // refs, step shapes – with one sentence for the agent when one is wrong.
 // Owns: the checks and their limits. Never: talks to a page (pure).
 
-import { SIDE_STEPS_MAX, SIDE_WAIT_MAX_MS, type SideActStep, type SideBrowserCall, type SideStepAction } from '../../shared/model/side-browser.ts';
+import { SIDE_STEPS_MAX, SIDE_WAIT_MAX_MS, SIDE_WEB_SITES_MAX, type SideActStep, type SideBrowserCall, type SideStepAction } from '../../shared/model/side-browser.ts';
 import { isMotionStyle, type MotionStyle } from '../../shared/model/pointer-motion.ts';
 import { isSpace } from '../../shared/api/workspace-browser.ts';
 
@@ -140,6 +140,12 @@ export function checkCall(raw: unknown): { call: SideBrowserCall } | { error: st
       const idle = bool(w.idle, 'wait.idle'); if (idle !== undefined) waitFor.idle = idle;
       const timeoutMs = num(w.timeoutMs, 'wait.timeoutMs', 0, SIDE_WAIT_MAX_MS, true); if (timeoutMs !== undefined) waitFor.timeoutMs = timeoutMs;
       call.wait = waitFor;
+    }
+    if (value.web !== undefined) { // 25.11.2026: Secure mode's open sites (side-driver/guard.ts)
+      if (!isObject(value.web) || !Array.isArray(value.web.sites) || value.web.sites.length > SIDE_WEB_SITES_MAX) fail(`web must be { sites: up to ${SIDE_WEB_SITES_MAX} host names }.`);
+      const sites = ((value.web as Fields).sites as unknown[]).map((site, n) => text(site, `web.sites[${n}]`, 253, { min: 1 })!);
+      if (sites.some((site) => !/^[a-z0-9.:-]+$/.test(site))) fail('web.sites holds something that is no host name.');
+      call.web = { sites };
     }
     if (value.steps !== undefined) {
       if (!Array.isArray(value.steps)) fail('steps must be a list.');

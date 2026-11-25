@@ -16,6 +16,7 @@ import type { Point } from '../../shared/model/pointer-motion.ts';
 import type { SideViewSize } from '../../shared/model/side-view.ts';
 import { BINDING, TabCdp, WORLD, type ContentsLike } from './cdp.ts';
 import { ConsoleLog, NetworkLog } from './logs.ts';
+import { SideGuard } from './guard.ts';
 import type { RefInfo } from './snapshot.ts';
 
 /** The person's report from the page: input kind, viewport CSS px (top frame only), what is under it (control, short selector). */
@@ -36,6 +37,8 @@ const CONSOLE_RELEASE_EVERY = 100;
 export class SideTab {
   readonly id: string;
   readonly cdp: TabCdp;
+  /** 25.11.2026: Secure mode's guard while an agent drives this tab (guard.ts). */
+  readonly guard: SideGuard;
   readonly console = new ConsoleLog();
   readonly network = new NetworkLog();
   /** Counts main-frame documents: refs and looks belong to one. */
@@ -75,6 +78,7 @@ export class SideTab {
     this.onPerson = (input) => options.person(this, input);
     this.onPick = (pick) => options.pick?.(this, pick);
     const cdp = (this.cdp = new TabCdp(contents));
+    this.guard = new SideGuard(cdp);
     cdp.on('Runtime.executionContextCreated', (p) => { // a new document of the main frame: the picker goes on again there
       const context = p?.context;
       if (!this.picking || context?.name !== WORLD || typeof context.id !== 'number' || !cdp.isTopWorld(context.id)) return;
@@ -230,6 +234,7 @@ export class SideTab {
   dispose(): void {
     this.waiters.clear();
     this.mutations.clear();
+    this.guard.dispose();
     this.cdp.dispose();
   }
 }
