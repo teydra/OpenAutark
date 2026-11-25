@@ -1,14 +1,46 @@
 rules_version = '2';
 
-// Workforce feedback mailbox (B-055): anyone with the app may drop one sealed letter; nobody can read, change or
-// delete one through these rules. Only the team's PC fetches and deletes letters (with its service account, which
-// does not go through rules) and only the team's private key opens them. Paste into Firebase console › Firestore ›
-// Rules and publish. Written by the app: apps/desktop/resources/feedback/firestore.rules.
-// v2 (feedback 16.11.2026): ids only of the characters our senders use (drop.ts DOCUMENT_ID); an optional `exp`
-// timestamp at most 31 days ahead – the TTL policy on feedback.exp deletes a letter nobody fetched by then. Letters
-// of older apps (v and sealed only) are still accepted; they leave the mailbox when the team fetches.
+// Rules of the Firebase project that holds Autark's write-only feedback mailbox AND its anonymous counters. A deploy
+// replaces the whole rule set, so both live in this one file. Paste into Firebase console › Firestore › Rules and
+// publish, or deploy through the Firebase Rules API. Written by the app: apps/desktop/resources/feedback/firestore.rules.
+//
+// feedback/{id}  (B-055, v2 of 16.11.2026): anyone with the app may drop one sealed letter; nobody can read, change or
+//   delete one through these rules. Only the team's PC fetches and deletes letters (with its service account, which
+//   does not go through rules) and only the team's private key opens them. Ids only of the characters our senders use
+//   (drop.ts DOCUMENT_ID); an optional `exp` timestamp at most 31 days ahead. Letters of older apps (v and sealed only)
+//   are still accepted.
+//
+// dl/{day}_{platform}  (25.11.2026): one counter per day and download platform – the site adds 1 when a visitor clicks a
+//   download button. No id, no cookie, no address; a document holds nothing but `n`.
+// use/{day}-{platform}-{HH}  (25.11.2026): one counter per day, platform and UTC hour – an Autark install adds 1 for an
+//   hour in which it was used; `dev` also adds 1 for the first signal of that install on that day (active devices).
+//   Nothing says which install it was.
+//
+// Counters may only grow by exactly 1 per write, only for today (UTC) and – for `use` – only the current hour, only on
+// the listed platforms, only the fields named here. Nobody reads them anonymously: the owner reads them signed in with
+// a verified Google account listed in admin/owners (the private stats page of openautark.com).
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function pad(n) {
+      return (n < 10 ? '0' : '') + string(n);
+    }
+    // Today in UTC as the clients write it: YYYY-MM-DD.
+    function today() {
+      return string(request.time.year()) + '-' + pad(request.time.month()) + '-' + pad(request.time.day());
+    }
+    // The field's value before this write: 0 when the document is new or lacks the field.
+    function before(field) {
+      return resource == null ? 0 : resource.data.get(field, 0);
+    }
+    // The team's own Google accounts, listed in the document admin/owners { emails: [...] } of the project (written with the
+    // service account; no client can read or write it), so no address stands in this public file.
+    function owner() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in get(/databases/$(database)/documents/admin/owners).data.emails;
+    }
+
     match /feedback/{id} {
       allow create: if request.auth == null
         && id.matches('^[A-Za-z0-9_-]{1,64}$')
@@ -23,6 +55,30 @@ service cloud.firestore {
             && request.resource.data.exp <= request.time + duration.value(31, 'd')));
       allow read, update, delete: if false;
     }
+
+    // Download clicks: dl/2026-11-25_windows { n }.
+    match /dl/{id} {
+      allow create, update: if id.matches(today() + '_(windows|mac|mac-zip|linux|android|android-full)')
+        && request.resource.data.keys().hasOnly(['n'])
+        && request.resource.data.n is int
+        && request.resource.data.n == before('n') + 1;
+      allow read: if owner();
+      allow delete: if false;
+    }
+
+    // Usage: use/2026-11-25-windows-13 { n, dev } (hour 13 UTC).
+    match /use/{id} {
+      allow create, update: if id.matches(today() + '-(windows|mac|linux|android|ios)-' + pad(request.time.hours()))
+        && request.resource.data.keys().hasOnly(['n', 'dev'])
+        && request.resource.data.keys().hasAll(['n'])
+        && request.resource.data.n is int
+        && request.resource.data.n == before('n') + 1
+        && request.resource.data.get('dev', 0) is int
+        && request.resource.data.get('dev', 0) - before('dev') in [0, 1];
+      allow read: if owner();
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
