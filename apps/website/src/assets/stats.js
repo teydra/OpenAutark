@@ -58,11 +58,13 @@ if (root?.dataset.project) {
   }
 
   // ── charts ──
-  const W = 640; const H = 220; const M = { l: 34, r: 8, t: 10, b: 24 };
+  // The drawing is as wide as its box (phones: ~360, desktop: up to 880) so the numbers stay 11px and readable.
+  const M = { l: 34, r: 8, t: 10, b: 24 };
   const niceMax = (v) => { if (v <= 4) return 4; const p = 10 ** Math.floor(Math.log10(v)); const f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; };
   // cols: [{ name, parts: {platform: value} }]; kind 'bars' stacks, 'lines' draws one line per platform.
   function chart(el, cols, kind, unit) {
     el.replaceChildren();
+    const W = Math.max(300, Math.min(880, Math.round(el.clientWidth || 640))); const H = 240;
     const plats = Object.keys(PLATFORMS).filter((p) => cols.some((c) => c.parts[p]));
     if (!cols.length || !plats.length) { el.append(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'No counts in this range yet.' })); return; }
     const tot = (c) => plats.reduce((s, p) => s + (c.parts[p] || 0), 0);
@@ -73,7 +75,7 @@ if (root?.dataset.project) {
     for (let i = 0; i <= 4; i++) {
       const v = (max / 4) * i; svg.append(h('line', { x1: M.l, x2: W - M.r, y1: y(v), y2: y(v), class: 'stats__grid' }), h('text', { x: M.l - 5, y: y(v) + 4, class: 'stats__tick', 'text-anchor': 'end' }, String(Math.round(v * 10) / 10)));
     }
-    const every = Math.ceil(cols.length / 8);
+    const every = Math.ceil(cols.length / Math.max(3, Math.floor(iw / 64)));
     cols.forEach((c, i) => { if (i % every === 0) svg.append(h('text', { x: M.l + step * (i + 0.5), y: H - 6, class: 'stats__tick', 'text-anchor': 'middle' }, c.name)); });
     if (kind === 'bars') {
       cols.forEach((c, i) => { let base = 0; for (const p of plats) { const v = c.parts[p] || 0; if (!v) continue; svg.append(h('rect', { x: M.l + step * i + step * 0.12, width: Math.max(1, step * 0.76), y: y(base + v), height: y(base) - y(base + v), fill: COLORS[p] })); base += v; } });
@@ -154,5 +156,7 @@ if (root?.dataset.project) {
   });  document.querySelectorAll('.stats__range button').forEach((b) => b.addEventListener('click', () => {
     days = Number(b.dataset.days); document.querySelectorAll('.stats__range button').forEach((o) => o.setAttribute('aria-pressed', String(o === b))); if (auth?.currentUser) render();
   }));
+  let lastW = innerWidth;
+  addEventListener('resize', () => { if (innerWidth !== lastW && !$('#stats-view').hidden) { lastW = innerWidth; render(); } });
   if (localStorage.getItem(MARK)) button.click();
 }
