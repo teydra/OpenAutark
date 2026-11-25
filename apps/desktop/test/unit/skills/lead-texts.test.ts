@@ -39,7 +39,9 @@ test('one report, one voice, a quiet way: the task\'s result reports, the closin
   const team = skill('team-coordination');
   assert.doesNotMatch(team, /Who to report to|a short thanks is enough|One thanks with the result is enough/);
   assert.match(team, /Its result is the report/);
-  assert.match(team, /The lead of a piece of work speaks to them for it/);
+  assert.doesNotMatch(team, /The lead of a piece of work speaks to them for it/, 'stands once, in both standards (25.11.2026)');
+  assert.match(text('prompts/standard-agent.md'), /The one who leads it speaks to \{\{user_name\}\} for it; my result reaches them through that lead unless they asked me themselves/);
+  assert.match(text('prompts/standard-manager.md'), /As its lead I speak to \{\{user_name\}\} for it; a colleague's result reaches them through me/);
   const chats = skill('chats');
   assert.doesNotMatch(chats, /Everything I write is my thinking|not saved up for the end|`quiet` is for the record/);
   assert.match(chats, /a turn a person's line started, in which I addressed nothing, answers them with its closing words/);
@@ -53,6 +55,7 @@ test('the person\'s attention comes after our own ways; the examples ask only wh
   assert.match(handoff, /An item goes on their list after my own way was tried, and says what I tried/);
   assert.match(skill('team-coordination'), /with what we tried/);
   assert.match(skill('head-of-staff'), /says what we tried/);
+  assert.match(handoff, /A to-do the person wrote stays theirs/); // no longer in How I work (25.11.2026)
   assert.doesNotMatch(text('agents/video-editor.md'), /When I need human footage or voice/);
   assert.match(text('agents/video-editor.md'), /I first take from what they already made/);
   assert.match(text('agents/content-creator.md'), /I first take from what they already recorded/);
@@ -72,13 +75,16 @@ test('a SYSTEM.md keeps the person\'s words verbatim, my lessons marked as mine;
 
 // Team-Call 21.11.2026 (owner: the first manager put manager-like agents on level two): "a colleague for an area that
 // stays" in both standards and team-coordination made every hire an area of its own, so a doer with helpers led like a head.
-test('two levels: leads side by side, doers under them with helpers where their work splits; the shape is explained and another proposed', () => {
+// 25.11.2026 (Konrad's brief): the depth follows the amount of work – a head per area, topic leads under it where much comes in, a lead is no relay.
+test('the organisation is as deep as its work: a head per area, topic leads where much comes in; the shape is explained and another proposed', () => {
   const lead = text('prompts/standard-manager.md');
-  assert.match(lead, /I shape the organisation in two levels/);
-  assert.match(lead, /Leads settle things with each other, so a lead under a lead is one more relay and a grown area gets a head beside us/);
+  assert.match(lead, /The organisation is as deep as its work: a head per area with steady work/);
+  assert.match(lead, /topic leads under a head once its area takes in more than it can brief and check itself/);
   assert.match(lead, /I explain this shape to whoever builds the team with me – \{\{user_name\}\}, an employee – and propose another before I build it/);
-  assert.match(skill('org-setup-onboarding'), /Our usual shape has two levels\..*a doer keeps helpers when its work really splits/);
-  assert.match(skill('org-setup-onboarding'), /propose another one before I build it; the shape they choose stands/);
+  assert.match(skill('org-setup-onboarding'), /depth follows the\s+amount of work/);
+  assert.match(skill('org-setup-onboarding'), /A lead under me\*\* when results wait on my look for hours/);
+  assert.match(skill('org-setup-onboarding'), /One level less\*\* when a lead has one doer or passes work on unchanged: a relay/);
+  assert.match(skill('org-setup-onboarding'), /propose\s+another one before I build it; the shape they choose stands/);
   for (const file of ['prompts/standard-manager.md', 'prompts/standard-agent.md', 'skills/team-coordination/SKILL.md', 'agents/manager.md'])
     assert.doesNotMatch(text(file), /for an area that stays|I make its head|builds its own area|for example programming or social media/, file);
 });

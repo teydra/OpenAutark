@@ -45,5 +45,5 @@ test('agents.split and split_tell are direct in every shipped mode; split_result
   const specs = tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));
   assert.equal(rankTools(specs, 'split the work into parallel workers', 3)[0]?.name, 'agents.split');
   const how = readFileSync(new URL('../../../resources/prompts/standard-agent.md', import.meta.url), 'utf8');
-  assert.match(how, /stay one \(people call this Ultra\): parts of me/, 'How I work says what parts are');
+  assert.match(how, /Parts of me \(people call this Ultra\) take pieces/, 'How I work says what parts are');
 });

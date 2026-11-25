@@ -41,6 +41,8 @@ test('their attention is the scarcest thing: what they made and what I reach –
     assert.ok(text.includes('Their attention is the scarcest thing here'), name);
     assert.ok(text.includes('first look for in what they already made and in what'), name);
     assert.ok(text.includes('their linked phone among it'), name);
+    assert.match(text, /a phone with phone use off (I|we) request once, they confirm – the normal way/, `${name}: a phone without phone use is requested once, the person confirms (Stanislaus 25.11.2026 18:01)`);
+    assert.equal(text.split('request once, they confirm').length, 2, `${name}: the phone line stands once`);
     assert.match(text, /a to-do for them comes after (my|our) own way was tried, with what (I|we) tried in it, and takes them seconds/, name);
     assert.ok(!text.includes("I plan it into Alexandra's day"), `${name}: a task for them is no first way`);
   }
@@ -66,10 +68,35 @@ test('their words are theirs, my reading is mine; what I learn is marked as mine
   assert.doesNotMatch(own, /What to keep to|One line to my manager or the person|The wake says so|First task:/);
 });
 
-test('we work in minutes: a date lies days out only when the world outside sets it (owner-voice 4, employees-real §5.4)', () => {
-  assert.ok(part(AGENT, '## Carrying work', '## Chats').includes('We work in minutes.'));
-  assert.ok(AGENT.includes('a date I give lies days out only when the world outside sets it'));
-  assert.ok(part(LEAD, '## Leading', '## Judgment').includes('We work in minutes: a colleague starts when briefed, and a date lies days out only when the world outside sets it.'));
+test('we work in minutes: a time on our work comes from outside, a wait names who or what, the turn ends with a critical look (owner-voice 4, employees-real §5.4; Stanislaus 25.11.2026, VORHER M1–M4)', () => {
+  const carrying = part(AGENT, '## Carrying work', '## Chats');
+  assert.ok(carrying.includes('We work in minutes; I have no evening and no tomorrow.'));
+  assert.ok(carrying.includes('comes from a customer, a provider, a release or Alexandra; one I would set myself is work I do now'));
+  assert.ok(carrying.includes('It waits on a named person who owes the next step, another to-do, or a date the outside world set; my own order, a test I could run or an unsent question is my next step.'));
+  assert.ok(carrying.includes('let the answer wake me instead of a clock'));
+  assert.ok(carrying.includes('what I cannot finish, my lead hears at once, with why'));
+  const leading = part(LEAD, '## Leading', '## Judgment');
+  assert.ok(leading.includes('We work in minutes; none of us has an evening or a tomorrow. A colleague starts when briefed, and a time on our work comes from a customer, a provider, a release or Alexandra, not from me.'));
+  assert.ok(leading.includes('ten at once all have an owner before my turn ends. Their quest stays mine until its last to-do is closed'));
+  assert.ok(leading.includes('wake us on the answer instead of a clock'));
+  for (const [name, text] of BOTH) {
+    assert.ok(text.includes('Alexandra steers and prompts;'), `${name}: the CEO steers, the team holds it together`);
+    assert.ok(text.includes("two tries are a way's limit, then comes another way or a one-line question to whoever knows"), name);
+    assert.ok(text.includes('the obvious way and two untried ones'), name);
+    assert.ok(text.includes('anyone else waiting gets my finding as a block the moment I have it'), name);
+    assert.doesNotMatch(text, /lies days out|it waits on something real|a note to myself now/, `${name}: the old wording is gone`);
+  }
+  assert.match(skill('task-ownership'), /My own order, a check I could run, an unsent question or a time I chose is my next step, taken now/);
+  assert.doesNotMatch(skill('task-ownership'), /A later look is a note to myself/);
+});
+
+test('the organisation is as deep as its work, not two levels (Stanislaus 25.11.2026)', () => {
+  assert.ok(part(LEAD, '## Leading', '## Judgment').includes('The organisation is as deep as its work'));
+  assert.doesNotMatch(LEAD, /two levels|a lead under a lead is one more relay/);
+  const org = skill('org-setup-onboarding');
+  assert.doesNotMatch(org, /two levels/);
+  assert.match(org, /\*\*A lead under me\*\* when results wait on my look for hours/);
+  assert.match(org, /\*\*One level less\*\* when a lead has one doer/);
 });
 
 test('what reaches the person is a result, a question only they can answer or a step only they can take; the closing words answer them (chat-noise F2, F7)', () => {
@@ -159,11 +186,11 @@ test('own voice, the person by name, abilities instead of tools – and not long
     assert.doesNotMatch(text, /always runs through|agents\.split|human\.ask|model\.set|schedules\.|wf send/, name);
     assert.ok(!text.includes('{{'), `${name}: {{user_name}} only`);
   }
-  assert.ok(AGENT.length <= 11_590, `standard-agent "# How I work": ${AGENT.length} (17.11.: 10,732; 18.11. with "a line exists only as a block": 10,972; 20.11. with "a full path I write … opens with one tap": 11,072; 20.11. Quests: every ask its own to-do in a quest, waits on something real, a to-do's thread: 11,310; 21.11. Halb: a part pays for time or for cost – the owner's Ultra bullet: 11,587)`);
+  assert.ok(AGENT.length <= 11_590, `standard-agent "# How I work": ${AGENT.length} (17.11.: 10,732; 18.11. with "a line exists only as a block": 10,972; 20.11. with "a full path I write … opens with one tap": 11,072; 20.11. Quests: every ask its own to-do in a quest, waits on something real, a to-do's thread: 11,310; 21.11. Halb: a part pays for time or for cost – the owner's Ultra bullet: 11,587; 25.11. minutes, waits, a critic's look, two tries – shorter: 11,529; 25.11. phone use off – request once, they confirm, with two trims elsewhere: back under 11,590)`);
   assert.ok(LEAD.length <= 14_125, `standard-manager "# How I work": ${LEAD.length} (17.11.: 13,885; 18.11.: 14,125)`);
   const files = ['prompts/standard-agent.md', 'prompts/standard-manager.md', 'modes/general.md', 'agents/manager.md', 'agents/head.md', 'agents/content-creator.md', 'agents/video-editor.md',
     ...['app-guide', 'briefing', 'chats', 'head-of-staff', 'human-minimal-handoff', 'leading-coding', 'money', 'org-setup-onboarding', 'splitting', 'system-prompt', 'task-ownership', 'team-coordination']
       .map((name) => `skills/${name}/SKILL.md`)];
   const total = files.reduce((sum, file) => sum + clean(read(file)).length, 0);
-  assert.ok(total <= 97_500, `the nineteen changed texts as a model reads them: ${total} characters (17.11.: 95,729; 18.11. with "a line exists only as a block" in both standards and the chats skill: 96,576; 20.11. Quests – the asks paragraph in both standards, the quest skills: 96,860; 21.11. Halb – time and cost of a part in the standards, splitting and briefing, needs)`);
+  assert.ok(total <= 97_500, `the nineteen changed texts as a model reads them: ${total} characters (17.11.: 95,729; 18.11. with "a line exists only as a block" in both standards and the chats skill: 96,576; 20.11. Quests – the asks paragraph in both standards, the quest skills: 96,860; 21.11. Halb – time and cost of a part in the standards, splitting and briefing, needs; 25.11. the phone line in both standards, paid for by two trims in the Chats bullets: back under 97,500)`);
 });

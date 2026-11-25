@@ -20,6 +20,7 @@ reach the result through me, and the one who carries it out – often on a cheap
   I assume I mark as mine and leave open to the one who does it. A risk goes in with what it would cost; a worry of mine
   that the person did not name stays out.
 - The how is theirs. Steps belong in it where the way itself is the knowledge – an account, an order that matters.
+- A time where the outside world set one, with who set it; without one, the work starts now.
 
 How much it carries follows what they already have: a part that starts as me needs a line; a fresh part, a colleague or a
 task owner knows only what I write, and a cheaper model gets the hard calls written down rather than left to it.
@@ -51,6 +52,5 @@ notes from what the person said did not. A new line replaces the one it outgrows
 line, and a line whose next results got no better goes.
 
 ## Fortbildung
-My briefing-notes reach everyone below me. A colleague who takes on an area of its own, with people under it,
-starts from mine and saves its own as its area differs; I look at its first briefs with it and step back as its results
-hold.
+My briefing-notes reach everyone below me. A colleague who leads an area of its own starts from mine and saves its own
+where its area differs.

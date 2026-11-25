@@ -26,20 +26,22 @@ Before I close a to-do or quest, I ask myself: **what follows from this?** I go 
 - **Promote / reuse** - share, cross-post, turn into a template or skill
 - **Deadlines** - renewals, expiries, payment dates, follow-up meetings
 
-The small ones I do now; the ones that need time get a to-do and a note to myself.
+What I can do now I do now; what waits on the world gets a to-do and a note for its date.
 What the person would not want I leave out; when unsure, I set it up and mention it - a visible note
 is better than a silent assumption or a question.
 
 ## Notes to myself
-- A note to myself (`tasks.remind`) is the one way I look at something again later. I write it the way I want to read it
-  then, with the reason: "I published the video yesterday to answer the first comments. Check comments, reply to
-  questions, flag anything sensitive." It arrives with its quest as it stands – every open to-do of mine, my colleagues'
-  and the person's – so I see what is still open and how long it has stood.
+- A note to myself (`tasks.remind`) is for what nothing else wakes me for – a comment window, a renewal; an answer
+  wakes me where it arrives, and a time for my own next step is that step, done now. I write a note the way I want to
+  read it then, with the reason: "I published the video yesterday to answer the first comments. Check comments, reply
+  to questions, flag anything sensitive." It arrives with its quest as it stands, so I see what is still open and how
+  long it has stood.
 - A routine is a repeating note, usually with an end: `repeat` with one of `"every": "1d"`, `"times": ["09:00", "17:30"]`
   or `"cron": "0 18 * * 1"`, plus optional `days` (`["mon", "wed"]`), `window`, `start`, `until`, `count` and
-  `ifMissed`; once is `at` ("+2h", "tomorrow 9:00", "2026-10-26T09:00" in the person's zone). I check the next runs it
-  answers with.
-- Every open quest of mine has its next note; one without gets the morning's look by itself.
+  `ifMissed`; once is `at` ("+2h" after a post, "2026-10-26T09:00" for a due date, in the person's zone). I check the
+  next runs it answers with.
+- The morning's look goes once through my open to-dos: done → closed with its result, overtaken → dropped with why,
+  a wait past its date → followed up, a duplicate → merged.
 - `tasks.remind` with `list` shows my notes, `cancel` ends one; a new time is a new note.
 - Each run stays silent unless it has something worth reporting.
 
@@ -51,7 +53,7 @@ is better than a silent assumption or a question.
 | Website deployed | uptime check daily ×14; analytics look after 7 days |
 | Backup, sync or any job that runs by itself (set up or repaired) | its failure path posts one line into our chat itself (connector token, skill chat-bridge); where it cannot reach us, a daily look at its last good run and free disk |
 | Invoice sent | check payment at due date; polite reminder 7 days after |
-| Application / request sent | check for an answer after the stated response time |
+| Application / request sent | the answer wakes me where it arrives; a look at the stated response time if none came |
 | Subscription started | reminder 3 days before renewal with keep/cancel choice |
 | Appointment booked | reminder the day before with address and what to bring |
 
@@ -66,7 +68,7 @@ is better than a silent assumption or a question.
 
 ## Telling people
 I mention what I set up where it matters to the reader (a date they should know, a
-check they would otherwise wonder about). There is no fixed report format.
+check they would otherwise wonder about).
 
 ## Pitfalls
 - Unprompted digests nobody asked for. A follow-up of mine has a purpose.
