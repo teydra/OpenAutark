@@ -1,0 +1,196 @@
+# The iPhone app against a REAL PC (23.11.2026 snapshot of apps/desktop, release/0.3.18): the headless runtime with the fake engine and the
+# real meeting server run on the same runner; the app pairs with them in the Simulator (Remote ID through the meeting server, the PC
+# accepts), shows the PC's own phone UI through the tunnel with an open chat, and screenshots land in the artifact.
+#   job `pc`  (ubuntu, 1x minutes): installs, builds and starts the PC, sends "Hallo" into its chat and waits for the fake engine's answer.
+#   job `app` (macOS, 10x minutes): the same PC, plus the unsigned Simulator build of apps/ios and the UI test E2E/AutarkE2EUITests.swift,
+#   which pairs, waits for the page's chat, types "Hallo" into it, sends and waits for the Echo answer on screen (red if it cannot see them).
+#   Only after both Linux jobs (`pc` and `syntax`) are green.
+#   Simulator-only bootstrap recovery retries transient missing page assets before any input.
+# A push starts it only when its head commit message says [pc] (Linux only) or [e2e-macos] (both jobs).
+name: iOS e2e (real PC, Simulator)
+
+on:
+  push:
+    branches: ['ci/iphone-*']
+    paths:
+      - 'apps/ios/**'
+      - '.github/workflows/ios-e2e.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # the private desktop snapshot of 23.11.2026 (branch release/0.3.18); apps/desktop is not on this branch
+  DESKTOP_REPO: ${{ github.repository }}
+  DESKTOP_SHA: f55a75841c7274030228534ed6f72ac7c5517b2e
+
+jobs:
+  pc:
+    name: The real PC (headless runtime, fake engine, meeting server) on Linux
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[pc]') || contains(github.event.head_commit.message, '[e2e-macos]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.DESKTOP_REPO }}
+          ref: ${{ env.DESKTOP_SHA }}
+          path: pc
+          sparse-checkout: |
+            apps/desktop
+            services/remote-relay
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Start the PC
+        env:
+          AUTARK_E2E_ACCEPT_AFTER_MS: '1000'
+        run: bash apps/ios/Tools/pc-up.sh "$GITHUB_WORKSPACE/pc" "$RUNNER_TEMP/pc-out"
+      - name: A chat line reaches the PC and the fake engine answers
+        run: |
+          OUT="$RUNNER_TEMP/pc-out"
+          echo "Hallo" > "$OUT/send.txt"
+          for _ in $(seq 1 60); do grep -q 'Echo: ' "$OUT/pc.log" && break; sleep 1; done
+          cat "$OUT/pc.log"
+          grep -q 'Echo: .*Hallo' "$OUT/pc.log"
+      - name: Stop the PC
+        if: always()
+        run: |
+          OUT="$RUNNER_TEMP/pc-out"
+          touch "$OUT/stop"; sleep 3
+          echo "--- pc.stderr"; tail -40 "$OUT/pc.stderr" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-e2e-pc-linux
+          path: ${{ runner.temp }}/pc-out/pc.*
+          retention-days: 2
+
+  syntax:
+    name: Swift syntax of the files the macOS run builds (Linux, 1x minutes)
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[pc]') || contains(github.event.head_commit.message, '[e2e-macos]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container: swift:6.4.3-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse - syntax only, UIKit and WebKit and XCTest exist only on the Mac
+        working-directory: apps/ios
+        run: |
+          for f in E2E/*.swift Autark/App/*.swift Autark/App/Quick/*.swift; do
+            swiftc -parse -D AUTARK_SIM_E2E "$f" || { echo "syntax error in $f"; exit 1; }
+          done
+          echo "all parsed"
+
+  app:
+    name: The app pairs and shows a chat (Simulator, unsigned)
+    needs: [pc, syntax]
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[e2e-macos]')
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.DESKTOP_REPO }}
+          ref: ${{ env.DESKTOP_SHA }}
+          path: pc
+          sparse-checkout: |
+            apps/desktop
+            services/remote-relay
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.3.app ]; then sudo xcode-select -s /Applications/Xcode_26.3.app; fi
+          xcodebuild -version
+
+      - name: Generate the Xcode project
+        working-directory: apps/ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Pick and boot a simulator (newest iOS runtime, an iPhone)
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          best = None
+          for runtime, devices in data.items():
+              if "SimRuntime.iOS-" not in runtime:
+                  continue
+              version = tuple(int(part) for part in runtime.split("SimRuntime.iOS-")[1].split("-"))
+              if version < (17, 0):
+                  continue
+              for device in devices:
+                  if not device.get("isAvailable") or not device["name"].startswith("iPhone"):
+                      continue
+                  rank = (version, 1 if "Pro" in device["name"] and "Max" not in device["name"] else 0, device["name"])
+                  if best is None or rank > best[0]:
+                      best = (rank, device["udid"], device["name"], runtime)
+          print(best[1])
+          sys.stderr.write("simulator: %s on %s\n" % (best[2], best[3]))
+          ')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Build the app and the end-to-end test for the Simulator
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Autark.xcodeproj -scheme AutarkE2E \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS="DEBUG AUTARK_SIM_E2E" \
+            2>&1 | tee "$RUNNER_TEMP/build.log" | tail -n 40
+
+      - name: Start the PC
+        env:
+          AUTARK_E2E_ACCEPT_AFTER_MS: '9000'
+        run: bash apps/ios/Tools/pc-up.sh "$GITHUB_WORKSPACE/pc" "$RUNNER_TEMP/pc-out"
+
+      - name: Pair in the Simulator, open the chat, type, send, wait for the answer (the UI test; red without the proof)
+        working-directory: apps/ios
+        run: |
+          bash Tools/e2e-sim.sh "${{ steps.sim.outputs.udid }}" "$RUNNER_TEMP/dd" "$RUNNER_TEMP/pc-out" "$GITHUB_WORKSPACE/screens"
+
+      - name: Logs
+        if: always()
+        run: |
+          OUT="$RUNNER_TEMP/pc-out"
+          echo "--- pc.log"; cat "$OUT/pc.log" || true
+          echo "--- pc.stderr"; tail -40 "$OUT/pc.stderr" || true
+          touch "$OUT/stop"
+          xcrun simctl spawn "${{ steps.sim.outputs.udid }}" log show --last 15m --style compact --predicate 'process == "Autark"' 2>&1 | grep -v -E 'ProcessSuspension|CFNetwork|com.apple.network|WebKit:Process|Connection refused|FrontBoard|BoardServices|runningboard|com.apple.xpc|UIKit:|xctest|Accessibility' | tail -n 300 > "$OUT/app.log" || true
+          cp "$OUT"/pc.* "$GITHUB_WORKSPACE/screens/" 2>/dev/null || true
+          cp "$OUT/app.log" "$GITHUB_WORKSPACE/screens/" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-e2e-screens
+          path: |
+            screens/*.png
+            screens/*.txt
+            screens/app-status.json
+            screens/xcodebuild-test.log
+            screens/pc.*
+            screens/app.log
+          if-no-files-found: warn
+          retention-days: 3

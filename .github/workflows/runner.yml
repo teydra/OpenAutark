@@ -1,0 +1,211 @@
+# Punkt 17 – the Autark runner (apps/ios/Runner, scheme AutarkRunner): the UI-test bundle with which the PC sees and drives an
+# iPhone (PROTOKOLL-RUNNER.md v1). This run proves it in the iOS Simulator – build, start with a fresh token and port, drive every
+# operation with apps/ios/Tools/runner-proof.py, idle end – and builds the unsigned device bundle the PC signs and installs later.
+# Since run 3 (Konrad #53, 21.11.2026): the host app is named "Autark Control" (Tools/runner-name.sh after each build), the lock
+# walk (Simulator locked by UI scripting, state.locked and the `locked` refusals against the Simulator's own lock state) and the
+# app in front after open, home and a link.
+# macOS minutes of a private repository count tenfold: it runs only by hand or when the head commit message holds the word
+# runner in square brackets; one job, under 20 minutes. Artifacts are kept one day and deleted after download (Actions storage).
+name: iOS runner (Simulator proof, device bundle)
+
+on:
+  push:
+    branches: ['ci/runner-*']
+    paths:
+      - 'apps/ios/**'
+      - '.github/workflows/runner.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: runner-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  runner:
+    name: Runner in the Simulator + unsigned device bundle
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[runner]')
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/ios
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+      PROOF: ${{ github.workspace }}/runner-proof
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 16.4 for the Simulator (26.3 cannot embed its testing interop library for a Simulator UI test)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          mkdir -p "$PROOF"
+          # What this SDK declares for the APIs the runner uses (evidence for availability questions).
+          H=$(xcrun --sdk iphonesimulator --show-sdk-platform-path)/Developer/Library/Frameworks/XCTest.framework/Headers
+          { grep -h -n -E "XCUIDeviceButton|hasHardwareButton" "$H"/XCUIDevice.h; grep -h -n "hasFocus" "$H"/XCUIElementAttributes.h; grep -h -n -E "open\(|openURL|XCUISystem" "$H"/XCUISystem.h; } > "$PROOF/sdk-headers.txt" 2>&1 || true
+          # Where the runner's host app comes from (its Info.plist is this template with a few macros expanded) and the notify API.
+          A=$(xcrun --sdk iphonesimulator --show-sdk-platform-path)/Developer/Library/Xcode/Agents/XCTRunner.app
+          { echo "== XCTRunner template Info.plist"; plutil -p "$A/Info.plist"; echo "== notify.h"; ls -la "$(xcrun --sdk iphonesimulator --show-sdk-path)/usr/include/notify.h"; } >> "$PROOF/sdk-headers.txt" 2>&1 || true
+          cat "$PROOF/sdk-headers.txt"
+
+      - name: XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Pick and boot an iPhone simulator (newest iOS 18, software keyboard on)
+        id: sim
+        run: |
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          best = None
+          for runtime, devices in json.load(sys.stdin)["devices"].items():
+              if "SimRuntime.iOS-" not in runtime:
+                  continue
+              version = tuple(int(p) for p in runtime.split("SimRuntime.iOS-")[1].split("-"))
+              if not (17, 0) <= version < (19, 0):
+                  continue
+              for d in devices:
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                      rank = (version, 1 if "Pro" in d["name"] and "Max" not in d["name"] else 0, d["name"])
+                      if best is None or rank > best[0]:
+                          best = (rank, d["udid"], d["name"], runtime)
+          print(best[1])
+          sys.stderr.write("simulator: %s on %s\n" % (best[2], best[3]))
+          ')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance light || true
+          # The Simulator app shows the booted device, so the lock walk can lock it by UI scripting (Cmd-L).
+          open -a Simulator --args -CurrentDeviceUDID "$UDID" || true
+
+      - name: Build the runner for the Simulator (build-for-testing)
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Autark.xcodeproj -scheme AutarkRunner -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd-sim" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$PROOF/build-sim.log" | xcbeautify --renderer github-actions
+          APP=$(find "$RUNNER_TEMP/dd-sim/Build/Products" -maxdepth 2 -name "AutarkRunnerUITests-Runner.app" | head -1)
+          echo "runner app: $APP"
+          { echo "== as built"; plutil -p "$APP/Info.plist" | grep -E "CFBundleIdentifier|CFBundleName|CFBundleDisplayName"; } | tee "$PROOF/sim-runner-info.txt"
+          sh Tools/runner-name.sh "$APP"
+          { echo "== after Tools/runner-name.sh"; plutil -p "$APP/Info.plist" | grep -E "CFBundleIdentifier|CFBundleName|CFBundleDisplayName"; } | tee -a "$PROOF/sim-runner-info.txt"
+          ls "$APP/PlugIns" | tee -a "$PROOF/sim-runner-info.txt"
+
+      - name: Start the runner and drive it (runner-proof.py)
+        run: |
+          UDID="${{ steps.sim.outputs.udid }}"
+          T=$(openssl rand -hex 32)
+          echo "::add-mask::$T"
+          PORT=$(python3 -c 'import random; print(random.randint(49152, 65535))')
+          echo "port $PORT"
+          TEST_RUNNER_AUTARK_RUNNER_TOKEN=$T TEST_RUNNER_AUTARK_RUNNER_PORT=$PORT TEST_RUNNER_AUTARK_RUNNER_DIAG=1 \
+            xcodebuild test-without-building \
+              -project Autark.xcodeproj -scheme AutarkRunner -configuration Debug \
+              -destination "id=$UDID" -derivedDataPath "$RUNNER_TEMP/dd-sim" \
+              -resultBundlePath "$RUNNER_TEMP/runner.xcresult" \
+              -only-testing:AutarkRunnerUITests/AutarkRunnerUITests/testServe \
+              CODE_SIGNING_ALLOWED=NO > "$PROOF/runner-xcodebuild.log" 2>&1 &
+          XB=$!
+          started=$(date +%s)
+          rc=0
+          python3 Tools/runner-proof.py --port "$PORT" --token "$T" --out "$PROOF/walk" --sim-udid "$UDID" || rc=$?
+          echo "runner-proof exit code $rc"
+          # After `end` the test has to finish by itself.
+          for i in $(seq 1 60); do kill -0 $XB 2>/dev/null || break; sleep 1; done
+          xbrc=0
+          if kill -0 $XB 2>/dev/null; then echo "xcodebuild still running 60 s after end"; kill $XB; xbrc=99; else wait $XB || xbrc=$?; fi
+          echo "xcodebuild exit code $xbrc after $(( $(date +%s) - started )) s" | tee "$PROOF/runner-exit.txt"
+          grep -E "AUTARK-RUNNER|Test Case|Executed|error:" "$PROOF/runner-xcodebuild.log" | grep -v -i "token" | head -600 > "$PROOF/runner-lines.txt" || true
+          cat "$PROOF/runner-lines.txt"
+          echo "$rc" > "$PROOF/walk-rc.txt"
+
+      - name: Idle end (30 s without a connection, the runner ends itself)
+        run: |
+          UDID="${{ steps.sim.outputs.udid }}"
+          T=$(openssl rand -hex 32)
+          echo "::add-mask::$T"
+          started=$(date +%s)
+          rc=0
+          # macOS has no timeout(1): the test runs in the background and is stopped after 150 s at the latest.
+          TEST_RUNNER_AUTARK_RUNNER_TOKEN=$T TEST_RUNNER_AUTARK_RUNNER_PORT=52417 TEST_RUNNER_AUTARK_RUNNER_IDLE_S=30 \
+            xcodebuild test-without-building \
+              -project Autark.xcodeproj -scheme AutarkRunner -configuration Debug \
+              -destination "id=$UDID" -derivedDataPath "$RUNNER_TEMP/dd-sim" \
+              -only-testing:AutarkRunnerUITests/AutarkRunnerUITests/testServe \
+              CODE_SIGNING_ALLOWED=NO > "$PROOF/idle-xcodebuild.log" 2>&1 &
+          XB=$!
+          for i in $(seq 1 150); do kill -0 $XB 2>/dev/null || break; sleep 1; done
+          if kill -0 $XB 2>/dev/null; then echo "still running after 150 s"; kill $XB; rc=99; else wait $XB || rc=$?; fi
+          echo "idle run: xcodebuild exit code $rc after $(( $(date +%s) - started )) s" | tee "$PROOF/idle-exit.txt"
+          grep -E "AUTARK-RUNNER|Executed" "$PROOF/idle-xcodebuild.log" | tee -a "$PROOF/idle-exit.txt" || true
+
+      - name: Unsigned device bundle (generic iOS, arm64, Xcode 26.3)
+        if: always()
+        run: |
+          set -o pipefail
+          if [ -d /Applications/Xcode_26.3.app ]; then sudo xcode-select -s /Applications/Xcode_26.3.app; fi
+          xcodebuild -version | tee "$PROOF/device-xcode.txt"
+          xcodebuild build-for-testing \
+            -project Autark.xcodeproj -scheme AutarkRunner -configuration Debug \
+            -destination "generic/platform=iOS" -derivedDataPath "$RUNNER_TEMP/dd-dev" \
+            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 \
+            2>&1 | tee "$PROOF/build-device.log" | xcbeautify --renderer github-actions
+          APP=$(find "$RUNNER_TEMP/dd-dev/Build/Products" -maxdepth 2 -name "AutarkRunnerUITests-Runner.app" | head -1)
+          # The home-screen name (Konrad #53). Apple's XCTRunner signature on the host no longer matches its Info.plist after this
+          # (it did not before either: Xcode expands the bundle id into it) – the PC signs the bundle before installing anyway.
+          sh Tools/runner-name.sh "$APP"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          find "$RUNNER_TEMP/ipa/Payload" -name "*.dSYM" -prune -exec rm -rf {} \;
+          ( cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/Autark-Runner-unsigned.ipa" Payload )
+          {
+            echo "== $APP"
+            plutil -p "$APP/Info.plist" | grep -E "CFBundleIdentifier|CFBundleName|CFBundleDisplayName|CFBundleExecutable|MinimumOSVersion|DTPlatformName|DTSDKName"
+            echo "== Info.plist inside the ipa"; unzip -p "$GITHUB_WORKSPACE/Autark-Runner-unsigned.ipa" "Payload/AutarkRunnerUITests-Runner.app/Info.plist" > "$RUNNER_TEMP/ipa-info.plist" && plutil -extract CFBundleDisplayName raw "$RUNNER_TEMP/ipa-info.plist" || echo "no CFBundleDisplayName in the ipa"
+            echo "== PlugIns"; ls -la "$APP/PlugIns"
+            plutil -p "$APP/PlugIns/AutarkRunnerUITests.xctest/Info.plist" | grep -E "CFBundleIdentifier|MinimumOSVersion"
+            echo "== Frameworks"; ls -la "$APP/Frameworks" 2>/dev/null || echo "(no Frameworks folder: XCTest comes from the device)"
+            echo "== architectures"; lipo -info "$APP/AutarkRunnerUITests-Runner" "$APP/PlugIns/AutarkRunnerUITests.xctest/AutarkRunnerUITests" || true
+            echo "== signature"; codesign -dv "$APP" 2>&1 || true
+            echo "== signature check (expected to fail until the PC signs)"; codesign --verify "$APP" 2>&1 || true
+            echo "== size"; ls -la "$GITHUB_WORKSPACE/Autark-Runner-unsigned.ipa"
+          } | tee "$PROOF/device-bundle.txt"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Autark runner" >> "$GITHUB_STEP_SUMMARY"
+          cat "$PROOF/walk/summary.md" "$PROOF/runner-exit.txt" "$PROOF/idle-exit.txt" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Upload the proof (answers, pictures, logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-proof
+          path: runner-proof/
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Upload the unsigned device bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Autark-Runner-unsigned
+          path: Autark-Runner-unsigned.ipa
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Fail when a required check failed
+        run: |
+          test "$(cat "$PROOF/walk-rc.txt" 2>/dev/null)" = "0"

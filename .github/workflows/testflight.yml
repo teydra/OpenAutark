@@ -1,0 +1,292 @@
+# The Autark iPhone app (apps/ios) to TestFlight: signed by Xcode itself through an App Store Connect API key, uploaded, done.
+# Started by hand only (Actions > iOS TestFlight > Run workflow). What has to exist first – the paid Apple Developer Program
+# account, an Admin API key, the app record, one registered iPhone and four repository secrets – is in apps/ios/SIGNING.md.
+#
+# Signing: automatic. `xcodebuild archive -allowProvisioningUpdates -authenticationKey…` lets Xcode register the bundle IDs
+# (app, widgets, share), the App Group and Push on the App IDs, make a development certificate and profiles to archive with,
+# and `-exportArchive` signs for App Store Connect with Apple's cloud-managed distribution certificate (Admin key). No
+# certificate, .p12 or profile is kept anywhere. The key lives only in $RUNNER_TEMP and is deleted at the end of each job.
+#
+# Cost: a Linux preflight (1x minutes) checks key, app record, device and the next build number before the macOS job
+# (10x minutes) starts. The macOS job archives once, exports once, uploads once; nothing is tested here (ios.yml does that).
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'CFBundleVersion. Empty: one above the highest build App Store Connect already has.'
+        required: false
+        default: ''
+        type: string
+      allow_no_device:
+        description: 'Go on although no iPhone is registered (the archive will probably fail without one).'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BUNDLE_ID: com.teydralab.autark
+
+jobs:
+  preflight:
+    name: Preflight (secrets, key, app record, device, build number)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app_id: ${{ steps.asc.outputs.app_id }}
+      build_number: ${{ steps.asc.outputs.build_number }}
+    steps:
+      - name: Check that the four secrets are set
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8_BASE64 APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Repository secret(s) missing:$missing – set them under Settings > Secrets and variables > Actions (apps/ios/SIGNING.md step 6)."
+            exit 1
+          fi
+          if ! printf '%s' "$APPLE_TEAM_ID" | grep -Eq '^[A-Z0-9]{10}$'; then
+            echo "::error::APPLE_TEAM_ID must be the 10-character Team ID from developer.apple.com > Account > Membership details."
+            exit 1
+          fi
+          echo "all four secrets are set"
+
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: apps/ios/Tools
+          persist-credentials: false
+
+      - name: Ask App Store Connect (read only)
+        id: asc
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          ALLOW_NO_DEVICE: ${{ inputs.allow_no_device }}
+        run: |
+          umask 077
+          KEY="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$KEY" \
+            || { echo "::error::ASC_KEY_P8_BASE64 is not valid base64 (encode the .p8 file: base64 -w0 AuthKey_XXXX.p8)"; exit 1; }
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check cryptography
+          extra=""
+          if [ "$ALLOW_NO_DEVICE" = "true" ]; then extra="--allow-no-device"; fi
+          "$RUNNER_TEMP/venv/bin/python" apps/ios/Tools/asc_preflight.py \
+            --key-file "$KEY" --key-id "$ASC_KEY_ID" --issuer-id "$ASC_ISSUER_ID" \
+            --bundle-id "$BUNDLE_ID" --build-number "$BUILD_NUMBER" $extra \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Delete the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+
+  testflight:
+    name: Archive, sign, upload (Release)
+    needs: preflight
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/ios
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APP_ID: ${{ needs.preflight.outputs.app_id }}
+      BUILD_NUMBER: ${{ needs.preflight.outputs.build_number }}
+    steps:
+      - name: Check the preflight results
+        working-directory: .
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$APPLE_TEAM_ID" ] || [ -z "$APP_ID" ] || [ -z "$BUILD_NUMBER" ]; then
+            echo "::error::a secret or a preflight output is empty (app_id='$APP_ID', build_number='$BUILD_NUMBER')"
+            exit 1
+          fi
+          echo "app $APP_ID, build $BUILD_NUMBER"
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 26 (App Store Connect takes only builds made with the iOS 26 SDK or later)
+        run: |
+          if [ -d /Applications/Xcode_26.3.app ]; then sudo xcode-select -s /Applications/Xcode_26.3.app; fi
+          xcodebuild -version
+          major=$(xcodebuild -version | awk 'NR==1 {split($2, v, "."); print v[1]}')
+          if [ "${major:-0}" -lt 26 ]; then echo "::error::Xcode $major is selected; uploads need Xcode 26 or later"; exit 1; fi
+
+      - name: Put the API key in place (runner temp only)
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          KEY="$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$KEY"
+          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+
+      - name: Make a temporary unlocked keychain (Xcode puts the development key it creates there)
+        run: |
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KC_PASS=$(openssl rand -hex 24)
+          security create-keychain -p "$KC_PASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PASS" "$KC"
+          existing=()
+          while IFS= read -r line; do
+            existing+=("$(printf '%s' "$line" | sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//')")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KC" "${existing[@]}"
+          security default-keychain -d user -s "$KC"
+          echo "SIGNING_KEYCHAIN=$KC" >> "$GITHUB_ENV"
+
+      - name: Install XcodeGen and generate the project
+        run: |
+          brew install xcodegen
+          xcodegen --version
+          xcodegen generate
+          MARKETING=$(xcodebuild -showBuildSettings -project Autark.xcodeproj -scheme Autark -configuration Release 2>/dev/null \
+            | awk -F' = ' '/ MARKETING_VERSION = / {print $2; exit}')
+          echo "MARKETING_VERSION=$MARKETING" >> "$GITHUB_ENV"
+          echo "version $MARKETING ($BUILD_NUMBER)"
+
+      - name: Archive (Release, automatic signing through the API key)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project Autark.xcodeproj -scheme Autark -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Autark.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            2>&1 | tee "$RUNNER_TEMP/archive.log" | xcbeautify --renderer github-actions
+
+      - name: Export for App Store Connect (cloud-managed distribution certificate)
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+            <key>testFlightInternalTestingOnly</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Autark.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee "$RUNNER_TEMP/export.log"
+          ls -la "$RUNNER_TEMP/export"
+          IPA=""
+          for file in "$RUNNER_TEMP"/export/*.ipa; do IPA="$file"; break; done
+          [ -f "$IPA" ] || { echo "::error::no .ipa was exported"; exit 1; }
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+
+      - name: Show what was signed (bundle IDs, versions, entitlements)
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa" && cd "$RUNNER_TEMP/ipa" && unzip -q "$IPA"
+          APP=""
+          for dir in Payload/*.app; do APP="$dir"; break; done
+          [ -d "$APP" ] || { echo "::error::no .app inside the .ipa"; exit 1; }
+          {
+            echo "### Signed for App Store Connect"
+            for bundle in "$APP" "$APP"/PlugIns/*.appex; do
+              echo
+              echo "**$(basename "$bundle")** – $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Info.plist")" \
+                "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$bundle/Info.plist")" \
+                "($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$bundle/Info.plist"))"
+              echo '```'
+              codesign -dvv "$bundle" 2>&1 | grep -E '^(Authority|TeamIdentifier)=' | head -3
+              codesign -d --entitlements - --xml "$bundle" 2>/dev/null | plutil -convert xml1 -o - - 2>/dev/null \
+                | grep -E '<key>|<string>' | sed -E 's/^[[:space:]]+//' | paste - - | head -12 || true
+              echo '```'
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to App Store Connect (TestFlight)
+        run: |
+          set -o pipefail
+          # altool finds AuthKey_<id>.p8 through API_PRIVATE_KEYS_DIR. Xcode 26's altool was seen to exit 0 on a failed
+          # upload, so its output is checked too.
+          API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/private_keys" xcrun altool --upload-package "$IPA" \
+            --platform ios \
+            --apple-id "$APP_ID" \
+            --bundle-id "$BUNDLE_ID" \
+            --bundle-version "$BUILD_NUMBER" \
+            --bundle-short-version-string "$MARKETING_VERSION" \
+            --api-key "$ASC_KEY_ID" \
+            --api-issuer "$ASC_ISSUER_ID" \
+            2>&1 | tee "$RUNNER_TEMP/upload.log"
+          if grep -Eiq '(^|[^a-z])error([^a-z]|$)|UPLOAD FAILED' "$RUNNER_TEMP/upload.log" && ! grep -Eq 'UPLOAD SUCCEEDED|No errors uploading' "$RUNNER_TEMP/upload.log"; then
+            echo "::error::altool reported an error (see the log above)"
+            exit 1
+          fi
+          {
+            echo "### Uploaded"
+            echo "Autark $MARKETING_VERSION ($BUILD_NUMBER) is processing in App Store Connect (usually 5–30 minutes):"
+            echo "https://appstoreconnect.apple.com/apps/$APP_ID/testflight/ios"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect the signing and export logs
+        if: failure()
+        working-directory: .
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/signing-logs"
+          cp "$RUNNER_TEMP"/*.log "$GITHUB_WORKSPACE/signing-logs/" 2>/dev/null || true
+          find "${TMPDIR:-/tmp}" -maxdepth 2 -name '*.xcdistributionlogs' -exec cp -R {} "$GITHUB_WORKSPACE/signing-logs/" \; 2>/dev/null || true
+          ls -la "$GITHUB_WORKSPACE/signing-logs"
+
+      - name: Upload the logs (only when something failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-logs
+          path: signing-logs
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Delete the key, the keychain and the signed files
+        if: always()
+        working-directory: .
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi
+          rm -rf "$RUNNER_TEMP/private_keys" "$RUNNER_TEMP/ipa" "$RUNNER_TEMP/export" "$RUNNER_TEMP/ExportOptions.plist"

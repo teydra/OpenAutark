@@ -1,0 +1,53 @@
+# Linux run of the Swift core tests of the iPhone app (apps/ios, Package.swift). Cheap (1x minutes) and the place to reproduce
+# test-runner crashes: no local Swift builds on the team PC. Runs when this file changes on a ci/ios-* branch, or by hand once it is on the default branch.
+name: ios-linux-core
+on:
+  push:
+    branches: ['ci/ios-*', 'ci/runner-*']
+    paths:
+      - '.github/workflows/ios-linux.yml'
+      - 'apps/ios/Package.swift'
+      - 'apps/ios/Autark/Core/**'
+      - 'apps/ios/Autark/Platform/**'
+      - 'apps/ios/Tests/CoreTests/**'
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: "How often the whole suite runs (to catch a flaky crash)"
+        default: "3"
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    container: swift:6.4.3-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        working-directory: apps/ios
+        shell: bash
+        run: |
+          set -o pipefail
+          swift build --build-tests 2>&1 | tail -60
+      - name: Test (several rounds, core dumps on, memory reported)
+        working-directory: apps/ios
+        run: |
+          ulimit -c unlimited
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          (while true; do sleep 2; ps -eo rss,comm --sort=-rss | head -2 | tail -1; done) > "$GITHUB_WORKSPACE/out/rss.log" 2>&1 &
+          rc=0
+          for i in $(seq 1 ${{ inputs.rounds || 3 }}); do
+            echo "=== round $i ==="
+            swift test --skip-build > "$GITHUB_WORKSPACE/out/round$i.log" 2>&1 || { rc=$?; echo "round $i exit code $rc"; }
+            grep -E "Executed [0-9]+ tests|error:|Fatal|signal|Segmentation|crashed" "$GITHUB_WORKSPACE/out/round$i.log" | tail -8
+            ls -la core* 2>/dev/null || true
+          done
+          exit $rc
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-linux-core-logs
+          path: out/
+          retention-days: 1

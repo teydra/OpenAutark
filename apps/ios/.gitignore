@@ -1,0 +1,10 @@
+Autark.xcodeproj/
+Autark/Info.plist
+.build/
+build/
+*.xcresult
+DerivedData/
+Autark/Widgets/Info.plist
+Autark/Share/Info.plist
+Autark/*.entitlements
+Autark/*/*.entitlements

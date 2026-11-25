@@ -1,0 +1,251 @@
+# The Autark iPhone app (apps/ios). Generated into Autark.xcodeproj by XcodeGen (`brew install xcodegen && xcodegen generate`);
+# the project file is never committed. Swift 5 language mode, iOS 17, Apple frameworks only.
+name: Autark
+options:
+  bundleIdPrefix: com.teydralab
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    CLANG_ENABLE_MODULES: YES
+    # Signing (apps/ios/SIGNING.md): automatic for every target. The team is not in the spec – the TestFlight workflow passes
+    # DEVELOPMENT_TEAM (secret APPLE_TEAM_ID) on the command line; the Simulator builds set CODE_SIGNING_ALLOWED=NO and need none.
+    CODE_SIGN_STYLE: Automatic
+targets:
+  # The platform-independent core (relay, pairing, peer channel, local entrance): one framework, shared by the app and the tests.
+  AutarkCore:
+    type: framework
+    platform: iOS
+    sources:
+      - path: Autark/Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teydralab.autark.core
+        GENERATE_INFOPLIST_FILE: YES
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "1"
+  Autark:
+    type: application
+    platform: iOS
+    sources:
+      - path: Autark/App
+      - path: Autark/Platform
+      - path: Autark/Resources
+      - path: Autark/Shared
+    dependencies:
+      - target: AutarkCore
+      # wave 2: the Live Activity / Lock Screen widgets / Control Center buttons, and "Share to Autark" (embedded in PlugIns)
+      - target: AutarkWidgets
+      - target: AutarkShare
+    entitlements:
+      path: Autark/App.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.teydralab.autark
+        # Push capability on the App ID, so the first signed build can already receive APNs once AutarkPushEnabled is on.
+        # Xcode writes "production" into the App Store export by itself. Ignored by the unsigned Simulator build.
+        aps-environment: development
+    info:
+      path: Autark/Info.plist
+      properties:
+        CFBundleDisplayName: Autark
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: Autark uses the camera to scan the QR code on your PC that connects this phone, and for photos and video calls in your chats.
+        NSMicrophoneUsageDescription: Autark uses the microphone for voice messages and calls in your chats.
+        NSPhotoLibraryUsageDescription: Autark reads your newest screenshot when you ask it to send one to a chat (the "Screenshot senden" button or shortcut).
+        NSSupportsLiveActivities: true
+        NSLocalNetworkUsageDescription: Autark connects directly to your PC when it is on the same network (Wi-Fi at home or the office), which is faster and does not need the internet. Without this the app still reaches your PC through Autark's meeting server.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Push is prepared but off: it needs the Apple Developer account, the aps-environment entitlement and a server that sends APNs (README, Benachrichtigungen).
+        AutarkPushEnabled: false
+        CFBundleURLTypes:
+          - CFBundleURLName: com.teydralab.autark.pair
+            CFBundleURLSchemes:
+              - autark
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teydralab.autark
+        PRODUCT_NAME: Autark
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+  # The widget extension (iOS 18: ControlWidget): Live Activity + Dynamic Island, Lock Screen widgets, Control Center buttons.
+  AutarkWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Autark/Widgets
+      - path: Autark/Shared
+    dependencies:
+      - target: AutarkCore
+        embed: false
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: Autark/Widgets/AutarkWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.teydralab.autark
+    info:
+      path: Autark/Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Autark
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teydralab.autark.widgets
+        PRODUCT_NAME: AutarkWidgets
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+        CODE_SIGN_STYLE: Automatic
+  # "Share to Autark": images, text and links into a chat (left in the App Group inbox, sent by the app).
+  AutarkShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Autark/Share
+    dependencies:
+      - target: AutarkCore
+        embed: false
+    entitlements:
+      path: Autark/Share/AutarkShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.teydralab.autark
+    info:
+      path: Autark/Share/Info.plist
+      properties:
+        CFBundleDisplayName: Autark
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teydralab.autark.share
+        PRODUCT_NAME: AutarkShare
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+        CODE_SIGN_STYLE: Automatic
+  AutarkTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/CoreTests
+      - path: Tests/AppTests
+    dependencies:
+      - target: Autark
+      - target: AutarkCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teydralab.autark.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+  # iPhone use (Punkt 17): the runner – a UI-test bundle the PC starts through go-ios (`ios runtest`) to see and drive the iPhone,
+  # speaking workspace/apple-plattformen/PROTOKOLL-RUNNER.md v1 on the iPhone's loopback. No target app (it drives whatever is in
+  # front); its own scheme, so the app's builds, TestFlight and the App Store never take it along. The protocol core comes from
+  # Autark/Core/Runner (tested on Linux); Crypto/Json are compiled in, the AutarkCore framework is not linked.
+  AutarkRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Runner
+      - path: Autark/Core/Runner
+      - path: Autark/Core/Crypto.swift
+      - path: Autark/Core/Json.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teydralab.autark.runner
+        PRODUCT_NAME: AutarkRunnerUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        CLANG_ENABLE_OBJC_ARC: YES
+        SWIFT_OBJC_BRIDGING_HEADER: Runner/Private/RunnerPrivate.h
+  # The Simulator end-to-end test (.github/workflows/ios-e2e.yml): a UI test that launches the app against the real headless PC of that
+  # run, types into the page's chat and waits for the answer (E2E/AutarkE2EUITests.swift). Own scheme AutarkE2E; never part of TestFlight.
+  AutarkE2EUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: E2E
+    dependencies:
+      - target: Autark
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teydralab.autark.e2e
+        PRODUCT_NAME: AutarkE2EUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  Autark:
+    build:
+      targets:
+        Autark: all
+        AutarkCore: all
+        AutarkWidgets: all
+        AutarkShare: all
+        AutarkTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: AutarkTests
+    archive:
+      config: Release
+  AutarkRunner:
+    build:
+      targets:
+        AutarkRunnerUITests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: AutarkRunnerUITests
+  AutarkE2E:
+    build:
+      targets:
+        Autark: all
+        AutarkCore: all
+        AutarkWidgets: all
+        AutarkShare: all
+        AutarkE2EUITests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: AutarkE2EUITests

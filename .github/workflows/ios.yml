@@ -1,0 +1,199 @@
+# The Autark iPhone app (apps/ios): builds it for the iOS Simulator without a signature, runs its tests there (the byte-equal
+# pairing/crypto vectors of the desktop and Android, the in-process PC and meeting-server stand-ins, the web view tests), starts the
+# app and takes screenshots of its connect screens. macOS minutes of a private repository count tenfold: one job, one runner, the
+# Xcode project is generated (XcodeGen) and nothing is archived. Signing and TestFlight are a workflow of their own,
+# testflight.yml (started by hand; what it needs first: apps/ios/SIGNING.md).
+name: iOS shell (Simulator)
+
+on:
+  push:
+    branches: ['ci/ios-*']
+    paths:
+      - 'apps/ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Build, test and screenshots (Simulator, unsigned)
+    # macOS minutes count tenfold: a push runs this job only when its head commit message says [macos]; workflow_dispatch always runs it.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[macos]')
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/ios
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode and show the toolchain
+        run: |
+          if [ -d /Applications/Xcode_26.3.app ]; then sudo xcode-select -s /Applications/Xcode_26.3.app; fi
+          xcodebuild -version
+          swift --version
+          xcrun simctl list runtimes | grep -i ios || true
+
+      - name: Install XcodeGen and generate the project
+        run: |
+          brew install xcodegen
+          xcodegen --version
+          xcodegen generate
+          ls
+
+      - name: Pick and boot a simulator (newest iOS runtime, an iPhone)
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          best = None
+          for runtime, devices in data.items():
+              if "SimRuntime.iOS-" not in runtime:
+                  continue
+              version = tuple(int(part) for part in runtime.split("SimRuntime.iOS-")[1].split("-"))
+              if version < (17, 0):
+                  continue
+              for device in devices:
+                  if not device.get("isAvailable") or not device["name"].startswith("iPhone"):
+                      continue
+                  rank = (version, 1 if "Pro" in device["name"] and "Max" not in device["name"] else 0, device["name"])
+                  if best is None or rank > best[0]:
+                      best = (rank, device["udid"], device["name"], runtime)
+          print(best[1])
+          sys.stderr.write("simulator: %s on %s\n" % (best[2], best[3]))
+          ')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Build the app for the Simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Autark.xcodeproj -scheme Autark -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$RUNNER_TEMP/build.log" | xcbeautify --renderer github-actions
+
+      - name: Test (XCTest on the Simulator)
+        env:
+          TEST_RUNNER_AUTARK_SNAPSHOT_DIR: ${{ github.workspace }}/screens
+        run: |
+          set -o pipefail
+          mkdir -p "$GITHUB_WORKSPACE/screens"
+          xcodebuild test \
+            -project Autark.xcodeproj -scheme Autark -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -resultBundlePath "$RUNNER_TEMP/Autark.xcresult" \
+            -only-testing:AutarkTests/LiveRenderTests -only-testing:AutarkTests/LiveTests \
+            -only-testing:AutarkTests/AppModelTests -only-testing:AutarkTests/PageBridgeTests -only-testing:AutarkTests/NotifierTests \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$RUNNER_TEMP/test.log" | xcbeautify --renderer github-actions
+
+      - name: Count the tests
+        if: always()
+        run: |
+          {
+            echo "### iOS Simulator tests"
+            grep -E "Executed [0-9]+ tests" "$RUNNER_TEMP/test.log" | tail -1 || echo "no test summary line found"
+            echo
+            echo "Suites:"
+            grep -E "Test Suite '.*' (passed|failed)" "$RUNNER_TEMP/test.log" | sed -E "s/ at [0-9-]+ [0-9:.]+//" | sort -u | head -60
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Show the embedded extensions (widgets, share)
+        run: |
+          APP="$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/Autark.app"
+          ls -la "$APP/PlugIns" || echo "no PlugIns folder"
+          for ext in "$APP"/PlugIns/*.appex; do echo "== $ext"; plutil -p "$ext/Info.plist" | grep -E "CFBundleIdentifier|NSExtensionPointIdentifier|MinimumOSVersion" || true; done
+
+      - name: Start the app and take screenshots of the connect screens
+        run: |
+          APP="$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/Autark.app"
+          UDID="${{ steps.sim.outputs.udid }}"
+          SHOTS="$GITHUB_WORKSPACE/screens"
+          mkdir -p "$SHOTS"
+          xcrun simctl ui "$UDID" appearance light || true
+          xcrun simctl uninstall "$UDID" com.teydralab.autark || true
+          xcrun simctl install "$UDID" "$APP"
+          # wave 2: the Live Activity in the real simulator, before anything asks for a permission. The app shows a sample
+          # (-AutarkLiveDemo), Settings comes to the front (the Dynamic Island shows the compact view), the device locks
+          # (Simulator's Device > Lock, Cmd-L, by UI scripting) and unlocks with Home (Cmd-Shift-H; no passcode). Run 44942711486:
+          # the first Cmd-L of a run once brought up Siri instead of the lock, and two activities ("two") showed only one in the
+          # island – so the minimal and the expanded island (a long press) are only in the rendered pictures of LiveRenderTests.
+          lock() { osascript -e 'tell application "Simulator" to activate' -e 'delay 1' -e 'tell application "System Events" to keystroke "l" using command down' || echo "UI scripting refused"; sleep 4; }
+          home() { osascript -e 'tell application "Simulator" to activate' -e 'delay 1' -e 'tell application "System Events" to keystroke "h" using {command down, shift down}' || echo "UI scripting refused"; sleep 3; }
+          live() { xcrun simctl terminate "$UDID" com.teydralab.autark || true; xcrun simctl launch "$UDID" com.teydralab.autark -AutarkLiveDemo "$1"; sleep 6; xcrun simctl launch "$UDID" com.apple.Preferences || true; sleep 4; }
+          live buttons
+          xcrun simctl io "$UDID" screenshot "$SHOTS/w2-sim-01-island-compact-asking.png"
+          lock
+          xcrun simctl io "$UDID" screenshot "$SHOTS/w2-sim-02-lock-own-buttons.png"
+          home
+          live working
+          xcrun simctl io "$UDID" screenshot "$SHOTS/w2-sim-03-island-compact-working.png"
+          lock
+          xcrun simctl io "$UDID" screenshot "$SHOTS/w2-sim-04-lock-working.png"
+          home
+          xcrun simctl terminate "$UDID" com.apple.Preferences || true
+          xcrun simctl launch "$UDID" com.teydralab.autark
+          sleep 6
+          xcrun simctl io "$UDID" screenshot "$SHOTS/01-connect-light.png"
+          xcrun simctl terminate "$UDID" com.teydralab.autark || true
+          xcrun simctl launch "$UDID" com.teydralab.autark -AutarkScreen code -AutarkPrefill 482913071
+          sleep 5
+          xcrun simctl io "$UDID" screenshot "$SHOTS/02-code-light.png"
+          xcrun simctl terminate "$UDID" com.teydralab.autark || true
+          xcrun simctl launch "$UDID" com.teydralab.autark -AutarkScreen scan
+          sleep 4
+          xcrun simctl io "$UDID" screenshot "$SHOTS/03-scan-simulator-has-no-camera.png"
+          xcrun simctl terminate "$UDID" com.teydralab.autark || true
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl launch "$UDID" com.teydralab.autark
+          sleep 5
+          xcrun simctl io "$UDID" screenshot "$SHOTS/04-connect-dark.png"
+          xcrun simctl terminate "$UDID" com.teydralab.autark || true
+          xcrun simctl ui "$UDID" appearance light || true
+          ls -la "$SHOTS"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
+          path: screens/*.png
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Zip the result bundle
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP"
+          if [ -d Autark.xcresult ]; then zip -qr "$GITHUB_WORKSPACE/Autark.xcresult.zip" Autark.xcresult; fi
+
+      - name: Upload logs and result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-logs
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/test.log
+            Autark.xcresult.zip
+          if-no-files-found: warn
+          retention-days: 1
+
+  # Signing and TestFlight: not here. .github/workflows/testflight.yml archives, signs (automatic, App Store Connect API key,
+  # cloud-managed distribution certificate) and uploads; it runs only when started by hand. Steps and secrets: apps/ios/SIGNING.md.
