@@ -32,8 +32,8 @@ const OLD_REPO = 'teydra/proactive-agent-workforce-releases';
 const NAMES = RENAMED ? {
   // Since the bridge release 0.3.3 (B-078) the one public home is teydra/OpenAutark. These equal
   // apps/desktop/package.json (productName, artifactName, publish.repo) and apps/android. Android: since 0.3.6 the
-  // website offers the Lite APK (no phone use by agents): Play Protect blocks a sideloaded app that asks for
-  // Accessibility (Samsung, 08.11.2026). The full autark-android.apk stays in the release for installs that have it.
+  // website offers the Lite APK (no phone use by agents; it installed and updated from the site with Play Protect on,
+  // Samsung S9, 25.11.2026). The full autark-android.apk stays in the release for installs that have it.
   repo: 'teydra/OpenAutark',
   app: 'Autark',
   files: { windows: 'autark-windows-x64.exe', macDmg: 'autark-mac-universal.dmg', macZip: 'autark-mac-universal.zip', linux: 'autark-linux-x64.AppImage', android: 'autark-android-lite.apk' },

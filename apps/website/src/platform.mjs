@@ -43,7 +43,7 @@ const facts = {
     needs: ['Android 8 or newer.', `${site.name} running on at least one of your PCs. The phone finds it by its Remote ID, in any network.`],
     check: `sha256sum ${files.android}`,
     update: 'When a new version exists, a line at the top of the app says so. Update downloads it in the app with its progress, checks it against the published SHA-256, and Android installs it over the old one after you confirm. Most changes need no new APK at all, because the interface comes from your PC.',
-    note: 'This is a preview, signed with our own key and installed from outside the Play Store. The big button is the Lite version without phone control by agents; the full version with phone control is the small link under it, and Play Protect may block it (see the way out there). Tell us what breaks on your phone.',
+    note: 'This is a preview, signed with our own key and installed from outside the Play Store. The big button is the Lite version without phone control by agents; the full version with phone control is the small link under it. Tell us what breaks on your phone.',
   },
   iphone: {
     title: `${site.name} on iPhone`,
@@ -55,8 +55,8 @@ const facts = {
   },
 };
 
-// Android: the big button is the Lite APK; the full version (phone control) is a small link with the Play Protect way out.
-const androidFull = () => `<p class="small muted plat-hero__alt" style="flex-basis:100%;max-width:38em;margin:6px 0 0"><a href="${site.url}/get/android-full" data-dl="android-full">Full version with phone control</a> · If Play Protect blocks the install, open the Play Store, tap your profile › Play Protect › Settings (gear), turn off “Scan apps with Play Protect”, install ${site.name}, then turn it back on.</p>`;
+// Android: the big button is the Lite APK; the full version (phone control) is a small link under it.
+const androidFull = () => `<p class="small muted plat-hero__alt" style="flex-basis:100%;max-width:38em;margin:6px 0 0"><a href="${site.url}/get/android-full" data-dl="android-full">Full version with phone control</a> · lets the AI operate the phone; turn it on under Settings › Accessibility after installing.</p>`;
 
 function bigButton(p, rel) {
   if (!p.file) return `<a class="btn btn--ink btn--lg" href="${appUrl}/" data-app-link>${icon('phone')}<span>Open the iPhone app</span></a><a class="btn btn--ghost btn--lg" href="#steps">${icon('arrowDown')}<span>How to add it</span></a>`;
