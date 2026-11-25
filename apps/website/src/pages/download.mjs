@@ -1,7 +1,7 @@
 // Owns: the download overview at /download/ (PC first, then phone) and, through `subpages`, the
 // per-platform pages at /download/<id>/ (src/platform.mjs).
 // Never: install wording (data/install.mjs) or file names (config.mjs).
-import { site, release, downloads, platforms, maker } from '../config.mjs';
+import { site, release, downloads, platforms, maker, counts } from '../config.mjs';
 import { page, pageHero, esc, downloadButton, platformRows } from '../layout.mjs';
 import { icon } from '../icons.mjs';
 import { platformPages } from '../platform.mjs';
@@ -39,7 +39,7 @@ ${pageHero({
 <section class="section section--tight" id="platforms">
   <div class="wrap">
     ${platformRows(root)}
-    <p class="small muted" style="margin-top:22px">Every link here always points to the newest public release. <a href="${release.releasesUrl}" rel="noopener">All releases on GitHub</a> · <a href="${root}changelog/">Changelog</a></p>
+    <p class="small muted" style="margin-top:22px">Every link here always points to the newest public release. <a href="${release.releasesUrl}" rel="noopener">All releases on GitHub</a> · <a href="${root}changelog/">Changelog</a>${counts ? ` · A click on a download button is counted anonymously, as a number only: <a href="${root}privacy/#counts">what and why</a>` : ''}</p>
   </div>
 </section>
 
