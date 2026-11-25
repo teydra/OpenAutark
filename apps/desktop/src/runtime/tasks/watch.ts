@@ -10,7 +10,7 @@
 //    without a time at the start of that working day) – on the
 //    CEO PC with the smallest id that is not gone (no main PC: the next one rings while it is out; `ledger.ringedAt` on the
 //    synced row says what rang, so the PC that comes back does not ring it again), never on a PC that joined as an employee;
-//  - the morning pass (tasks/morning.ts): once a day an agent hears of its quests without a next note.
+//  - the morning pass (tasks/morning.ts): once a day an agent hears of its quests and eligible standalone to-dos without a next note.
 // Where: an agent's tasks on the PC it runs on (devices/sync/home.ts).
 // Owns: those passes and their timers. Never: calls a model (except the owner pick), writes "working", plans a look, or
 // wakes a paused task.

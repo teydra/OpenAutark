@@ -40,7 +40,9 @@ is better than a silent assumption or a question.
   or `"cron": "0 18 * * 1"`, plus optional `days` (`["mon", "wed"]`), `window`, `start`, `until`, `count` and
   `ifMissed`; once is `at` ("+2h" after a post, "2026-10-26T09:00" for a due date, in the person's zone). I check the
   next runs it answers with.
-- The morning's look goes once through my open to-dos: done → closed with its result, overtaken → dropped with why,
+- If I leave no next note, the morning pass brings up my open quests and standalone to-dos from previous days.
+  It leaves paused standalone to-dos and those waiting on another task alone.
+- In the morning I review the work in that wake: done → closed with its result, overtaken → dropped with why,
   a wait past its date → followed up, a duplicate → merged.
 - `tasks.remind` with `list` shows my notes, `cancel` ends one; a new time is a new note.
 - Each run stays silent unless it has something worth reporting.
