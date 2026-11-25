@@ -432,7 +432,7 @@ export function dictationNote(): string | undefined {
 /** This page's dictation: the browser's microphone, the app's rpc, held pieces in this page's IndexedDB. */
 export const dictation = new Dictation({
   problem: recordingProblem,
-  openMicrophone: (onSamples) => openMicrophone(onSamples, { sampleRate: PCM_RATE, blockMs: BLOCK_MS }),
+  openMicrophone: (onSamples) => openMicrophone(onSamples, { sampleRate: PCM_RATE, blockMs: BLOCK_MS, plain: true }),
   upload: (blob, name) => uploadRef(blob, name),
   transcribe: (params) => rpc.call('voice.transcribe', params),
   now: () => Date.now(),
