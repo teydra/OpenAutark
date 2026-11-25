@@ -47,7 +47,7 @@ export const SWITCH_HINT: Readonly<Record<SecuritySwitch, string>> = {
  * Konrad 25.11.2026: commands set to Yes in Secure mode is a deliberate opening – a shell reads past the folder rules
  * (Codex and Claude Code alike) – so the row says so while it is open.
  */
-export const COMMANDS_OPEN_HINT = 'Open: commands run without asking and can read any file this user can, including keys';
+export const COMMANDS_OPEN_HINT = 'Open: commands run without asking and can read any file or send data anywhere this user can, including keys';
 
 /** The line under a switch in this mode with this value. */
 export function switchHint(mode: SecurityMode, key: SecuritySwitch, value: string): string {
