@@ -10,7 +10,7 @@ import { CodexEngine } from '../../../src/runtime/engines/codex/engine.ts';
 import { account, fakeFinder, fakeSpawn, testSupervisor, tick, turnInput, type FakeChild } from './fakes.ts';
 
 function appServer(settings: (params: any) => { result?: unknown; error?: unknown }) {
-  const state = { requests: [] as any[], turn: undefined as undefined | (() => void) };
+  const state = { requests: [] as any[], turn: Promise.withResolvers<() => void>() };
   const { spawn } = fakeSpawn(({ child }) => {
     child.onLine = (msg) => {
       if (msg.method) state.requests.push(msg);
@@ -23,7 +23,7 @@ function appServer(settings: (params: any) => { result?: unknown; error?: unknow
         case 'model/list': answer({ result: { data: [{ model: 'gpt-x', displayName: 'GPT X', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'xhigh' }] }], nextCursor: null } }); break;
         case 'turn/start':
           answer({ result: { turn: { id: 'turn_1', status: 'inProgress' } } });
-          state.turn = () => complete(child, msg.params.threadId);
+          state.turn.resolve(() => complete(child, msg.params.threadId));
           break;
         case 'turn/settings/update': answer(settings(msg.params)); break;
         default: answer({ error: { code: -32601, message: 'nope' } });
@@ -36,9 +36,15 @@ function appServer(settings: (params: any) => { result?: unknown; error?: unknow
 const complete = (child: FakeChild, threadId: string) => child.send({ method: 'turn/completed', params: { threadId, turn: { id: 'turn_1', status: 'completed' } } });
 const engine = (spawn: any) => new CodexEngine({ supervisor: testSupervisor(spawn), finder: fakeFinder({ codex: '/bin/codex' }), cwd: '/tmp', version: '0.2.0' });
 
-async function untilTurn(state: { turn?: () => void }) { for (let i = 0; i < 100 && !state.turn; i++) await tick(); }
+/** Wait for the actual RPC, not a number of event-loop turns (startup also does real file I/O). */
+function untilTurn(state: { turn: { promise: Promise<() => void> } }, running: ReturnType<CodexEngine['run']>) {
+  return Promise.race([
+    state.turn.promise,
+    running.then((result) => assert.fail(`Codex ended before turn/start: ${JSON.stringify(result)}`)),
+  ]);
+}
 
-test('codex: setModel switches the running turn through turn/settings/update – true only when applied', async () => {
+test('codex: setModel switches the running turn through turn/settings/update – true only when applied', { timeout: 10_000 }, async () => {
   const statuses = ['applied', 'targetUnavailable'];
   const fake = appServer(() => ({ result: { status: statuses.shift() } }));
   const e = engine(fake.spawn);
@@ -46,7 +52,7 @@ test('codex: setModel switches the running turn through turn/settings/update –
   const { input, events } = turnInput({ model: 'gpt-x', effort: 'medium' });
   assert.equal(await e.setModel('run_1', 'gpt-x', 'high'), false, 'no turn runs yet');
   const running = e.run(input);
-  await untilTurn(fake.state);
+  const finish = await untilTurn(fake.state, running);
   await tick();
   assert.equal(await e.setModel('run_1', 'gpt-x', 'high'), true);
   const update = fake.state.requests.find((r) => r.method === 'turn/settings/update');
@@ -54,40 +60,40 @@ test('codex: setModel switches the running turn through turn/settings/update –
   assert.deepEqual(events.filter((event: any) => event.type === 'model'), [{ type: 'model', model: 'gpt-x', effort: 'high' }]);
   assert.equal(await e.setModel('run_1', 'gpt-x', 'xhigh'), false, "'targetUnavailable' is no switch");
   assert.equal(events.filter((event: any) => event.type === 'model').length, 1);
-  fake.state.turn!();
+  finish();
   assert.equal((await running).stop, 'done');
   await e.dispose();
 });
 
-test('codex: a refused turn/settings/update is false', async () => {
+test('codex: a refused turn/settings/update is false', { timeout: 10_000 }, async () => {
   const fake = appServer(() => ({ error: { code: -32600, message: 'unsupported field' } }));
   const e = engine(fake.spawn);
   const { input, events } = turnInput({ model: 'gpt-x' });
   const running = e.run(input);
-  await untilTurn(fake.state);
+  const finish = await untilTurn(fake.state, running);
   await tick();
   assert.equal(await e.setModel('run_1', 'gpt-y', 'medium'), false);
   assert.equal(events.some((event: any) => event.type === 'model'), false);
-  fake.state.turn!();
+  finish();
   await running;
   await e.dispose();
 });
 
-test('codex: a new agent thread is announced after thread/start; a resumed one is not', async () => {
+test('codex: a new agent thread is announced after thread/start; a resumed one is not', { timeout: 10_000 }, async (t) => {
   const fake = appServer(() => ({ result: { status: 'applied' } }));
   const e = engine(fake.spawn);
+  t.after(() => e.dispose());
   const fresh = turnInput();
   const first = e.run(fresh.input);
-  await untilTurn(fake.state);
+  const finishFirst = await untilTurn(fake.state, first);
   assert.deepEqual(fresh.events.filter((event: any) => event.type === 'session'), [{ type: 'session', ref: 'thr_1', generation: 1 }]);
-  fake.state.turn!();
-  await first;
-  fake.state.turn = undefined;
+  finishFirst();
+  assert.equal((await first).stop, 'done');
+  fake.state.turn = Promise.withResolvers<() => void>();
   const resumed = turnInput({ session: { ref: 'thr_1', generation: 1 } });
   const second = e.run(resumed.input);
-  await untilTurn(fake.state);
-  fake.state.turn!();
-  await second;
+  const finishSecond = await untilTurn(fake.state, second);
+  finishSecond();
+  assert.equal((await second).stop, 'done');
   assert.equal(resumed.events.some((event: any) => event.type === 'session'), false);
-  await e.dispose();
 });

@@ -10,8 +10,8 @@
 //   resume), ICE blocked (no candidate reaches the other side: ICE fails at once, or the 15 s pass);
 // - no console line of the page names an address or SDP.
 // WebKit runs the same when Playwright has it installed; on this PC it has not (the test says so and skips).
-// Not proven: a real iPhone (Safari's mDNS names in another WLAN, iOS background kills), mobile networks, STUN in the
-// field. Run: node --test test/native/hosted-rtc.test.mjs
+// Not proven: mDNS discovery (Chromium uses numeric host ICE candidates here), a real iPhone (Safari across a WLAN,
+// iOS background kills), mobile networks, STUN in the field. Run: node --test test/native/hosted-rtc.test.mjs
 // Owns: these assertions. Never: the user's data, the real meeting server, or the website build.
 
 import { test } from 'node:test';
@@ -166,21 +166,48 @@ async function run(t, type, executablePath) {
   await new Promise((resolve) => site.listen(0, '127.0.0.1', resolve));
   t.after(() => site.close());
 
-  const browser = await type.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+  // This same-host fixture is about the data path and fallback, not whether the
+  // runner routes multicast. Otherwise Chromium's .local names can spend 10 s
+  // in werift's mDNS lookup and fail before the key-refusal handshake is reached.
+  const args = type === chromium ? ['--disable-features=WebRtcHideLocalIpsWithMdns'] : [];
+  const browser = await type.launch({ headless: true, args, ...(executablePath ? { executablePath } : {}) });
   t.after(() => browser.close());
   const page = await browser.newPage();
   const consoleLines = [];
   page.on('console', (message) => consoleLines.push(message.text()));
   page.on('pageerror', (error) => consoleLines.push(`pageerror ${error.message}`));
   await page.addInitScript(INIT);
+  const gcryptWebKit = type === webkit && process.platform === 'linux';
+  if (gcryptWebKit) {
+    // This pinned Linux WebKit can drop a leading zero from freshly generated
+    // key material (https://bugs.webkit.org/show_bug.cgi?id=307095). Retry only
+    // the native X25519 key generation, not pairing, key validation or any RTC
+    // step. Remove when Playwright carries https://commits.webkit.org/323215@main.
+    await page.addInitScript(() => {
+      const original = SubtleCrypto.prototype.generateKey;
+      window.__x25519Retries = 0;
+      SubtleCrypto.prototype.generateKey = async function (...args) {
+        try {
+          return await original.apply(this, args);
+        } catch (error) {
+          const algorithm = typeof args[0] === 'string' ? args[0] : args[0]?.name;
+          if (algorithm !== 'X25519' || error?.name !== 'OperationError') throw error;
+          window.__x25519Retries++;
+          return original.apply(this, args);
+        }
+      };
+    });
+  }
   await page.goto(`http://127.0.0.1:${site.address().port}/`);
   await page.waitForFunction(() => window.rtcTest);
 
   // ── pairing (the app's own flow; the PC accepts)
   const pairing = page.evaluate(([url, id]) => window.rtcTest.pair(url, id), [relay.url, remoteIdOf(pc.identity.fingerprint)]);
-  const request = await until(() => pc.remote.state().incoming[0], 'the request on the PC');
-  pc.remote.decide(request.id, true);
-  const deviceId = await pairing;
+  // Observe a pairing rejection immediately, even if the PC never gets a request.
+  const [deviceId] = await Promise.all([pairing, (async () => {
+    const request = await until(() => pc.remote.state().incoming[0], 'the request on the PC');
+    pc.remote.decide(request.id, true);
+  })()]);
   const counts = () => pc.phones.counts().find((row) => row.deviceId === deviceId) ?? { rtc: 0, relay: 0 };
   const state = () => page.evaluate(() => window.rtcTest.state());
   const get = () => page.evaluate(() => window.rtcTest.get('/big'));
@@ -244,6 +271,7 @@ async function run(t, type, executablePath) {
   const leaks = consoleLines.filter((line) => /\b\d{1,3}(\.\d{1,3}){3}\b|candidate|a=fingerprint|ice-ufrag|v=0/.test(line));
   assert.deepEqual(leaks, [], 'no address or SDP in the page\'s console');
   report.outcomesAtPc = pc.lines.map((line) => line.outcome);
+  if (gcryptWebKit) report.x25519Retries = await page.evaluate(() => window.__x25519Retries);
   report.browser = `${type.name()} ${browser.version()}`;
   t.diagnostic(JSON.stringify(report));
 }
