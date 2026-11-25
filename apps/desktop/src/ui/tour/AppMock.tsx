@@ -42,14 +42,17 @@ export function Cell(props: { rect: Rect; icon: TourIconName; look?: CellLook; c
   );
 }
 
-function DesktopFrame(props: { layout: Layout; cell: CellLook }) {
+function DesktopFrame(props: { layout: Layout; cell: CellLook; handle?: 'idle' | 'out' }) {
   const { layout } = props;
   return (
     <>
-      <Cell rect={{ x: 10, y: 8, w: 32, h: 32 }} icon="sidebar" />
+      {props.handle && layout.handle ? <>
+        <AutarkDot rect={layout.handle} faint={props.handle === 'out'} />
+        <Cell rect={{ x: SHEET_X - 78, y: 8, w: 32, h: 32 }} icon="sidebar" />
+      </> : <Cell rect={{ x: 10, y: 8, w: 32, h: 32 }} icon="sidebar" />}
       {RAIL.map((item) => <Cell key={item.icon} rect={{ x: 10, y: item.y, w: 32, h: 32 }} icon={item.icon} look={item.on ? 'open' : 'idle'} />)}
       <Cell rect={{ x: 10, y: layout.h - 48, w: 32, h: 32 }} icon="gear" />
-      <span class="tour-side-title" style={{ left: `${RAIL_W + 12}px`, top: '12px' }}>Chats</span>
+      <span class="tour-side-title" style={{ left: `${RAIL_W + (props.handle ? 56 : 12)}px`, top: '12px' }}>Chats</span>
       <Cell rect={{ x: RAIL_W + SIDEBAR_W - 42, y: 8, w: 32, h: 32 }} icon="plus" />
       {CHATS.map((chat, index) => (
         <span key={chat.title} class={`tour-chat-row${index === 0 ? ' current' : ''}`} style={place({ x: RAIL_W + 8, y: 56 + index * 40, w: SIDEBAR_W - 16, h: 36 })}>
@@ -184,7 +187,7 @@ export const AppMock = memo(function AppMock(props: { layout: Layout; cell: Cell
       ) : (
         <>
           <span class="tour-sheet" style={place({ x: SHEET_X, y: layout.header, w: layout.w - SHEET_X, h: layout.h - layout.header })} />
-          <DesktopFrame layout={layout} cell={props.cell} />
+          <DesktopFrame layout={layout} cell={props.cell} handle={props.handle} />
           <DesktopChat layout={layout} />
         </>
       )}

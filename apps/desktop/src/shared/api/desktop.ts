@@ -56,7 +56,16 @@ export const IPC = {
   voiceLive: 'voice:live', // renderer → main (send): boolean, on change – a call, conversation or dictation of the page is live
   bubbleCall: 'bubble:call', // renderer → main (send): BubbleCall | null, on change – the page's call the bubble shows
   bubbleEnd: 'bubble:end-call', // main → renderer: conversation id – the bubble's End
+  // 0.3.20 (owner 24.11.2026): the round bubble icon in the app's left rail pulls the floating bubble out under the mouse
+  bubbleHandle: 'bubble:handle', // renderer → main (send): BubbleHandleStep – pull, move, drop, press (main reads the pointer itself)
+  bubbleStateGet: 'bubble:state-get', // renderer → main (invoke): BubbleHandleState
+  bubbleState: 'bubble:state', // main → renderer: BubbleHandleState – the bubble came out or was hidden
 } as const;
+
+/** The rail icon's gesture steps (coordinates are never sent: main takes the pointer's place from the screen). */
+export type BubbleHandleStep = 'pull' | 'move' | 'drop' | 'press';
+/** What the rail icon needs: this PC has the floating bubble (first company only), and whether it is out on the screen. */
+export interface BubbleHandleState { available: boolean; out: boolean }
 
 /** The call the page holds, as the floating bubble shows it (owner 19.11.2026): the chat and its title (the agent's name in a 1:1). */
 export interface BubbleCall { conversationId: string; title: string }
@@ -135,6 +144,10 @@ export interface WorkforceDesktopApi {
   bubbleCall?(call: BubbleCall | null): void;
   /** The floating bubble's End: end this page's call in that chat. */
   onEndCall?(listener: (conversationId: string) => void): () => void;
+  /** The rail's bubble icon: one gesture step (send); main moves the floating bubble to the pointer. */
+  bubbleHandle?(step: BubbleHandleStep): void;
+  bubbleState?(): Promise<BubbleHandleState>;
+  onBubbleState?(listener: (state: BubbleHandleState) => void): () => void;
 }
 
 /**

@@ -48,6 +48,7 @@ import { ROW_ROOM } from '../workspace/strip-slots.ts';
 import { RegionDialog } from '../workspace/RegionDialog.tsx'; // once for both surfaces (its ask is one signal)
 import { FeedbackMenu } from '../feedback/FeedbackMenu.tsx'; // B-055 Q4: the menu under the feedback cell, "Paint over"
 import { ColumnResize } from './ColumnResize.tsx';
+import { desktopBubble } from './DesktopBubbleHandle.tsx';
 import { TourDialog } from '../tour/TourDialog.tsx'; // B-055: the feedback tour (replay)
 import { openTour } from '../tour/open.ts';
 import { firstVideoHere } from '../pwa/native.ts';
@@ -97,7 +98,7 @@ function Overlays() {
       <FeedbackMenu />
       <ConfirmHost />
       <RememberWhyHost />
-      <TourDialog phone={isMobile.value} />
+      <TourDialog phone={isMobile.value} desktopBubble={desktopBubble.value.available} />
       <RegionDialog />
     </>
   );

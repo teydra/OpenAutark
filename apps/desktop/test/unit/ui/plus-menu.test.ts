@@ -99,7 +99,7 @@ test('F23: Plus offers Photos & videos, Record audio and Record video; Take phot
   assert.match(composer, /\{record\.bar\}\n\s+\{replyTo/, 'the bar sits in the slot above the text');
   assert.match(composer, /\.\.\.record\.actions,/);
   assert.match(composer, /\|\| uploading\.length > 0 \|\| record\.held\}/, 'Send waits while a take records, attaches or waits');
-  assert.match(composer, /if \(sending \|\| record\.held\) return;/, 'Send does nothing while it sends or a take of the RecordBar is held (a dictation is settled, voice.ts settleTake)');
+  assert.match(composer, /if \(preparingSend\.current \|\| record\.held\) return;/, 'Send does nothing during preparation or while a take of the RecordBar is held (a dictation is settled, voice.ts settleTake)');
   assert.match(read('../main/files-pick.ts'), /images: \{ name: 'Photos & videos', extensions: \[[^\]]*'png'[^\]]*'mp4'[^\]]*\] \}/, 'the desktop dialog lists videos too');
 });
 

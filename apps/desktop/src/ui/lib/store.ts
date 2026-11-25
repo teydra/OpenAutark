@@ -277,5 +277,5 @@ export function updatePreferences(patch: Partial<Preferences>): Promise<void> {
 
 export const preferences = computed<Preferences>(() => settings.value?.preferences ?? {
   theme: 'system', sidebarOpen: true, sidebarWidth: 288,
-  workspaceOpen: false, workspaceWidth: 360, enterSends: true, openAtLogin: false, autoDownloadUpdates: false, navOrder: [],
+  workspaceOpen: false, workspaceWidth: 360, enterSends: true, openAtLogin: false, autoDownloadUpdates: false, keepPcAwake: true, navOrder: [],
 });

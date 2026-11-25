@@ -28,6 +28,8 @@ export interface DesktopIpcParts<P extends PortLike> {
   titleBarDim?(dim: boolean): void;
   voiceLive?: IpcDeps['voiceLive']; // owner 19.11.2026: window.ts setVoiceLive
   bubbleCall?: IpcDeps['bubbleCall']; // owner 19.11.2026: float-bar.ts setCall
+  bubbleHandle?: IpcDeps['bubbleHandle']; // 0.3.20: the rail icon pulls the floating bubble out (float-bar.ts handle)
+  bubbleState?: IpcDeps['bubbleState'];
   log(line: string): void;
 }
 
@@ -61,6 +63,8 @@ export function desktopIpcDeps<P extends PortLike>(parts: DesktopIpcParts<P>): I
     titleBarDim: parts.titleBarDim,
     voiceLive: parts.voiceLive,
     bubbleCall: parts.bubbleCall,
+    bubbleHandle: parts.bubbleHandle,
+    bubbleState: parts.bubbleState,
     online: () => link.power('online'), // B-044: the window's network came back (chat re-delivery in the runtime)
     log: parts.log,
   };

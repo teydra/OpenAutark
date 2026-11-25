@@ -52,7 +52,7 @@ export interface Layout {
   start: Point;
   pointer: number;
   /** The Android app's bubble chapter (owner 19.11.2026): the to-do bubble's round icon left of the top row's title,
-   *  and where the pull drops the bubble; null where there is no bubble (the computer). */
+   *  and where the pull drops the bubble; null where there is no bubble. */
   handle: Rect | null;
   drop: Point | null;
 }
@@ -97,8 +97,8 @@ export const DESKTOP: Layout = {
   status: { x: 960 - 12 - 236, y: 48 + 8, w: 236, h: 32 },
   start: { x: 612, y: 440 },
   pointer: 52,
-  handle: null,
-  drop: null,
+  handle: { x: RAIL_W + 12, y: 7, w: 34, h: 34 },
+  drop: { x: RAIL_W + SIDEBAR_W + 60, y: 130 },
 };
 
 const PHONE_DOCK: DockFrame = { x: 0, w: 360, bottom: 0, border: 0, padX: 12, padTop: 10, padBottom: 20, row: 40, note: 32 };

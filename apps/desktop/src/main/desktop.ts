@@ -36,6 +36,7 @@ import { hiddenWindows } from './hidden-windows.ts';
 import { HostServices } from './host-services.ts';
 import { registerIpc } from './ipc.ts';
 import { applyLauncher, launcherDeps } from './launcher-tasks.ts';
+import { pcKeepAwakeFor } from './keep-awake.ts';
 import { setupBroker } from './broker-setup.ts'; // B-080
 import { armDueStart } from './launcher-windows.ts';
 import { RunStateMarks } from './launcher.ts';
@@ -306,9 +307,10 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   // B-080: where the desktop broker is still missing, a start with a window asks Windows once for it (broker-setup.ts)
   setupBroker({ platform, packaged: app.isPackaged, testMode, background: options.background, root: paths.root, exe: process.execPath, log: line => log.line(line), report: setup => link.event('broker.setup', setup) }); // F03: how it ended, for the computer tools
   const waker = { platform, packaged: app.isPackaged, testMode, localAppData: process.env.LOCALAPPDATA, exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), dataDir: paths.data, args: companyArgs(company), log: (line: string) => log.line(line) };
+  const pcAwake = pcKeepAwakeFor({ powerSaveBlocker, powerMonitor }, settings.preferences().keepPcAwake, line => log.line(line)); // 0.3.20: no standby on mains power (keep-awake.ts)
   settings.onChange((next, previous) => {
-    const changed = changedPreferences(next, previous);
-    const prefs = settings.preferences();
+    const changed = changedPreferences(next, previous), prefs = settings.preferences();
+    pcAwake.setSwitch(prefs.keepPcAwake);
     if (next.profile?.company !== previous?.profile?.company || next.profile?.name !== previous?.profile?.name) retitle();
     if (changed.includes('theme')) appWindow?.applyTheme(prefs.theme);
     if (changed.includes('openAtLogin')) void applyLauncher(prefs.openAtLogin, launcher); // B-044: "Keep agents running"
@@ -385,15 +387,13 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
     clipboardWrite: text => clipboard.writeText(text),
     openExternal: url => shell.openExternal(url),
     titleBarLayout: layout => mainWindow.setTitleBarLayout(layout),
-    titleBarDim: dim => mainWindow.setTitleBarDim(dim), voiceLive: on => mainWindow.setVoiceLive(on), bubbleCall: call => floatBar?.bar.setCall(call), // 19.11.2026
+    titleBarDim: dim => mainWindow.setTitleBarDim(dim), voiceLive: on => mainWindow.setVoiceLive(on), bubbleCall: call => floatBar?.bar.setCall(call), bubbleHandle: step => floatBar?.bar.handle(step), bubbleState: () => ({ available: !!floatBar, out: !!floatBar?.bar.shown }), // 19.11.2026; 0.3.20: the rail icon
     log: line => log.line(line),
   }));
 
   // ---------------------------------------------------------------- power events
-  powerMonitor.on('suspend', () => link.power('suspend'));
-  powerMonitor.on('resume', () => { link.power('resume'); desktopUpdates.checkIfDue(); });
-  powerMonitor.on('lock-screen', () => link.power('lock'));
-  powerMonitor.on('unlock-screen', () => link.power('unlock'));
+  powerMonitor.on('suspend', () => link.power('suspend')); powerMonitor.on('resume', () => { link.power('resume'); desktopUpdates.checkIfDue(); });
+  powerMonitor.on('lock-screen', () => link.power('lock')); powerMonitor.on('unlock-screen', () => link.power('unlock'));
   // B-044: the system ends the session (also with the window closed to the tray) – not an unexpected close.
   watchSessionEnd({ platform, app, powerMonitor, BaseWindow }, sessionEnded(runMarks, log), line => log.line(line)); // B-080 wave 3: and one main.log line at once
 
@@ -404,7 +404,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
     flushDrafts: () => renderer.prepareRestart(3000),
     disposeUpdates: () => desktopUpdates.dispose(),
     stopRuntime: () => link.stop('quit'),
-    releasePower: () => host.releaseAll(), destroyTray: () => tray.destroy(),
+    releasePower: () => { pcAwake.dispose(); return host.releaseAll(); }, destroyTray: () => tray.destroy(),
     ...quitWake({ by: runMarks.by, call: (method, params) => link.rpc.call(method, params), start: { exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), dataDir: paths.data, args: companyArgs(company), log: line => log.line(line) } }),
   });
   app.on('before-quit', event => {

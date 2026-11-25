@@ -14,7 +14,8 @@
 .stop-run:disabled { cursor: default; opacity: .8; }
 .live-bar {
   --col-inset: clamp(16px, 5cqi, 24px);
-  display: flex; flex: none; flex-direction: column; box-sizing: border-box; width: min(var(--message-max), calc((100cqi - 2 * var(--col-inset)) / var(--chat-zoom, 1)));
+  /* 25.11.2026: flex 0 1 – in a short column (a task's thread, a small window) the bar gives way and scrolls, never the composer under it */
+  display: flex; flex: 0 1 auto; min-height: 36px; flex-direction: column; box-sizing: border-box; width: min(var(--message-max), calc((100cqi - 2 * var(--col-inset)) / var(--chat-zoom, 1)));
   max-height: calc(4 * 28px + 8px); margin: 0 auto 6px; padding: 4px; overflow-y: auto; scrollbar-gutter: stable;
   border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface);
 }

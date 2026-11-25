@@ -165,7 +165,7 @@ test('settings view: defaults before the runtime answers, change notification af
   await view.start();
   assert.deepEqual(topics, ['system']);
   assert.equal(view.preferences().theme, 'dark');
-  assert.equal(seen[0].length, 3, 'first load reports everything');
+  assert.equal(seen[0].length, 4, 'first load reports everything');
   await view.update({ preferences: { autoDownloadUpdates: true } });
   assert.deepEqual(seen[1], ['autoDownloadUpdates']);
   updatedListener!(settings({ theme: 'dark', autoDownloadUpdates: true, openAtLogin: true }));

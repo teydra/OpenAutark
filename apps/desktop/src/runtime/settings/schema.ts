@@ -121,6 +121,7 @@ export const SECTIONS: readonly SectionDef[] = [
     flag('enterSends', 'Enter sends a message, Shift+Enter starts a new line (false: Ctrl+Enter sends)', true),
     flag('openAtLogin', 'Whether the app starts with the PC', false),
     flag('autoDownloadUpdates', 'New versions download by themselves', false),
+    flag('keepPcAwake', 'This PC does not go to standby while the app runs and the PC is on mains power (on battery it may sleep; the screen may always turn off)', true),
     // Feedback 20031F6D (owner 21.11.2026): the person's own order of the rail (ui/shell/nav-order.ts); keys a version
     // does not know are left out there and its new destinations follow the named ones, so any list of keys is fine here.
     { key: 'navOrder', about: 'Your order of the main destinations in the left rail and the phone tabs (drag them in the rail, or right-click › Reset order)', type: 'array',

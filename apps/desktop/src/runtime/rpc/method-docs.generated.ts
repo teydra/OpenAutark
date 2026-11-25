@@ -403,7 +403,7 @@ export const TYPE_DOCS: Record<string, string> = {
   "PhoneUseAttach": "interface PhoneUseAttach { model?: string; screen?: { width: number; height: number }; ready?: boolean; }",
   "PhoneUseReply": "interface PhoneUseReply { id: string; result?: unknown; error?: { code: string; message: string }; }",
   "PointerAction": "type PointerAction = 'move' | 'click' | 'type' | 'scroll' | 'select' | 'drag'",
-  "Preferences": "interface Preferences { theme: 'system' | 'light' | 'dark'; sidebarOpen: boolean; sidebarWidth: number; workspaceOpen: boolean; workspaceWidth: number; enterSends: boolean; openAtLogin: boolean; autoDownloadUpdates: boolean; navOrder?: string[]; }",
+  "Preferences": "interface Preferences { theme: 'system' | 'light' | 'dark'; sidebarOpen: boolean; sidebarWidth: number; workspaceOpen: boolean; workspaceWidth: number; enterSends: boolean; openAtLogin: boolean; autoDownloadUpdates: boolean; keepPcAwake: boolean; navOrder?: string[]; }",
   "Profile": "interface Profile { name: string; company: string; avatarFileId?: string; language: string; timezone: string; notes?: string; }",
   "ProposedAgent": "interface ProposedAgent { key: string; name: string; role: string; instructions: string; mode: string; template?: string; skills: string[]; reportsTo?: string; companionOf?: string; tasks?: ProposedTask[]; include: boolean; }",
   "ProposedTask": "interface ProposedTask { title: string; body: string }",

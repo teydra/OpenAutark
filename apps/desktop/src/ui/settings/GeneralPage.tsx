@@ -105,6 +105,11 @@ export function GeneralPage() {
             <Toggle label={start} checked={prefs.openAtLogin} disabled={!installed} onChange={(openAtLogin) => void setPrefs({ openAtLogin })} />
           </Row>
         )}
+        {bridge && (
+          <Row label="Keep this PC awake" hint="No standby while Autark runs on mains power – on battery it may sleep; the screen can still turn off">
+            <Toggle label="Keep this PC awake" checked={prefs.keepPcAwake} onChange={(keepPcAwake) => void setPrefs({ keepPcAwake })} />
+          </Row>
+        )}
         <Row label="Keep the screen on while agents work" hint={locked ? lockNote : 'Also keeps this PC awake for agent work at night'}>
           <Toggle label="Keep the screen on while agents work" checked={day.keepAwake} disabled={locked} onChange={(keepAwake) => void setDay({ keepAwake })} />
         </Row>

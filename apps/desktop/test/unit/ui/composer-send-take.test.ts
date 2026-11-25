@@ -129,6 +129,6 @@ test('the composer sends through settleTake; the model chip shows no stuck hover
   const composer = read('src/ui/chat/Composer.tsx');
   assert.match(composer, /if \(!\(await settleTake\(chat\.id\)\)\) return;/);
   assert.match(composer, /composerControls\(\{ hasContent, dictating: isDictating, transcribing: transcribingHere \}\)/);
-  assert.doesNotMatch(composer, /if \(sending \|\| record\.held \|\| transcribing/, 'no early return while a take is transcribed');
+  assert.doesNotMatch(composer, /if \(preparingSend\.current \|\| record\.held \|\| transcribing/, 'no early return while a take is transcribed');
   assert.match(read('src/ui/styles/composer.css'), /@media \(hover: none\) \{\s*\.composer-actions \.chip:hover:not\(\[aria-expanded=true\]\)/);
 });

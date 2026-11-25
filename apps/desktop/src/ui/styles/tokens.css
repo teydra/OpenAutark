@@ -43,6 +43,9 @@
   --tooltip-bg: #1a1c1f;
   --tooltip-fg: #fff;
   --backdrop: #0005;
+  /* The floating bubble stays dark with a white mark in every theme. */
+  --bubble-handle-bg: rgba(32, 36, 34, .85);
+  --bubble-handle-fg: #fff;
 
   /* provider colors (B-078: the rail shows a plan's provider by colour only – Claude, Codex, and a small fixed palette
      for any other provider, picked per provider id in shell/QuotaRail.tsx providerClass) */

@@ -67,11 +67,22 @@ function setup(overrides: Partial<IpcDeps> = {}) {
 
 test('every channel of the contract is registered', () => {
   const { ipc } = setup();
-  const pushOnly = new Set<string>([IPC.runtimePort, IPC.runtimeStatus, IPC.updateState, IPC.prepareRestart, IPC.navigate, IPC.feedbackKey, IPC.bubbleEnd]);
+  const pushOnly = new Set<string>([IPC.runtimePort, IPC.runtimeStatus, IPC.updateState, IPC.prepareRestart, IPC.navigate, IPC.feedbackKey, IPC.bubbleEnd, IPC.bubbleState]);
   for (const channel of Object.values(IPC)) {
     if (pushOnly.has(channel)) continue;
     assert.ok(ipc.handlers.has(channel) || ipc.listeners.has(channel), channel);
   }
+});
+
+test('bubble handle accepts a gesture only from the main app, and reports the current state', async () => {
+  const steps: string[] = [];
+  const state = { available: true, out: false };
+  const { ipc, e } = setup({ bubbleHandle: step => steps.push(step), bubbleState: () => state });
+  for (const step of ['pull', 'move', 'drop', 'press', null, { x: 10, y: 20 }]) ipc.send(e.app, IPC.bubbleHandle, step);
+  ipc.send(e.subFrame, IPC.bubbleHandle, 'pull');
+  assert.deepEqual(steps, ['pull', 'move', 'drop', 'press']);
+  assert.deepEqual(await ipc.invoke(e.app, IPC.bubbleStateGet), { ok: true, value: state });
+  assert.deepEqual(await setup().ipc.invoke(e.app, IPC.bubbleStateGet), { ok: true, value: { available: false, out: false } });
 });
 
 test('trust check refuses sub-frames, other windows and navigated pages', async () => {

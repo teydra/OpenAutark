@@ -89,6 +89,7 @@ export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
   const [caret, setCaret] = useState(0);
   const [uploading, setUploading] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  const preparingSend = useRef(false);
   const [dragOver, setDragOver] = useState(false);
   const [secretOpen, setSecretOpen] = useState(false);
   const [modelSignal, setModelSignal] = useState(0);
@@ -176,7 +177,8 @@ export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
 
   /** `sentLevel`: the Plus menu's "Send as important" / "Send silently" (no slash command then). */
   const send = async (sentLevel?: MessageLevel) => {
-    if (sending || record.held) return; // never sends without the take
+    if (preparingSend.current || record.held) return; // never sends without the take
+    preparingSend.current = true;
     setSending(true); // also while a dictation is transcribed first (a second tap sends nothing twice)
     // Owner 24.11.2026 (task_ec8e4ztn): a Send while the take is still heard shows the line at once – the typed text and
     // the words heard so far (PendingMessages.tsx) – instead of an empty chat until the last piece is transcribed.
@@ -185,6 +187,21 @@ export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
       clientId: early, conversationId: chat.id, body: draft.peek().text.trim(), attachments: draft.peek().attachments,
       state: 'transcribing', preview: dictationPreview(chat.id),
     });
+    let ownsPreparation = true;
+    const releasePreparation = () => {
+      if (!ownsPreparation) return;
+      ownsPreparation = false;
+      preparingSend.current = false;
+      setSending(false);
+      fieldRef.current?.focus();
+    };
+    const dispatch = (body: string, level: MessageLevel) => {
+      // sendDraft stages its pending row and clears the composer synchronously. The next draft
+      // can send now; this request's eventual completion must not unlock a newer preparation.
+      const pending = sendAs(body, level, early);
+      releasePreparation();
+      return pending;
+    };
     try {
       // A running take stops, a stopped one is waited for: its words go out with the draft. One that came back as a
       // recording, failed or was cancelled leaves the draft: the person sees it (and the toast) first.
@@ -199,16 +216,15 @@ export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
           chat,
           openModelMenu: () => setModelSignal(Date.now()),
           setLevel: (next) => updateDraft(chat.id, { level: next }),
-          send: (rest, options) => { sent = true; return sendAs(rest, options?.level ?? draft.peek().level, early); },
+          send: (rest, options) => { sent = true; return dispatch(rest, options?.level ?? draft.peek().level); },
         });
         if (clear && !sent && draft.peek().text === originalText) updateDraft(chat.id, { text: '' });
         return;
       }
-      await sendAs(body, sentLevel ?? draft.value.level, early);
+      await dispatch(body, sentLevel ?? draft.value.level);
     } finally {
       if (early && pendingSends.peek().some((line) => line.clientId === early && line.state === 'transcribing')) removePending(early); // nothing went out
-      setSending(false);
-      fieldRef.current?.focus();
+      releasePreparation();
     }
   };
 
