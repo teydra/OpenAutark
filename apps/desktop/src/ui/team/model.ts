@@ -75,6 +75,11 @@ export function countReports(entry: OrgEntry): number {
   return entry.reports.reduce((sum, report) => sum + 1 + countReports(report), 0);
 }
 
+/** Entwurf 2c (Mika 24.11.2026): the row under a closed manager in the sidebar tree – "6 in Konrad's team" (every agent below it). */
+export function teamMoreLabel(entry: OrgEntry): string {
+  return `${countReports(entry)} in ${entry.agent.name}'s team`;
+}
+
 export interface SpaceGroup { space?: Space; entries: OrgEntry[] }
 
 /** An agent's space while it is active; an archived or unknown space counts as none. */
