@@ -136,8 +136,9 @@ export class AppPhones implements PhoneDriver {
     await this.ask(this.pick(serial), 'tap', { x: Math.round(x), y: Math.round(y) }, step);
   }
 
-  async swipe(serial: string | undefined, from: { x: number; y: number }, to: { x: number; y: number }, durationMs = 400, step?: PhoneStepOptions): Promise<void> {
-    await this.ask(this.pick(serial), 'swipe', { x1: Math.round(from.x), y1: Math.round(from.y), x2: Math.round(to.x), y2: Math.round(to.y), durationMs }, step);
+  async swipe(serial: string | undefined, from: { x: number; y: number }, to: { x: number; y: number }, durationMs = 400, step?: PhoneStepOptions, via?: Array<{ x: number; y: number }>): Promise<void> {
+    const between = via?.length ? { via: via.flatMap((point) => [Math.round(point.x), Math.round(point.y)]) } : {};
+    await this.ask(this.pick(serial), 'swipe', { x1: Math.round(from.x), y1: Math.round(from.y), x2: Math.round(to.x), y2: Math.round(to.y), durationMs, ...between }, step);
   }
 
   /** What the field reads after typing (`text`, cut on the phone) when the app tells it; an app before 0.3.15 does not. */

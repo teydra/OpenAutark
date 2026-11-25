@@ -147,19 +147,19 @@ export function phoneTools(adb: Phone): ToolDef[] {
     },
   });
 
-  const swipe = defineTool<{ x1: number; y1: number; x2: number; y2: number; durationMs?: number; serial?: string }>({
+  const swipe = defineTool<{ x1: number; y1: number; x2: number; y2: number; via?: Array<{ x: number; y: number }>; durationMs?: number; serial?: string }>({
     name: 'phone.swipe',
-    description: 'Swipes on the phone from one point to another, e.g. upwards to scroll.',
+    description: 'Swipes on the phone from one point to another, e.g. upwards to scroll; with via one unlifted finger passes more points (a lock pattern).',
     inputSchema: {
       type: 'object',
-      properties: { x1: { type: 'number' }, y1: { type: 'number' }, x2: { type: 'number' }, y2: { type: 'number' }, durationMs: { type: 'integer', minimum: 50, maximum: 10_000, description: '300–500 ms scrolls a list.' }, serial: SERIAL },
+      properties: { x1: { type: 'number' }, y1: { type: 'number' }, x2: { type: 'number' }, y2: { type: 'number' }, via: { type: 'array', maxItems: 16, items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false }, description: 'Points between start and end, in order, straight from one to the next (Autark app 0.3.21+; an older app swipes straight from start to end).' }, durationMs: { type: 'integer', minimum: 50, maximum: 10_000, description: '300–500 ms scrolls a list.' }, serial: SERIAL },
       required: ['x1', 'y1', 'x2', 'y2'],
       additionalProperties: false,
     },
     category: 'device', remote: true, requires: 'device',
     describe: (args, ctx) => phone(`Swipe on the phone from ${args.x1},${args.y1} to ${args.x2},${args.y2}`, ctx, false), // swipe-to-delete, swipe-to-confirm
     async run(args, ctx) {
-      await adb.swipe(args.serial, { x: args.x1, y: args.y1 }, { x: args.x2, y: args.y2 }, args.durationMs, step(ctx));
+      await adb.swipe(args.serial, { x: args.x1, y: args.y1 }, { x: args.x2, y: args.y2 }, args.durationMs, step(ctx), args.via);
       return text(`Swiped. ${VERIFY}`);
     },
   });
@@ -183,8 +183,8 @@ export function phoneTools(adb: Phone): ToolDef[] {
 
   const key = defineTool<{ key: string; serial?: string }>({
     name: 'phone.key',
-    description: 'Presses a phone key such as back, home or notifications, which shows what just arrived. On the phone with the Autark app the keys are back, home, recents, notifications (the shade with fresh messages and codes, which phone.ui_tree then reads), quick_settings and enter.',
-    inputSchema: { type: 'object', properties: { key: { type: 'string', minLength: 1, maxLength: 40, description: 'Autark app: back, home, recents, notifications, quick_settings, enter. Over ADB: back, home, recents, enter, delete, tab, escape, arrows, page_up/page_down or wakeup.' }, serial: SERIAL }, required: ['key'], additionalProperties: false },
+    description: 'Presses a phone key such as back, home or notifications, which shows what just arrived. On the phone with the Autark app the keys are wakeup (turns a dark screen on, the lock stays; app 0.3.21+), back, home, recents, notifications (the shade with fresh messages and codes, which phone.ui_tree then reads), quick_settings and enter.',
+    inputSchema: { type: 'object', properties: { key: { type: 'string', minLength: 1, maxLength: 40, description: 'Autark app: wakeup, back, home, recents, notifications, quick_settings, enter. Over ADB: back, home, recents, enter, delete, tab, escape, arrows, page_up/page_down or wakeup.' }, serial: SERIAL }, required: ['key'], additionalProperties: false },
     category: 'device', remote: true, requires: 'device',
     describe: (args, ctx) => phone(`Press ${short(args.key)} on the phone`, ctx, movingKey(args.key)),
     async run(args, ctx) {

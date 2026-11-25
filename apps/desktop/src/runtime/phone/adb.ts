@@ -157,7 +157,8 @@ export class AdbPhone implements PhoneDriver, PhoneWireless {
     await this.input(device, ['input', 'tap', String(point.x), String(point.y)], step);
   }
 
-  async swipe(serial: string | undefined, from: { x: number; y: number }, to: { x: number; y: number }, durationMs = 400, step?: PhoneStepOptions): Promise<void> {
+  async swipe(serial: string | undefined, from: { x: number; y: number }, to: { x: number; y: number }, durationMs = 400, step?: PhoneStepOptions, via?: Array<{ x: number; y: number }>): Promise<void> {
+    if (via?.length) throw new WorkforceError('bad_request', 'Over ADB a swipe has two points; via (a lock pattern) needs the phone with the Autark app.');
     const device = await this.pick(serial);
     const a = await this.checkPoint(device, from.x, from.y);
     const b = await this.checkPoint(device, to.x, to.y);

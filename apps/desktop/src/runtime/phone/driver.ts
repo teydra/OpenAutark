@@ -31,7 +31,8 @@ export interface PhoneDriver {
   screenshot(serial?: string, step?: PhoneStepOptions): Promise<PhoneShot>;
   uiTree(serial?: string, step?: PhoneStepOptions): Promise<PhoneTree>;
   tap(serial: string | undefined, x: number, y: number, step?: PhoneStepOptions): Promise<void>;
-  swipe(serial: string | undefined, from: { x: number; y: number }, to: { x: number; y: number }, durationMs?: number, step?: PhoneStepOptions): Promise<void>;
+  /** `via`: points between `from` and `to` that one unlifted finger passes (a lock pattern; the Autark app only). */
+  swipe(serial: string | undefined, from: { x: number; y: number }, to: { x: number; y: number }, durationMs?: number, step?: PhoneStepOptions, via?: Array<{ x: number; y: number }>): Promise<void>;
   /** Types into the focused field; resolves to what the field reads afterwards when the phone tells it (the Autark app). */
   type(serial: string | undefined, value: string, step?: PhoneStepOptions): Promise<string | void>;
   /** Presses a key; returns the key code it sent. */

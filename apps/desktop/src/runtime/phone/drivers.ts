@@ -31,7 +31,7 @@ export function mergedPhones(adb: Adb & Pick<AdbPhone, 'attached' | 'installed'>
     screenshot: (serial?: string, step?: PhoneStepOptions): Promise<PhoneShot> => pick(serial).screenshot(serial, step),
     uiTree: (serial?: string, step?: PhoneStepOptions): Promise<PhoneTree> => pick(serial).uiTree(serial, step),
     tap: (serial, x, y, step) => pick(serial).tap(serial, x, y, step),
-    swipe: (serial, from, to, durationMs, step) => pick(serial).swipe(serial, from, to, durationMs, step),
+    swipe: (serial, from, to, durationMs, step, via) => pick(serial).swipe(serial, from, to, durationMs, step, via),
     type: (serial, value, step) => pick(serial).type(serial, value, step),
     key: (serial, name, step) => pick(serial).key(serial, name, step),
     open: (serial, target, step) => pick(serial).open(serial, target, step),

@@ -24,7 +24,7 @@ const props = (name: string) => Object.keys((def(name).inputSchema as { properti
 test('phone: the one-line list carries the ask and the notification key', () => {
   assert.match(brief(def('phone.say').description), /^Asks the person on their phone, or shows my line there, in the Autark app's bubble/); // the ask opens the one-liner
   assert.match(brief(def('phone.key').description), /notifications, which shows what just arrived/);
-  assert.match(String(prop('phone.key', 'key').description), /^Autark app: back, home, recents, notifications, quick_settings, enter\./);
+  assert.match(String(prop('phone.key', 'key').description), /^Autark app: wakeup, back, home, recents, notifications, quick_settings, enter\./);
   assert.match(brief(def('phone.ui_tree').description), /^Reads the phone screen/);
 });
 
