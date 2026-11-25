@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OFFLINE, PROBLEM_GRACE_MS, farProblem, pictureProblem, remoteKey, remoteTarget, sayOnce } from '../../../src/ui/workspace/remote-web.ts';
+import { PROBLEM_GRACE_MS, farProblem, remoteKey, remoteTarget, sayOnce } from '../../../src/ui/workspace/remote-web.ts';
 import { LOST_TEXT } from '../../../src/ui/lib/rpc-error.ts';
 import { createInputSender } from '../../../src/ui/workspace/browser-input.ts';
 import type { BrowserInput } from '../../../src/shared/model/browser.ts';
@@ -83,10 +83,6 @@ test('Konrad 24.11.2026: this window\'s dropped connection is no problem of the 
   assert.equal(farProblem(null, 'The page crashed.'), 'The page crashed.');
   assert.equal(farProblem(LOST_TEXT, 'The page crashed.'), 'The page crashed.');
   assert.equal(PROBLEM_GRACE_MS, 5000);
-  assert.equal(pictureProblem({ late: null, away: true, picture: true }), null, 'the last picture stays while the connection is away');
-  assert.equal(pictureProblem({ late: null, away: false, picture: false }), null, 'a short drop without a picture: still the spinner');
-  assert.equal(pictureProblem({ late: null, away: true, picture: false }), OFFLINE, 'no picture at all after the grace: the offline line');
-  assert.equal(pictureProblem({ late: 'office-pc is offline.', away: false, picture: true }), 'office-pc is offline.');
 });
 
 test('a tap made while the connection is away waits for it instead of failing (the sender drops nothing behind a lost one)', async () => {
@@ -112,7 +108,7 @@ test('a tap made while the connection is away waits for it instead of failing (t
   assert.deepEqual(sent, ['web-1 mouse down', 'web-1 mouse up'], 'in order once it is back');
 });
 
-test('the remote tab: no keyboard grab on a picture appearing, the address row\'s cells in their places, offline line, the page\'s dialog', () => {
+test('the remote tab: no keyboard grab on a picture appearing, the address row\'s cells in their places, one connection line, the page\'s dialog', () => {
   const tab = source('RemoteWebTab.tsx');
   const surface = source('BrowserSurface.tsx');
   assert.match(tab, /<BrowserSurface [^]*?autoFocus=\{false\} appKeys /, 'the picture appearing (a tab switch on the other PC, a recovery) never takes the keyboard');
@@ -123,9 +119,10 @@ test('the remote tab: no keyboard grab on a picture appearing, the address row\'
   const order = ['label="Back"', 'label="Forward"', 'label="Reload"', 'class="remote-web-mark"', '<Address', 'browser-live-trail'].map((cell) => toolbar.indexOf(cell));
   assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]!)), `Back, Forward, Reload first, the menu cell last: ${order.join(', ')}`);
   assert.match(source('WorkspacePane.tsx'), /<RemoteWebTab [^>]*trail=\{<PaneMenu id=\{entry\.id\} \/>\}/, 'the pane\'s menu cell (All tabs, History, Full view) is there');
-  assert.match(tab, /const late = useLate\(farProblem\(error, state\?\.error\), PROBLEM_GRACE_MS\)/, 'a far PC\'s problem shows only after the grace');
-  assert.match(tab, /pictureProblem\(\{ late, away: down\.value, picture: Boolean\(frame\) \}\)/, 'this window\'s drop keeps the last picture');
-  assert.doesNotMatch(tab, /rpc\.status\.value !== 'open'/, 'a drop never swaps the picture for a line at once');
+  assert.match(tab, /const connected = rpc\.status\.value === 'open'/);
+  assert.match(tab, /const late = useLate\(connected \? farProblem\(error, state\?\.error\) : null, PROBLEM_GRACE_MS\)/, 'show a far PC problem only while connected, after its grace');
+  assert.match(tab, /const problem = connected \? late : null;\s*[^\n]*\n\s*const shown = problem \? null : frame/, 'the connection line alone speaks, with or without a picture');
+  assert.doesNotMatch(tab, /Offline .+the page shows again|\bOFFLINE\b/, 'never duplicate the global status in this pane');
   assert.match(tab, /send=\{send\}/);
   assert.match(tab, /const send = \(frameTab: string, input: BrowserInput\) => \{/, 'input goes to rpc.call, which holds it while the connection is away');
   assert.match(source('BrowserSurface.tsx'), /lost: \(error\) => connectionFailure\(error\) === 'lost'/, 'the surface\'s sender drops nothing behind an input the drop took');

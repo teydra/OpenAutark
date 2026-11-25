@@ -20,8 +20,8 @@
 // (alert, confirm …) lies over the picture in one fixed place with its answers. While that PC cannot be reached one
 // calm line takes the picture's place after PROBLEM_GRACE_MS and the pulls try again every RETRY_MS. Konrad 24.11.2026: while
 // this window's own connection is away the last picture stays and nothing shows here (the status line's one quiet line
-// comes after 5 s); clicks, keys and pastes made meanwhile wait in order and go once it is back (rpc.ts, up to its
-// QUEUE_LIMIT_MS – later ones are said once afterwards); only without any picture the offline line stands there.
+// comes after 5 s, even before the first picture); clicks, keys and pastes made meanwhile wait in order and go once
+// it is back (rpc.ts, up to its QUEUE_LIMIT_MS – later ones are said once afterwards).
 // Nothing moves: the cells are fixed, buttons only change their color, the touch buttons float.
 // Owns: the feed of remote side tabs, their picture boxes, this view and its PC-name lookup (helpers: remote-web.ts).
 // Never: loads the page here, runs a feed per view (browser-feed.ts shares one per tab), or keeps what the person types.
@@ -37,8 +37,7 @@ import { Button, Icon, IconButton, Spinner } from '../lib/ui.tsx';
 import { createBrowserFeed, type FeedView } from './browser-feed.ts';
 import { Address, useCoarsePointer, useDocumentVisible } from './BrowserLive.tsx';
 import { BrowserSurface } from './BrowserSurface.tsx';
-import { down } from '../shell/connection-line.ts';
-import { PROBLEM_GRACE_MS, farProblem, pictureProblem, remoteKey, remoteTarget, sayOnce } from './remote-web.ts';
+import { PROBLEM_GRACE_MS, farProblem, remoteKey, remoteTarget, sayOnce } from './remote-web.ts';
 import { useSpace } from './space.ts';
 
 /** After a failed pull (the PC is offline), the next try while the view stays. */
@@ -207,8 +206,9 @@ export function RemoteWebTab(props: RemoteWebTabProps) {
     else if (focused) field.blur();
   }, [editing]);
   // Konrad 24.11.2026: a drop under PROBLEM_GRACE_MS shows nothing – the last picture stays and input waits (rpc.ts holds it)
-  const late = useLate(farProblem(error, state?.error), PROBLEM_GRACE_MS);
-  const problem = pictureProblem({ late, away: down.value, picture: Boolean(frame) });
+  const connected = rpc.status.value === 'open';
+  const late = useLate(connected ? farProblem(error, state?.error) : null, PROBLEM_GRACE_MS);
+  const problem = connected ? late : null; // only the global connection line speaks while this window is disconnected
   const shown = problem ? null : frame;
   const usable = can('side.input');
   const ready = Boolean(state && !problem && can('side.nav'));
