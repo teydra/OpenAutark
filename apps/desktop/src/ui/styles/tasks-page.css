@@ -122,16 +122,18 @@
 .task-input-field::selection { background: color-mix(in srgb, var(--badge-bg) 28%, transparent); color: transparent; }
 .task-input-go { flex: none; margin-top: 2px; }
 .task-input-go:not(:disabled) { background: var(--text); color: var(--surface); }
-/* one row, always there: chips and the hint; what does not fit is cut at the end (nothing wraps, nothing moves) */
-.task-input-chips { display: flex; align-items: center; gap: 6px; min-height: 24px; padding-left: 32px; overflow: hidden; white-space: nowrap; }
-.task-input-hint { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--muted); font-size: calc(12.5px * var(--ui-text, 1)); text-overflow: ellipsis; }
+/* one line when chips and hint fit; on a phone the hint takes the next line in full (wraps) instead of being squeezed or cut */
+.task-input-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 24px; padding-left: 32px; overflow: hidden; white-space: nowrap; }
+/* the hint wraps in full on a phone (its explanation after the "·" must stay readable), small and grey, no fixed height */
+.task-input-hint { flex: 1 1 auto; min-width: 0; overflow: visible; color: var(--muted); font-size: calc(12.5px * var(--ui-text, 1)); line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
 .task-chip { display: inline-flex; align-items: center; gap: 5px; flex: none; height: 24px; padding: 0 9px; border: 1px solid transparent; border-radius: 12px; background: var(--hover); color: var(--text); font-size: calc(12.5px * var(--ui-text, 1)); white-space: nowrap; }
 .task-chip.when { background: color-mix(in srgb, var(--badge-bg) 14%, var(--surface)); }
 .task-chip.when.late { color: var(--warn); }
 .task-chip.open { border-color: color-mix(in srgb, var(--badge-bg) 55%, transparent); border-style: dashed; background: transparent; color: var(--badge-bg); }
 .task-chip.open:hover { background: color-mix(in srgb, var(--badge-bg) 10%, transparent); }
 /* the quest's name is cut at the chip's end ("…"), never painted over the hint behind it */
-.task-chip.quest { max-width: 220px; overflow: hidden; background: color-mix(in srgb, var(--qc) 14%, var(--surface)); }
+.task-chip.quest { flex: 0 1 auto; min-width: 0; max-width: min(220px, 100%); overflow: hidden; background: color-mix(in srgb, var(--qc) 14%, var(--surface)); }
+.task-chip.quest > .task-chip-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-chip.file { max-width: 180px; }
 .task-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .task-chip.important { color: var(--warn); }

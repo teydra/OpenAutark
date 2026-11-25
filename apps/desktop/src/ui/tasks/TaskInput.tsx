@@ -128,8 +128,8 @@ export function TaskInput(props: { scope: PageScope; quest?: Task; onLeaveQuest?
       </div>
       <div class="task-input-chips">
         {props.quest && !questMode && (
-          <span class="task-chip quest" style={{ '--qc': `var(--wf-c${questHue(props.quest.id)})` }}>
-            <span class="task-dot" aria-hidden="true" /><span class="task-chip-text">In {props.quest.title}</span>
+          <span class="task-chip quest" title={`In ${props.quest.title}`} style={{ '--qc': `var(--wf-c${questHue(props.quest.id)})` }}>
+            <span class="task-dot" aria-hidden="true" /><span class="task-chip-text" title={`In ${props.quest.title}`}>In {props.quest.title}</span>
             <button type="button" class="task-chip-x" aria-label="Not into this quest" title="Not into this quest" onClick={props.onLeaveQuest}>×</button>
           </span>
         )}
