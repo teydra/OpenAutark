@@ -3,7 +3,8 @@
 // release turns it off), which keeps the page awake and painting; main's frames and page changes arrive as 'side-view'
 // messages (entry-electron.ts → update). Pulls are FramePulls (view-pull.ts) keyed by tab: the owner here and a linked
 // PC passing on its owner get a frame every SIDE_PC_FRAME_GAP_MS at most, a phone every SIDE_PHONE_FRAME_GAP_MS (B-081;
-// agents' own browsers keep view-pull.ts's gaps). B-081: each watching caller's last picture box (`view`) is kept; a
+// agents' own browsers keep view-pull.ts's gaps). Identical successive pictures keep their stamp so existing viewers
+// do not download them again; a new viewer still gets the full cached picture. B-081: each watching caller's last picture box (`view`) is kept; a
 // caller's new or changed one becomes the page's size and renews the cast at once (sideCast `view`), later renewals send
 // it again, another caller's unchanged box never switches it, and when a caller stops watching the box set last of those
 // still watching takes over at once (none left: the page's own size). Input is mapped onto the newest frame's viewport
@@ -138,6 +139,7 @@ export class SideViews {
     const entry = this.entries.get(update.tab);
     if (!entry) return;
     const page: Partial<SidePage> = update.page ?? {};
+    const prevState = entry.state, prevFrame = entry.frame;
     this.set(entry, {
       url: text(page.url, 8192), title: text(page.title, 500), back: page.back === true, forward: page.forward === true, loading: page.loading === true,
       dialog: dialogOf(page.dialog), editing: typeof page.editing === 'number' && Number.isFinite(page.editing) ? page.editing : undefined, open: true, live: update.live === true, error: update.error ? text(update.error, 300) : undefined,
@@ -146,9 +148,15 @@ export class SideViews {
     if (meta && update.frame) {
       entry.meta = meta;
       const size = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : 0);
-      entry.frame = { tab: entry.tab, data: update.frame.data, width: size(update.frame.meta.deviceWidth), height: size(update.frame.meta.deviceHeight), at: this.stamp() };
+      const width = size(update.frame.meta.deviceWidth), height = size(update.frame.meta.deviceHeight);
+      const data = update.frame.data;
+      // Metadata for input can change independently of the pixels. Keep it current, but don't advance the stamp
+      // unless the viewer needs a new picture or viewport. No protocol change: all transmitted frames are full JPEGs.
+      if (!prevFrame || prevFrame.data !== data || prevFrame.width !== width || prevFrame.height !== height) {
+        entry.frame = { tab: entry.tab, data, width, height, at: this.stamp() };
+      }
     }
-    this.wake(entry);
+    if (entry.state !== prevState || entry.frame !== prevFrame) this.wake(entry);
   }
 
   /** The watcher's input on the tab's newest frame, after the ones before it. */

@@ -2,7 +2,7 @@
 // sideNav): the page stays here – it loads, sends and keeps its logins only on this PC – and the watcher gets its
 // picture and sends input back. `sideCast on` wakes the page through the workspace browser (sideContents: a page
 // nobody here looks at moves to the off-screen host, where it paints) and runs a DevTools screencast on the tab's
-// shared connection (TabCdp) with the settings of the agents' live view (runtime/browser/view.ts): JPEG quality 60,
+// shared connection (TabCdp): JPEG quality 45 for the remote side tab (agents' live views are unchanged),
 // at most 1280 px on either side, every frame acknowledged at once, at most one per CAST_FRAME_GAP_MS passed on – the
 // newest – with the page's address, title and history (`send`, host bridge message 'side-view'). Each renewal keeps
 // the page awake; CAST_IDLE_MS without one, or `on: false`, ends the cast. While it runs the workspace browser keeps
@@ -32,7 +32,7 @@ export const CAST_IDLE_MS = 60_000;
 export const CAST_MAX_SIDE = 1280;
 /** B-081: a press here gives the page its pane's size back this long after it (a click's up comes ~100 ms after its down). */
 export const GIVE_BACK_MS = 500;
-const SCREENCAST = { format: 'jpeg', quality: 60, maxWidth: CAST_MAX_SIDE, maxHeight: CAST_MAX_SIDE, everyNthFrame: 1 };
+const SCREENCAST = { format: 'jpeg', quality: 45, maxWidth: CAST_MAX_SIDE, maxHeight: CAST_MAX_SIDE, everyNthFrame: 1 };
 const CLOSED = 'This tab is not open on its PC any more.';
 const IN_DIALOG = 'The page shows a dialog – answer it first.';
 
