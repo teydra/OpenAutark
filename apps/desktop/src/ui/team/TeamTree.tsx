@@ -21,7 +21,7 @@ import { runsOn, watchPcs } from './runs-on.ts';
 import { useContextMenu } from '../lib/context-menu.tsx';
 import { agentName } from '../lib/store.ts';
 import { go } from '../lib/router.ts';
-import { countReports, groupBySpace, reportSpace, structureLine } from './model.ts';
+import { countReports, groupBySpace, reportSpace, structureLine, teamMoreLabel } from './model.ts';
 import type { OrgEntry } from './model.ts';
 import { countPersonReports, statusLabel } from './people-model.ts';
 import type { PersonEntry } from './people-model.ts';
@@ -104,11 +104,17 @@ function Branch(props: { entry: OrgEntry; depth: number; expand: Expand; space: 
   const hasReports = entry.reports.length > 0;
   const splits = Boolean(toggle) && hasSplits(entry.agent.id); // B-057: the same expansion shows its split rows (never opened by itself)
   const where = reportSpace(entry.agent, props.space, spaces.value);
+  const more = Boolean(toggle) && hasReports && !open; // Entwurf 2c: a closed team says how many are in it, one tap opens it
   return (
     <div class="team-branch" style={{ '--depth': String(props.depth) }}>
-      <AgentRow agent={entry.agent} depth={props.depth} reports={countReports(entry)} activeId={expand.splitId && splits && open ? undefined : expand.activeId}
+      <AgentRow agent={entry.agent} depth={props.depth} reports={more ? 0 : countReports(entry)} activeId={expand.splitId && splits && open ? undefined : expand.activeId}
         what={hasReports ? (splits ? 'reports and splits' : 'reports') : 'splits'} space={where.name} direct={expand.line === 'role' ? entry.reports.length : undefined}
         toggle={toggle && (hasReports || splits) ? { expanded: open, onToggle: () => toggle(entry.agent.id) } : null} />
+      {more && toggle && (
+        <button type="button" class="team-more" style={{ '--depth': String(props.depth + 1) }} aria-expanded={false} onClick={() => toggle(entry.agent.id)}>
+          <Icon name="caret-right" size={12} /> {teamMoreLabel(entry)}
+        </button>
+      )}
       {hasReports && open && (
         <div class="team-reports" role="group" aria-label={`Reports of ${entry.agent.name}`}>
           {entry.reports.map((report) => <Branch key={report.agent.id} entry={report} depth={props.depth + 1} expand={expand} space={where.context} />)}

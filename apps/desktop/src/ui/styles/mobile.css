@@ -82,6 +82,10 @@
 .mobile-main > .chat-list, .mobile-main > .sidebar-section { padding-top: 0; }
 .mobile-main .chat-row { min-height: calc(var(--row-h) + 6px); padding-inline: 16px; }
 .mobile-main .search-hits > .search-hit { padding-right: 16px; } /* a message hit's time ends where a chat row's does */
+.mobile-main .section-toggle, .mobile-main .team-more { min-height: 44px; } /* Entwurf 2: "Older", "n in X's team" are thumb targets */
+.mobile-main .people-hit { padding-right: 16px; }
+.mobile-main .people-hit-open { padding-left: 16px; }
+.mobile-main .people-hit-message { min-height: 40px; }
 .mobile-shell .chat-view { background: var(--surface); }
 .mobile-shell .message-scroller { padding: 12px 12px 16px; } /* B-080: chat.css's both-edges gutter stays – the text centred over the composer in a desktop window */
 .mobile-shell .message-column { width: auto; max-width: var(--message-max); margin: 0 auto; } /* panels are sheets here: centred */

@@ -62,6 +62,10 @@
 .team-archived-toggle:hover { color: var(--text); }
 .team-row.archived .row-title { color: var(--secondary); }
 @media (pointer: coarse) { .team-archived-toggle { min-height: 44px; } }
+/* Entwurf 2c: "▸ 6 in Konrad's team" under a closed manager in the sidebar tree (TeamTree.tsx); one tap opens the team */
+.team-more { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; padding: 0 12px 0 calc(8px + var(--depth, 1) * 20px); color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); text-align: left; }
+.team-more:hover { color: var(--text); background: var(--hover); }
+@media (pointer: coarse) { .team-more { min-height: 44px; } }
 
 /* ---------------------------------------------------------------- pages */
 .team-view, .agent-view { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; background: var(--surface); }

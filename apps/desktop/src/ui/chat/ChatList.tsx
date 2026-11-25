@@ -18,6 +18,10 @@
 // its caret opens it (remembered per window; a search shows them all); under a closed parent a sub-chat shows when it is
 // unread, open, or the person opened it in the last RECENT_MS – so the ones he talks to stay in reach – and stays shown
 // until the caret is used, so opening chats moves no row.
+// Entwurf 2 (Mika 24.11.2026): the flat list holds only chats with activity in the last 7 days (pinned, unread, at
+// work or with open tasks always – recent.ts); the rest sits in a collapsed "Older than 7 days" section before "Team
+// activity". The search also finds agents by name and role under "People" (people-search.ts), each with its team and
+// "Message", which opens the default 1:1 (direct.ts) – a sub-agent is two taps away without filling the list.
 // Owns: list ordering, search and rendering the sections. Never: creates chats itself
 // (NewChatDialog), draws header markup (lib/header.tsx does) or defines which chat goes where
 // (shared/text/chat-sections.ts, archive.ts).
@@ -25,14 +29,17 @@
 import { useEffect, useState } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import type { ConversationSummary, Message } from '../../shared/model/chat.ts';
-import { Icon } from '../lib/ui.tsx';
+import { AgentAvatar, Icon } from '../lib/ui.tsx';
 import type { HeaderProps } from '../lib/header.tsx';
 import { Marked } from '../lib/mark.tsx';
 import { DESTINATIONS } from '../lib/vocab.ts';
-import { activeConversationId, agentMap, agentName, conversationMap, conversations, drafts } from '../lib/store.ts';
+import { activeConversationId, agentMap, agentName, agents, conversationMap, conversations, drafts } from '../lib/store.ts';
 import { chatTitle } from '../lib/chat-face.tsx';
 import { rpc } from '../lib/rpc.ts';
-import { navigate } from '../lib/router.ts';
+import { go, navigate } from '../lib/router.ts';
+import { messageMember } from './direct.ts';
+import { findAgents, teamLine } from './people-search.ts';
+import { RECENT_DAYS, splitRecent } from './recent.ts';
 import { focusMessage, newChatOpen } from '../lib/shell-state.ts';
 import { listTime } from '../lib/format.ts';
 import { canStartChat } from '../shell/gates.ts';
@@ -62,7 +69,7 @@ export function chatListHeader(): HeaderProps {
   return {
     title: DESTINATIONS.chats,
     search: {
-      label: 'Search chats', open: state.open, query: state.query,
+      label: 'Search chats and people', placeholder: 'Name, role or chat', open: state.open, query: state.query,
       onQuery: (query) => { search.value = { ...search.peek(), query }; },
       onOpenChange: (open) => { search.value = { ...search.peek(), open }; },
     },
@@ -171,7 +178,9 @@ export function ChatList() {
   // what the row shows: its name and its second line – a draft too ("Draft: …"), not only the last message
   const matches = (chat: ConversationSummary) => !q || chatTitle(chat).toLowerCase().includes(q) || previewText(chat).toLowerCase().includes(q);
   const section = (name: ListSection) => order(all.filter((chat) => listSection(chat) === name && !isThread(chat) && matches(chat)));
-  const main = section('main');
+  // Entwurf 2a: only what is being worked with stays on top; the rest waits in "Older" (recent.ts)
+  const { recent: main, older } = splitRecent(section('main'), Date.now(), agentMap.value);
+  const people = findAgents(agents.value, q);
 
   return (
     <div class="chat-list">
@@ -183,6 +192,27 @@ export function ChatList() {
       <div class="chat-rows" role="list">
         <Rows nodes={nestChats(main, agentMap.value)} activeId={activeId} mark={q} />
       </div>
+      {people.length > 0 && (
+        <div class="search-hits people-hits">
+          <div class="menu-title">People</div>
+          {people.map((agent) => {
+            const team = teamLine(agent, agentName);
+            return (
+              <div class="people-hit" key={agent.id}>
+                <button type="button" class="people-hit-open" onClick={() => go.agent(agent.id)}>
+                  <AgentAvatar agentId={agent.id} size={32} />
+                  <span class="people-hit-text">
+                    <span class="row-title"><Marked text={agent.name} query={q} /></span>
+                    {agent.role && <span class="row-preview"><Marked text={agent.role} query={q} /></span>}
+                    {team && <span class="people-hit-team">{team}</span>}
+                  </span>
+                </button>
+                <button type="button" class="button secondary people-hit-message" onClick={() => messageMember(agent.id)}>Message</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {hits.length > 0 && (
         <div class="search-hits">
           <div class="menu-title">Messages</div>
@@ -203,7 +233,8 @@ export function ChatList() {
           })}
         </div>
       )}
-      <Folded label="Team activity" storageKey="wf.teamActivityOpen" class="team-activity" chats={section('team')} activeId={activeId} reveal={!!q} mark={q} />
+      <Folded label={`Older than ${RECENT_DAYS} days`} storageKey="wf.olderChatsOpen" class="team-activity older-chats" chats={older} activeId={activeId} reveal={!!q} mark={q} />
+      <Folded label="Team activity"storageKey="wf.teamActivityOpen" class="team-activity" chats={section('team')} activeId={activeId} reveal={!!q} mark={q} />
       {/* Same look as Team activity (its spacing comes from .team-activity). */}
       <Folded label="Archived" storageKey="wf.archivedOpen" class="team-activity archived-chats" chats={section('archived')} activeId={activeId} reveal={!!q} mark={q} />
     </div>

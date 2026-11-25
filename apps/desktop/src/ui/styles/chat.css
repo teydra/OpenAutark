@@ -60,6 +60,14 @@
 .chat-list .team-activity { margin-top: 14px; } /* the chat list's folded section, not Team › Activity (team/ActivityView.tsx) */
 .section-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 36px; padding: 0 16px 0 20px; color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); text-align: left; }
 .section-toggle:hover { color: var(--secondary); }
+/* Entwurf 2b: agents found by the chat search – name, role, team, and "Message" (opens the 1:1) */
+.people-hit { display: flex; align-items: center; gap: 8px; padding: 0 14px 0 0; }
+.people-hit:hover { background: var(--hover); }
+.people-hit-open { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 6px 0 6px 20px; text-align: left; color: var(--text); }
+.people-hit-text { display: flex; flex-direction: column; min-width: 0; }
+.people-hit-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-hit-team { color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); }
+.people-hit-message { flex: none; min-height: 32px; }
 
 /* ---------------------------------------------------------------- chat view */
 /* the view is a column: the chat header row over everything, then the body row (chat column | panel) right under it */
