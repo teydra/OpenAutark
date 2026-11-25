@@ -50,6 +50,12 @@ export function stateWords(task: Pick<Task, 'status' | 'waitingOn'>, names: Note
   return `waiting on ${waitWords(task, names)} since ${dueText(wait.since, names.zone, now)}${why ? `: ${excerpt(wait.why, 120)}` : ''}`;
 }
 
+/** Creation is immutable; task movement is not the same as a technical row update. */
+export function taskAge(task: Task, zone: string, now: number): string {
+  const created = `Created on ${dueText(task.createdAt, zone, now)}`;
+  return isFinished(task.status) ? created : `${created} · Idle since ${dueText(task.ledger.movedAt ?? task.createdAt, zone, now)}`;
+}
+
 /** The whole quest or to-do under `heading`. */
 export function renderTask(services: RuntimeServices, task: TaskView, zone: string, heading: string): string {
   const now = services.clock.now();
@@ -59,12 +65,15 @@ export function renderTask(services: RuntimeServices, task: TaskView, zone: stri
   if (task.at !== undefined && task.assigneeKind !== 'agent') head.push(`at ${todoWhen({ at: task.at, minutes: task.minutes }, zone, now)}${task.minutes ? ` for ${task.minutes} min` : ''}`);
   if (task.conversationId) head.push(`handed over in ${task.conversationId}`);
   const lines = [heading, head.join(' · '), `Title: ${task.title}`, `Owner: ${names.nameOf(task.assigneeKind === 'agent' ? task.assigneeId ?? '' : task.assigneeId ?? HUMAN_ID)}`];
+  lines.push(taskAge(task, zone, now));
   const giver = task.assignedBy ?? task.createdBy;
   if (giver !== task.assigneeId && giver !== (task.assigneeId ?? HUMAN_ID)) lines.push(`Given by: ${names.nameOf(giver)}`);
   if (task.doneWhen || !isFinished(task.status)) lines.push(`Done when: ${task.doneWhen || 'not set yet.'}`);
   if (task.status === 'waiting' && task.waitingOn) {
     const state = stateWords(task, names, now);
     lines.push(`${state[0].toUpperCase()}${state.slice(1)}`);
+    const { until, followedUp } = task.waitingOn;
+    if (until !== undefined) lines.push(`Follow-up: ${dueText(until, zone, now)}${followedUp ? ' (sent)' : ''}`);
   }
   if (task.dependsOn?.length) lines.push(`After: ${task.dependsOn.join(', ')}`);
   if (task.notes.trim()) lines.push(`Notes:\n${task.notes.trim()}`);

@@ -156,7 +156,7 @@ export class TaskServiceImpl implements TaskService {
       for (const key of CLEARABLE) if (patch[key] === null) delete draft[key]; else if (patch[key] !== undefined) draft[key] = patch[key]!;
       if (draft.private === false) delete draft.private;
       if (patch.parentId !== undefined) { if (patch.parentId === null) delete draft.parentId; else draft.parentId = patch.parentId; }
-      let moved = false;
+      let moved = draft.notes !== current.notes || draft.title !== current.title || draft.doneWhen !== current.doneWhen;
       if (patch.plan !== undefined) { draft.ledger = { ...draft.ledger, plan: patch.plan.map((line) => line.trim()).filter(Boolean).slice(0, 20) }; moved = true; }
       if (patch.fact?.trim()) {
         const fact = patch.fact.trim();
