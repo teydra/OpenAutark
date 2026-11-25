@@ -16,6 +16,7 @@ import { rpc } from '../lib/rpc.ts';
 import { updateSettings } from '../lib/store.ts';
 import { act, ActionButton, Group, Note, Row, Toggle } from './controls.tsx';
 import { changeOrigin, changeValues, fieldName, opensToTexts } from './security-model.ts';
+import { USAGE_HINT, USAGE_TEXT, USAGE_TITLE } from './usage-count.ts';
 
 export function LibraryGroup(props: { share: boolean; locked: boolean; lockNote: string }) {
   const [pending, setPending] = useState<boolean | null>(null);
@@ -29,6 +30,24 @@ export function LibraryGroup(props: { share: boolean; locked: boolean; lockNote:
     <Group title="Public library" hint="Skills and notes your agents find worth sharing go to library.openautark.com for everyone (public, CC0)">
       <Row label="Share in the public library" hint={props.locked ? props.lockNote : 'Each text is checked for secrets, paths, e-mail addresses and internal names first; what fails a check stays here. Off: nothing is shared, the agents still read the library.'}>
         {props.locked ? <Note>{props.share ? 'On' : 'Off'}</Note> : <Toggle label="Share in the public library" checked={shown} onChange={change} />}
+      </Row>
+    </Group>
+  );
+}
+
+/** 25.11.2026: the anonymous usage count's switch (settings.usage.count, on by default; each PC its own) – the same choice as the first run's tick. */
+export function UsageGroup(props: { on: boolean; locked: boolean; lockNote: string }) {
+  const [pending, setPending] = useState<boolean | null>(null);
+  const shown = pending ?? props.on;
+  const change = (to: boolean) => {
+    if (pending !== null || to === props.on) return;
+    setPending(to);
+    void act(() => updateSettings({ usage: { count: to } }), 'Could not change the usage count').finally(() => setPending(null));
+  };
+  return (
+    <Group title={USAGE_TITLE} hint={USAGE_HINT}>
+      <Row label={USAGE_TITLE} hint={props.locked ? props.lockNote : USAGE_TEXT}>
+        {props.locked ? <Note>{props.on ? 'On' : 'Off'}</Note> : <Toggle label={USAGE_TITLE} checked={shown} onChange={change} />}
       </Row>
     </Group>
   );

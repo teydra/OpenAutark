@@ -163,6 +163,7 @@ export function validateSettings(s: Settings): void {
   oneOf(s.onboarding.step, 'onboarding.step'); // B-044 first run
   boolean(s.feedback.includeDiagnostics, 'feedback.includeDiagnostics');
   if (s.library !== undefined) { if (!isPlain(s.library)) bad('library', 'an object'); boolean(s.library.publish, 'library.publish'); } // B-078
+  if (s.usage !== undefined) { if (!isPlain(s.usage)) bad('usage', 'an object'); boolean(s.usage.count, 'usage.count'); } // 25.11.2026
   if (s.security !== undefined) validateSecurity(s.security, bad); // owner 19.11.2026: the mode and its switches (security-keys.ts)
   boolean(s.pwa.enabled, 'pwa.enabled');
   oneOf(s.pwa.bind, 'pwa.bind');

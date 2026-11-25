@@ -30,7 +30,7 @@ test('defaults cover the full Settings shape with the confirmed values', () => {
   assert.deepEqual(s.notifications.pushFor, ['todo', 'blocker', 'important']);
   assert.equal(s.preferences.sidebarWidth, 288);
   assert.equal(s.preferences.enterSends, true);
-  assert.deepEqual(Object.keys(s).sort(), ['day', 'devices', 'feedback', 'library', 'notifications', 'onboarding', 'preferences', 'profile', 'pwa', 'routing', 'security', 'voice']); // day: B-041 My day; library: B-078; security: 19.11.2026
+  assert.deepEqual(Object.keys(s).sort(), ['day', 'devices', 'feedback', 'library', 'notifications', 'onboarding', 'preferences', 'profile', 'pwa', 'routing', 'security', 'usage', 'voice']); // day: B-041 My day; library: B-078; security: 19.11.2026; usage: 25.11.2026
   assert.deepEqual(s.voice.vocabulary, []);
 });
 

@@ -299,7 +299,7 @@ test('22.11.2026: the sections keep the form PCs since 0.3.13 send; every other 
   const shared = syncedSettings(settings as unknown as Settings);
   const units: string[] = [];
   for (const section of SECTIONS) {
-    if (['devices', 'pwa', 'security'].includes(section.key)) { assert.equal(shared[section.key], undefined, `${section.key} stays on each PC`); continue; }
+    if (['devices', 'pwa', 'security', 'usage'].includes(section.key)) { assert.equal(shared[section.key], undefined, `${section.key} stays on each PC`); continue; }
     if (section.free) { assert.deepEqual(shared[section.key], { prv_1: { kind: 'openai' } }, `${section.key} travels whole`); continue; }
     assert.deepEqual(Object.keys((shared[section.key] ?? {}) as object).sort(), [...(SECTION_FORM[section.key] ?? [])].sort(), `${section.key}: the frozen form (a section added later: units only)`);
     for (const key of section.keys) if (!SECTION_FORM[section.key]?.includes(key.key) && !(section.key === 'preferences' && LAYOUT_KEYS.includes(key.key))) units.push(`${section.key}.${key.key}`);

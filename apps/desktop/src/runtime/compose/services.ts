@@ -71,6 +71,8 @@ import { Spend } from '../spend/ledger.ts';
 import { Context } from '../context/service.ts';
 import { WorkPresence } from '../work-presence/service.ts'; // B-055 G (Q11)
 import '../work-presence/contract.ts'; // RuntimeServices.workPresence
+import { UsageCount } from '../usage/service.ts'; // 25.11.2026: the anonymous usage count
+import '../usage/contract.ts'; // RuntimeServices.usage
 import { SubconsciousImpl } from '../subconscious/service.ts';
 import { ContextLedgerService } from '../context/ledger/service.ts';
 import { startSecurityLog } from '../settings/security-log.ts';
@@ -274,6 +276,8 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   // B-055 G (Q11): who works on which file, from the same run journal events – the "Working nearby" line.
   s.workPresence = new WorkPresence({ services });
   s.workPresence.start();
+  s.usage = new UsageCount({ services }); // 25.11.2026: README › What Autark counts – a count is a consequence of a person's line or an agent's turn, nothing polls
+  s.usage.start();
   s.ledger = new ContextLedgerService({ services }); // the context ledger: captures turns from the run journal, marks by item id (context/ledger)
   s.ledger.start?.();
   startSecurityLog({ bus, settings, kv: new KvRepo(db), now: () => clock.now() }); // Settings › Security's change log (settings/security-log.ts)

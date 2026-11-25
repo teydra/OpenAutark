@@ -194,6 +194,10 @@ export const SECTIONS: readonly SectionDef[] = [
   { key: 'library', title: 'Public skill library (library.openautark.com)', keys: [
     flag('publish', 'Skills and notes worth sharing go to the public library (free for everyone, no sign-in), after the checks find nothing internal or secret', true),
   ] },
+  // 25.11.2026: the anonymous usage count (runtime/usage/service.ts; README › What Autark counts). Every PC its own switch.
+  { key: 'usage', title: 'Anonymous usage count', keys: [
+    flag('count', 'When this PC is used, it adds 1 to an hourly counter of ours at Google Firestore – at most once an hour, only the platform and the UTC hour, no ID, no version, no content (false: nothing is sent)', true),
+  ] },
   { key: 'onboarding', title: 'First run', keys: [
     flag('completed', 'Whether the first run is finished', false),
     choice('step', 'The first-run card on screen (done = finished)', ONBOARDING_STEPS, 'tour'),

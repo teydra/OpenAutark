@@ -58,6 +58,7 @@ export const SECTIONS: readonly SectionInfo[] = [
     'security', 'trust ai', 'trust', 'secure', 'secure mode', 'mode', 'access', 'full access', 'careful', 'permissions', 'sandbox',
     'folders', 'files', 'commands', 'computer use', 'apps', 'phone', 'money', 'spending', 'publish', 'messages', 'accounts',
     'agreements', 'requests', 'approve', 'robot', 'captcha', 'not a robot', 'every agent', 'all agents', 'library',
+    'usage', 'usage count', 'anonymous', 'counter', 'count', 'telemetry', 'analytics', 'privacy', 'statistics', // 25.11.2026: UsageGroup
   ] },
   { id: 'apps', title: 'Apps', icon: 'squares-four', file: { path: 'connectors/mcp.json', label: 'Open mcp.json' }, requires: ['apps.list'], keywords: [
     'apps', 'connected apps', 'connections', 'integrations', 'mcp', 'mcp servers', 'notion', 'linear', 'github', 'zapier', 'mail', 'mailbox', 'email', 'reconnect', 'sign in', 'tools', 'add by address', 'token', 'test',

@@ -27,11 +27,12 @@ import { rpc } from '../lib/rpc.ts';
 import { can, canEditOwnerSettings, HTTPS_NOTE, PC_NOTE, session } from '../lib/session.ts';
 import { settings } from '../lib/store.ts';
 import { Group } from './controls.tsx';
-import { ChangesGroup, LibraryGroup } from './security-changes.tsx';
+import { ChangesGroup, LibraryGroup, UsageGroup } from './security-changes.tsx';
 import { ModeRow, TopicField } from './security-fields.tsx';
 import { plainNote } from './security-model.ts';
 import { RequestsGroup } from './security-requests.tsx';
 import { ScopeList, SwitchRow } from './security-switches.tsx';
+import { usageOn } from './usage-count.ts';
 
 /** The note of a session that may not change the company's settings (as on General). */
 function lockNote(): string {
@@ -140,6 +141,7 @@ function SecurityBody(props: { settings: Settings }) {
       </Group>
       {security.mode === 'trust' ? <TrustGroups {...shown} /> : <SecureGroups {...shown} />}
       <LibraryGroup share={share} locked={!editable} lockNote={note} />
+      <UsageGroup on={usageOn(props.settings)} locked={!editable} lockNote={note} />
       <ChangesGroup token={`${JSON.stringify(security)}|${share}`} topics={topics} />
       <RequestsGroup /> {/* last: answering one changes only the page's end, nothing above it moves (review M5) */}
     </>

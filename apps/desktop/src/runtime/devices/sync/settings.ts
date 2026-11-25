@@ -47,7 +47,7 @@ const LEGACY = 'settings';
 const KEPT = 'sync.settings';
 const MAX_KEPT = 100;
 const MAX_KEPT_CHARS = 64 * 1024;
-const LOCAL_SECTIONS: ReadonlySet<string> = new Set(['devices', 'pwa', 'security']);
+const LOCAL_SECTIONS: ReadonlySet<string> = new Set(['devices', 'pwa', 'security', 'usage']); // usage (25.11.2026): each PC counts itself, with its own switch
 const LAYOUT: ReadonlySet<string> = new Set(['sidebarOpen', 'sidebarWidth', 'workspaceOpen', 'workspaceWidth']);
 const FREE: ReadonlySet<string> = new Set(SECTIONS.filter((section) => section.free).map((section) => section.key));
 const KEYS: ReadonlyMap<string, readonly string[]> = new Map(SECTIONS.map((section) => [section.key, section.keys.map((key) => key.key)]));

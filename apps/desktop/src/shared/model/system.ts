@@ -22,6 +22,12 @@ export interface LibrarySettings {
   publish: boolean;
 }
 
+/** 25.11.2026: the anonymous usage count (runtime/usage, README › What Autark counts). Each PC keeps its own switch: it never travels with the settings sync. */
+export interface UsageSettings {
+  /** This PC adds 1 to our hourly counter when it is used – no id, no version, no content (default on). */
+  count: boolean;
+}
+
 export interface Preferences {
   theme: 'system' | 'light' | 'dark';
   sidebarOpen: boolean;
@@ -116,6 +122,8 @@ export interface Settings {
   devices: DeviceSettings;
   /** B-078: the public skill library; absent in settings read before it existed (then publish counts as on). */
   library?: LibrarySettings;
+  /** 25.11.2026: the anonymous usage count; absent in settings read before it existed (then it counts as on). */
+  usage?: UsageSettings;
   /** The API connections, by id (shared/model/provider-entries.ts); absent while there are none. */
   providers?: Record<string, ProviderEntry>;
   /** Owner 19.11.2026: the security mode and its switches (shared/model/security-settings.ts); read it with securityOf. */
