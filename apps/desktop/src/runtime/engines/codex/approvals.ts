@@ -72,6 +72,17 @@ function writePaths(profile: unknown): string[] {
 
 const clip = (text: string) => (text.length > 200 ? `${text.slice(0, 199)}…` : text);
 
+/** A request this mapping does not know is declined; the model reads why. */
+const UNKNOWN_STEP = 'BLOCKED – not executed. The app does not know this kind of approval request, so it declined it; this step did not run, and I never report it as done.';
+
+/**
+ * The line steered into a Codex turn after a refused approval request: the gate's text, marked as the app's own – a steered
+ * line reads like a user message, and this one is not the person's.
+ */
+export function refusalSteer(text: string): Array<Record<string, unknown>> {
+  return [{ type: 'text', text: `[Autark app – security gate, not a message from the person] The step you just asked approval for: ${text}`, text_elements: [] }];
+}
+
 /** One Secure-mode turn's approval requests through the gate. */
 export class CodexGate {
   private readonly security: SecurityService;
@@ -95,9 +106,17 @@ export class CodexGate {
 
   /** The answer to one approval request: the gate's, for this step only. */
   async answer(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return (await this.decide(method, params)).response;
+  }
+
+  /**
+   * The answer and, when the step was refused, the gate's text for the model (25.11.2026): Codex's decline carries no
+   * words of ours – the model only reads Codex's own "rejected" – so the turn steers this text in (turn.ts).
+   */
+  async decide(method: string, params: Record<string, unknown>): Promise<{ response: Record<string, unknown>; refused?: string }> {
     const step = this.step(method, params);
-    const result = step ? await gateNative(this.security, { ...step, ...this.turn, signal: this.signal }) : { ok: false };
-    return approvalResponse(method, params, result.ok, true);
+    const result = step ? await gateNative(this.security, { ...step, ...this.turn, signal: this.signal }) : { ok: false as const, text: UNKNOWN_STEP };
+    return { response: approvalResponse(method, params, result.ok, true), ...(result.ok ? {} : { refused: result.text }) };
   }
 
   private step(method: string, params: Record<string, unknown>): Omit<NativeStep, keyof NativeTurn | 'signal'> | undefined {

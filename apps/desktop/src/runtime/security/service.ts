@@ -8,8 +8,11 @@
 // FX2 (19.11.): "once" goes to one call of the asking agent only (approvals.ts); a request without chat/task takes them
 // from its run (an engine's own tool), so the late answer wakes the agent where it was working; folders handed to the
 // engines are real paths (policy.ts realPath).
-// Owns: SecurityService, the requests' life (approvals.ts), the wake after a late answer and the apps a "once" opened for
-// the computer helper a moment. Never: decides (policy.ts), maps tool calls (tool-gate.ts), lets an agent answer.
+// 25.11.2026 (Andrea Griffiths' test: a declined command, and the agent still said it was done): every refusal the agent
+// reads starts with BLOCKED and ends with notDone() – nothing ran, never report it as done –, and a declined or closed
+// step stands as a quiet "Blocked: …" line in the chat it was asked from, whatever the engine tells its model.
+// Owns: SecurityService, the requests' life (approvals.ts), the wake after a late answer, the refusal texts, the
+// "Blocked" line and the apps a "once" opened for the computer helper a moment. Never: decides (policy.ts), maps tool calls (tool-gate.ts), lets an agent answer.
 
 import { statSync } from 'node:fs';
 import path from 'node:path';
@@ -108,12 +111,16 @@ export class Security implements SecurityService {
     const decision = decide(this.current(), this.places(), req);
     if (decision.verdict === 'open') return { ok: true };
     const name = this.personName();
-    if (decision.verdict === 'closed') return { ok: false, text: closedText(decision.why ?? 'security', name, this.pcName()) };
+    if (decision.verdict === 'closed') {
+      const where = this.whereFrom(req);
+      this.blockedLine(where.chatId, req.agentId, req.summary, `${SECURITY_LABELS[decision.capability]} is closed on ${this.pcName()}`, req.agentName);
+      return { ok: false, text: `${BLOCKED} ${closedText(decision.why ?? 'security', name, this.pcName())} ${notDone(name)}` };
+    }
     const store = this.approvals();
     if (store.take(req.agentId, req.fingerprint)) return { ok: true };
     const request = store.find(req.agentId, req.fingerprint) ?? this.open(req, decision.capability);
     const answer = await store.wait(request.id, this.waitMs, req.signal);
-    if (answer === 'decline') return { ok: false, text: `${name} declined "${request.summary}". This step stays closed; I go on with what is open and leave this part out.` };
+    if (answer === 'decline') return { ok: false, text: declinedText(request.summary, name) };
     if (answer === 'waiting') return { ok: false, text: waitingText(request, name, this.pcName()) };
     if (answer === 'spent') return { ok: false, text: `${name} allowed "${request.summary}" once, and that one time went to the same step running alongside this one; this call did not run.` };
     return { ok: true };
@@ -157,6 +164,7 @@ export class Security implements SecurityService {
     if (answer === 'once' && !settled.waited) store.grant(request.agentId, request.fingerprint);
     if (answer !== 'decline' && request.capability === 'computer' && request.place?.kind === 'app') this.onceApps.set(request.place.value, s.clock.now());
     if (request.todoId) closeApprovalTodo(s, request.todoId, answer, answerLabel(request, answer));
+    if (answer === 'decline') this.blockedLine(request.chatId, request.agentId, request.summary, `${this.personName()} declined it`, request.agentName);
     if (!settled.waited) this.wake(request, answer);
   }
 
@@ -204,8 +212,8 @@ export class Security implements SecurityService {
     const s = this.services();
     const name = this.personName();
     const note = answer === 'decline'
-      ? `${name} declined "${request.summary}". This step stays closed; I go on with what is open.`
-      : `${name} answered my request "${request.summary}": ${answerLabel(request, answer)}. The same step goes through now${answer === 'once' ? ' – once' : ''}.`;
+      ? declinedText(request.summary, name)
+      :`${name} answered my request "${request.summary}": ${answerLabel(request, answer)}. The same step goes through now${answer === 'once' ? ' – once' : ''}.`;
     try {
       s.wakes?.wake({
         agentId: request.agentId, reason: 'answer', note, coalesceKey: `security:${request.id}`,
@@ -214,6 +222,23 @@ export class Security implements SecurityService {
       });
     } catch (error) {
       s.log.warn('security answer wake not queued', { id: request.id, error: String(error) });
+    }
+  }
+
+  /**
+   * A refused step as a quiet line in the chat it was asked from (Andrea Griffiths' test 25.11.2026: a declined command
+   * must be seen as blocked, not hidden behind the agent's "done"): "Blocked: <agent> – <step> did not run (<why>)."
+   * Nothing without a chat or a chat service; never throws.
+   */
+  private blockedLine(chatId: string | undefined, agentId: string, summary: string, why: string, agentName?: string): void {
+    if (!chatId) return;
+    const s = this.services();
+    try {
+      const who = s.org?.get(agentId)?.name ?? agentName?.slice(0, 80) ?? agentId;
+      const step = summary.replace(/\s+/g, ' ').trim().slice(0, 200);
+      s.chats?.status(chatId, { type: 'note', text: `Blocked: ${who} – "${step}" did not run (${why}).`, details: { blocked: true, agentId } });
+    } catch (error) {
+      s.log.warn('blocked line not posted', { chatId, error: String(error) });
     }
   }
 
@@ -255,9 +280,25 @@ export function answerLabel(request: Pick<ApprovalRequest, 'capability' | 'place
   }
 }
 
+/**
+ * The first words of every refusal the model reads (Andrea Griffiths' test 25.11.2026: after a declined command the agent
+ * still reported "done"): nothing of the step ran, whatever the engine's own wording around it says.
+ */
+export const BLOCKED = 'BLOCKED – not executed.';
+
+/** What every refusal ends with: a step that did not run is never reported as done. */
+export function notDone(name: string): string {
+  return `Nothing of this step happened. I must not report it, or the work that needed it, as done: my answer tells ${name} plainly that it was blocked and what is still missing because of it.`;
+}
+
+/** The person declined the step (at once or after the call gave up waiting). */
+export function declinedText(summary: string, name: string): string {
+  return `${BLOCKED} ${name} declined "${summary}". ${notDone(name)} Then I go on with what is still open, without working around it.`;
+}
+
 /** The call gave up waiting; the request stays and the answer wakes me. */
 function waitingText(request: StoredRequest, name: string, pc: string): string {
-  return `${SECURITY_LABELS[request.capability]} is closed on ${pc}, so the app asked ${name} for "${request.summary}". ${name} has not answered yet: the request stays in ${name}'s to-dos; when they answer, I'm woken and the same step goes through. Until then I work on what is open and leave this step as it is.`;
+  return `${BLOCKED} ${SECURITY_LABELS[request.capability]} is closed on ${pc}, so the app asked ${name} for "${request.summary}". ${name} has not answered yet: the request stays in ${name}'s to-dos; when they answer, I'm woken and the same step goes through. Until then this step did not run and I never report it as done – if I answer before that, I say it waits for ${name}'s answer – and I work on what is open.`;
 }
 
 function folderExists(target: string): boolean {

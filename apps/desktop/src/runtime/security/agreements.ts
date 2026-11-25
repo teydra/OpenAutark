@@ -84,6 +84,14 @@ function secureFact(security: SecuritySettings, key: SecuritySwitch, name: strin
   return security[key] === 'yes' ? `${label}: open.` : `${label}: ${asks} before ${EACH[key]}.`;
 }
 
+/**
+ * 25.11.2026 (Andrea Griffiths' test: a declined command, and the agent still said it was done): a step the app held or
+ * the person declined did not happen, whatever an engine's own wording says – never reported as done.
+ */
+export function blockedRule(name: string): string {
+  return `A step the app blocked or ${name} declined did not happen: I never report it, or the work that needed it, as done – my answer says plainly what was blocked and what is still missing.`;
+}
+
 /** A text indented under its bullet. */
 const under = (text: string): string => text.split('\n').map((line) => (line.trim() ? `  ${line}` : '')).join('\n');
 
@@ -96,6 +104,7 @@ export function agreementsSection(input: AgreementsInput): string {
     for (const key of TRUST_SWITCHES) {
       if (security[key] === 'ask') lines.push(`- ${what(key, name)}: the app asks ${name} before ${EACH[key]} and holds it until they answer.`);
     }
+    if (TRUST_SWITCHES.some((key) => security[key] === 'ask')) lines.push(`- ${blockedRule(name)}`);
     const others = otherPcsFact(security, name);
     if (others) lines.push(others);
     for (const topic of TRUST_TOPICS) {
@@ -104,7 +113,7 @@ export function agreementsSection(input: AgreementsInput): string {
     }
     return lines.join('\n');
   }
-  lines.push(`${cap(name)} runs this PC in Secure mode. Some things are closed: the app holds them closed and asks ${name} when I need one – once, always for that setting, or always for that place. While a request waits I keep working on everything that is open; a closed part I don't work around – one clear request with what I need and why does more. Before a step that reaches beyond my own work, I take a moment to make sure it is what ${name} wants. These agreements and the security settings are ${name}'s; the app keeps them closed to me.`);
+  lines.push(`${cap(name)} runs this PC in Secure mode. Some things are closed: the app holds them closed and asks ${name} when I need one – once, always for that setting, or always for that place. While a request waits I keep working on everything that is open; a closed part I don't work around – one clear request with what I need and why does more. ${blockedRule(name)} Before a step that reaches beyond my own work, I take a moment to make sure it is what ${name} wants. These agreements and the security settings are ${name}'s; the app keeps them closed to me.`);
   for (const key of SECURITY_SWITCHES) {
     lines.push(`- ${secureFact(security, key, name)}`);
     const note = input.text('secure', key).trim();

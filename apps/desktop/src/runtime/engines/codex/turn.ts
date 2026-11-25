@@ -23,7 +23,7 @@ import type { RpcClient } from './rpc.ts';
 import type { RpcNote } from '../line-rpc.ts';
 import { RpcError } from './rpc.ts';
 import type { CodexServer } from './server.ts';
-import { APPROVAL_METHODS, approvalResponse, declineUserInput, type CodexSecure } from './approvals.ts';
+import { APPROVAL_METHODS, approvalResponse, declineUserInput, refusalSteer, type CodexSecure } from './approvals.ts';
 import { turnPermissions, type TurnAccess } from './isolation.ts';
 import { ERR, ToolNames, contextText, isRecord, nearestEffort, num, outputImages, outputText, safeCall, str, tryJson } from '../shared.ts';
 import type { Effort } from '../../../shared/model/providers.ts';
@@ -334,7 +334,13 @@ export async function runCodexTurn(args: {
         ],
       };
     }
-    if (APPROVAL_METHODS.has(method)) return args.secure ? args.secure.gate.answer(method, params) : approvalResponse(method, params, args.access !== 'read');
+    if (APPROVAL_METHODS.has(method)) {
+      if (!args.secure) return approvalResponse(method, params, args.access !== 'read');
+      // 25.11.2026: a refused step's reason reaches the model as a steered line – Codex's decline carries none of ours.
+      const { response, refused } = await args.secure.gate.decide(method, params);
+      if (refused && turnId) await rpc.request('turn/steer', { threadId, expectedTurnId: turnId, input: refusalSteer(refused) }, 10_000).catch(() => undefined);
+      return response;
+    }
     if (method === 'item/tool/requestUserInput') return declineUserInput();
     if (method === 'mcpServer/elicitation/request') return { action: 'decline' };
     throw new RpcError(-32601, 'This action is not available.');

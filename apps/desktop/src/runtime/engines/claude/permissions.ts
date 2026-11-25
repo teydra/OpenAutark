@@ -18,7 +18,7 @@
 import * as path from 'node:path';
 import type { FileScope, SecurityService } from '../../security/service.ts';
 import type { SecuritySwitch } from '../../../shared/model/security-settings.ts';
-import { effectOf, gateNative, nativeFingerprint, type NativeTurn } from '../codex/native-gate.ts';
+import { effectOf, GATE_FAILED, gateNative, nativeFingerprint, type NativeTurn } from '../codex/native-gate.ts';
 import { isRecord, str } from '../shared.ts';
 import { HUB_SERVER } from './stream.ts';
 
@@ -136,7 +136,7 @@ export function hostRequests(write: (line: string) => boolean, secure: ClaudeSec
       write(`${JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: id, response } })}\n`);
     };
     secure.answer(request, AbortSignal.any([signal, own.signal]))
-      .then(answer, () => answer({ behavior: 'deny', message: 'The app could not check this step, so it did not run.' }));
+      .then(answer, () => answer({ behavior: 'deny', message: GATE_FAILED }));
     return true;
   };
 }

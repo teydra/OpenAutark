@@ -37,7 +37,7 @@ test('Trust AI mode: the mode line names the folder; a grave switch on ask is on
     'No bot checks.',
   ].join('\n'));
   const asks = agreementsSection(input({ ...securityDefaults('trust'), money: 'ask', publish: 'ask', commands: 'ask' }));
-  assert.match(asks, /\n- Spending money: the app asks Ada before each payment and holds it until they answer\.\n- Publishing: the app asks Ada before each post and holds it until they answer\.\n\n### How I decide\n/);
+  assert.match(asks, /\n- Spending money: the app asks Ada before each payment and holds it until they answer\.\n- Publishing: the app asks Ada before each post and holds it until they answer\.\n- A step the app blocked or Ada declined did not happen: I never report it, or the work that needed it, as done – my answer says plainly what was blocked and what is still missing\.\n\n### How I decide\n/);
   assert.doesNotMatch(asks, /Running commands/, 'Trust AI mode reads only its three switches');
   assert.equal(agreementsSection(input(securityDefaults('trust'))), open, 'deterministic');
 });

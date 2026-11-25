@@ -68,7 +68,7 @@ export interface NativeStep extends NativeTurn {
 }
 
 /** The text a step gets when the gate itself failed: nothing ran. */
-export const GATE_FAILED = 'The app could not check this step, so it did not run. I go on with what is open and try it again later.';
+export const GATE_FAILED = 'BLOCKED – not executed. The app could not check this step, so it did not run and is not done; I try it again later and until then never report it as done.';
 
 /**
  * Asks the gate about one native step. With files: all open → through at once; otherwise the request names the first
