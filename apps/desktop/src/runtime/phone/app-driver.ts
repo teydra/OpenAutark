@@ -49,11 +49,15 @@ export interface AppPhonesDeps {
   /** The device list (names of phones). */
   devices(): Device[];
   timeoutMs?: number;
+  idleMs?: number;
   timers?: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void };
 }
 
 interface Attached { model?: string; screen?: { width: number; height: number }; ready: boolean; sockets: number }
-interface Pending { deviceId: string; resolve(value: unknown): void; reject(error: Error): void; timer: unknown; off?: () => void }
+interface Pending { deviceId: string; job?: string; resolve(value: unknown): void; reject(error: Error): void; timer: unknown; off?: () => void }
+
+/** Without a phone step of its run for this long (and none waiting), the phone hears 'done' – the AI is thinking or finished (owner 24.11.2026). */
+export const PHONE_IDLE_MS = 15_000;
 
 const realTimers = {
   set: (fn: () => void, ms: number) => { const timer = setTimeout(fn, ms); timer.unref?.(); return timer as unknown; },
@@ -68,6 +72,7 @@ export class AppPhones implements PhoneDriver {
   private readonly pending = new Map<string, Pending>();
   /** Runs that sent a step, and the phones they used: each hears 'done' when its run ends. */
   private readonly jobs = new Map<string, Set<string>>();
+  private readonly idle = new Map<string, unknown>();
   private readonly offs: Array<() => void>;
 
   constructor(deps: AppPhonesDeps) {
@@ -82,6 +87,7 @@ export class AppPhones implements PhoneDriver {
   stop(): void {
     for (const off of this.offs.splice(0)) off();
     for (const [id, entry] of [...this.pending]) this.settle(id, entry, new WorkforceError('unavailable', 'Autark is shutting down.'));
+    for (const job of [...this.idle.keys()]) this.unidle(job);
   }
 
   /** True when an app phone with this serial (device id) is attached. */
@@ -190,7 +196,7 @@ export class AppPhones implements PhoneDriver {
     const ms = limitMs ?? this.deps.timeoutMs ?? APP_PHONE_TIMEOUT_MS;
     const by = step?.by?.replace(/\s+/g, ' ').trim().slice(0, 60);
     return new Promise((resolve, reject) => {
-      const entry: Pending = { deviceId, resolve, reject, timer: undefined };
+      const entry: Pending = { deviceId, ...(step?.job ? { job: step.job } : {}), resolve, reject, timer: undefined };
       entry.timer = timers.set(() => this.settle(id, entry, new WorkforceError('timeout', `The phone did not answer within ${Math.round(ms / 1000)} s (the app may be closed by the system, or the screen locked).`)), ms);
       if (step?.signal) {
         const cancel = () => this.settle(id, entry, new WorkforceError('cancelled', 'Cancelled.'));
@@ -198,7 +204,7 @@ export class AppPhones implements PhoneDriver {
         entry.off = () => step.signal?.removeEventListener('abort', cancel);
       }
       this.pending.set(id, entry);
-      if (step?.job) this.used(step.job, deviceId);
+      if (step?.job) { this.used(step.job, deviceId); this.unidle(step.job); }
       this.deps.bus.emit('phoneUse.request', { deviceId, id, op, args, ...(step?.job ? { job: step.job } : {}), ...(by ? { by } : {}) });
     });
   }
@@ -207,6 +213,7 @@ export class AppPhones implements PhoneDriver {
   private finished(job: string | undefined): void {
     const devices = job ? this.jobs.get(job) : undefined;
     if (!job || !devices) return;
+    this.unidle(job);
     this.jobs.delete(job);
     for (const deviceId of devices) {
       if (this.attached.has(deviceId)) this.deps.bus.emit('phoneUse.request', { deviceId, id: `pu_${randomBytes(8).toString('hex')}`, op: 'done', args: {}, job });
@@ -226,7 +233,22 @@ export class AppPhones implements PhoneDriver {
     this.pending.delete(id);
     (this.deps.timers ?? realTimers).clear(entry.timer);
     entry.off?.();
+    if (entry.job) this.idleSoon(entry.job);
     if (error) entry.reject(error); else entry.resolve(value);
+  }
+
+  private unidle(job: string): void {
+    const handle = this.idle.get(job);
+    if (handle === undefined) return;
+    this.idle.delete(job);
+    (this.deps.timers ?? realTimers).clear(handle);
+  }
+
+  /** A step of this run ended: when no other step of it waits and none follows within PHONE_IDLE_MS, the phone hears 'done'. */
+  private idleSoon(job: string): void {
+    this.unidle(job);
+    for (const other of this.pending.values()) if (other.job === job) return;
+    this.idle.set(job, (this.deps.timers ?? realTimers).set(() => { this.idle.delete(job); this.finished(job); }, this.deps.idleMs ?? PHONE_IDLE_MS));
   }
 
   private answer(reply: PhoneUseReply & { deviceId: string }): void {

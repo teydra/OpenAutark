@@ -5,6 +5,7 @@
 // Never: exposes the private key outside this object, or writes it unencrypted anywhere.
 
 import type { KeyObject } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import type { Db } from '../db/database.ts';
 import type { Host } from '../host.ts';
@@ -16,6 +17,20 @@ import { DevicesRepo, type DeviceRecord } from './repo.ts';
 import { b64url, exportPrivate, fingerprintOf, generateEd25519, importPrivate, rawPublic, signEd25519 } from './keys.ts';
 
 const NS = 'device';
+
+/** The name of a PC nobody renamed: on a Mac the one its person set (System Settings › Sharing, `scutil --get ComputerName`),
+ *  else – and when scutil fails or hangs – the host name; a Mac's ends in ".local" there, which people never say. */
+export function defaultPcName(deps: { platform?: string; hostname?: () => string; scutil?: () => string } = {}): string {
+  const platform = deps.platform ?? process.platform;
+  const hostname = (deps.hostname ?? os.hostname)();
+  if (platform !== 'darwin') return hostname;
+  try {
+    const run = deps.scutil ?? (() => execFileSync('scutil', ['--get', 'ComputerName'], { encoding: 'utf8', timeout: 1000, stdio: ['ignore', 'pipe', 'ignore'] }));
+    const name = String(run()).trim();
+    if (name) return name.slice(0, 80);
+  } catch { /* fall back */ }
+  return hostname.replace(/\.local$/i, '') || hostname;
+}
 
 interface StoredIdentity {
   deviceId: string;
@@ -56,7 +71,7 @@ export class DeviceIdentity {
     const existing = repo.get(identity.deviceId);
     const record: DeviceRecord = {
       id: identity.deviceId,
-      name: existing?.name ?? input.name ?? os.hostname(),
+      name: existing?.name ?? input.name ?? defaultPcName(),
       kind: 'pc',
       role: 'home',
       fingerprint: identity.fingerprint,

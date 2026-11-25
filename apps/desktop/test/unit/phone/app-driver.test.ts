@@ -12,10 +12,10 @@ import { WorkforceError } from '../../../src/shared/errors.ts';
 import { HandTimers } from '../remote/rig.ts';
 import { recordingBus } from '../devices/fakes.ts';
 
-function rig() {
+function rig(idleMs?: number) {
   const { bus } = recordingBus();
   const timers = new HandTimers();
-  const phones = new AppPhones({ bus, devices: () => [{ id: 'dev_phone0000001', name: 'Pixel 8' } as never], timers });
+  const phones = new AppPhones({ bus, devices: () => [{ id: 'dev_phone0000001', name: 'Pixel 8' } as never], timers, ...(idleMs ? { idleMs } : {}) });
   const requests: PhoneUseRequest[] = [];
   bus.on('phoneUse.request', (request) => requests.push(request));
   const reply = (deviceId: string, id: string, body: { result?: unknown; error?: { code: string; message: string } }) => bus.emit('phoneUse.reply', { deviceId, id, ...body });
@@ -211,7 +211,7 @@ test('each step names its agent as by (folded, at most 60 characters); without o
 });
 
 test('say: a line goes as op say within the step limit; a question waits up to 75 s and brings back yes, no or none', async () => {
-  const { phones, requests, reply, timers } = rig();
+  const { phones, requests, reply, timers } = rig(1_000_000); // the idle end has its own test
   const line = phones.say(undefined, '  Sending Anna\nthe photo ', undefined, { job: 'run_abc', by: 'Felix' });
   await tick();
   assert.deepEqual({ op: requests[0].op, args: requests[0].args, job: requests[0].job, by: requests[0].by }, { op: 'say', args: { text: 'Sending Anna the photo' }, job: 'run_abc', by: 'Felix' });
@@ -312,6 +312,33 @@ test('a run that used the phone sends done once when it ends; other runs and run
   bus.emit('run.upserted', { id: 'run_abc', status: 'done' } as never);
   assert.equal(requests.length, 2, 'once');
   reply('dev_phone0000001', requests[1].id, { error: { code: 'bad_request', message: 'Unknown step done.' } }); // an older app: nobody waits
+});
+
+test('a run without a phone step for the idle time sends done; a new step or a waiting step holds it back', async () => {
+  const { phones, requests, reply, timers } = rig();
+  const first = phones.key(undefined, 'back', { job: 'run_idle' });
+  await tick();
+  timers.fire(15_000);
+  assert.equal(requests.length, 1, 'a step in flight is not idle');
+  reply('dev_phone0000001', requests[0].id, { result: { key: 'back' } });
+  await first;
+  const second = phones.key(undefined, 'home', { job: 'run_idle' }); // before the idle time: the first timer is gone
+  await tick();
+  timers.fire(15_000);
+  assert.equal(requests.length, 2);
+  reply('dev_phone0000001', requests[1].id, { result: { key: 'home' } });
+  await second;
+  timers.fire(15_000);
+  assert.equal(requests.length, 3);
+  assert.deepEqual({ op: requests[2].op, job: requests[2].job }, { op: 'done', job: 'run_idle' });
+  timers.fire(15_000);
+  assert.equal(requests.length, 3, 'once');
+  const again = phones.key(undefined, 'back', { job: 'run_idle' }); // the next step brings the bubble back and counts anew
+  await tick();
+  reply('dev_phone0000001', requests[3].id, { result: {} });
+  await again;
+  timers.fire(15_000);
+  assert.equal(requests.length, 5);
 });
 
 // Konrad 19.11.2026 guessed SimplySign's package twice and never opened it: an app opens by the name under its icon.
