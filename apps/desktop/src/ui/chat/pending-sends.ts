@@ -1,5 +1,6 @@
 // The composer's outgoing lines, separate from the canonical transcript. The request's clientId
 // matches the stored message, even if the server rewrote the text (e.g. saved pasted keys).
+// Owns: pending send state and reconciliation. Never: renders or sends requests.
 import { batch, signal } from '@preact/signals';
 import type { ParamsOf } from '../../shared/api/methods.ts';
 import type { Attachment, Message } from '../../shared/model/chat.ts';

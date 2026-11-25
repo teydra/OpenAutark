@@ -183,20 +183,7 @@ export class Dictation {
     this.deps = deps;
   }
 
-  /** Preview only this take, even if another chat records during its final transcription. */
-  previewFor(chatId: string): (() => string) | undefined {
-    const take = this.heardTake;
-    if (take?.options.chatId !== chatId) return;
-    let words = '';
-    const preview = () => {
-      const pieces = this.heardPieces.value;
-      if (take === this.heardTake) words = joinPieces(pieces.flatMap((piece) => piece.text ? [{ text: piece.text }] : [])).text;
-      return words;
-    };
-    preview();
-    return preview;
-  }
-
+  get heardSource(): Readonly<HearOptions> | undefined { return this.heardTake?.options; }
   /** A take holds the microphone. */
   get active(): boolean { return this.take !== null; }
 

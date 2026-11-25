@@ -39,6 +39,7 @@ import { ReplyQuote } from './ReplyQuote.tsx';
 import { draftFor, flushDraft, setReply, updateDraft } from './composer/draft.ts';
 import { sendDraft } from './composer/send.ts';
 import { addPending, pendingSends, removePending } from './pending-sends.ts';
+import { joinPieces } from '../lib/take-pieces.ts';
 import { dictation } from '../lib/dictation.ts';
 import { newId } from '../../shared/ids.ts';
 import { createTaskFromText, parseSlash, runSlash, sendMenuItems } from './composer/slash.ts';
@@ -61,6 +62,20 @@ import type { SpanMark } from '../../shared/voice/marks.ts';
 import { markAt } from './composer/draft-marks.ts';
 import { MarkLayer } from './composer/MarkLayer.tsx';
 import { MarkMenu } from './composer/MarkMenu.tsx';
+
+/** Preview only this take: another chat can start recording before the last piece comes back. */
+function dictationPreview(chatId: string): (() => string) | undefined {
+  const source = dictation.heardSource;
+  if (source?.chatId !== chatId) return;
+  let words = '';
+  const preview = () => {
+    const pieces = dictation.heardPieces.value;
+    if (source === dictation.heardSource) words = joinPieces(pieces.flatMap((piece) => piece.text ? [{ text: piece.text }] : [])).text;
+    return words;
+  };
+  preview();
+  return preview;
+}
 
 export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
   const { chat } = props;
@@ -168,7 +183,7 @@ export function Composer(props: { chat: ConversationSummary; slim?: boolean }) {
     const early = dictating.peek() === chat.id || transcribing.peek().has(chat.id) ? newId('req') : undefined;
     if (early) addPending({
       clientId: early, conversationId: chat.id, body: draft.peek().text.trim(), attachments: draft.peek().attachments,
-      state: 'transcribing', preview: dictation.previewFor(chat.id),
+      state: 'transcribing', preview: dictationPreview(chat.id),
     });
     try {
       // A running take stops, a stopped one is waited for: its words go out with the draft. One that came back as a

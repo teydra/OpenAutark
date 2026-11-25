@@ -1,6 +1,7 @@
 // A stored own message has reached the connected PC. Only show a second tick if an addressed
 // agent is homed here. Chat cursors can advance on sync or on a later turn; they are not proof
 // that this line reached a remote PC or was in an individual model call.
+// Owns: interpreting confirmed messages for the UI. Never: estimates remote delivery.
 import type { Member, Message } from '../../shared/model/chat.ts';
 import { HUMAN_ID } from '../../shared/ids.ts';
 
