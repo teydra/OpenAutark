@@ -8,13 +8,14 @@ import type { MethodName, ParamsOf, ResultOf } from '../shared/api/methods.ts';
 import type { Topic } from '../shared/api/protocol.ts';
 import type { Preferences, Settings, SettingsPatch } from '../shared/model/system.ts';
 
-export type DesktopPreferences = Pick<Preferences, 'theme' | 'openAtLogin' | 'autoDownloadUpdates'>;
+export type DesktopPreferences = Pick<Preferences, 'theme' | 'openAtLogin' | 'autoDownloadUpdates' | 'keepPcAwake'>;
 
 /** Same defaults as the runtime (src/runtime/settings/defaults.ts). */
 export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
   theme: 'system',
   openAtLogin: false,
   autoDownloadUpdates: false,
+  keepPcAwake: true,
 };
 
 export interface SettingsRpc {
@@ -43,6 +44,7 @@ export class SettingsView {
       theme: prefs?.theme ?? DEFAULT_DESKTOP_PREFERENCES.theme,
       openAtLogin: prefs?.openAtLogin ?? DEFAULT_DESKTOP_PREFERENCES.openAtLogin,
       autoDownloadUpdates: prefs?.autoDownloadUpdates ?? DEFAULT_DESKTOP_PREFERENCES.autoDownloadUpdates,
+      keepPcAwake: prefs?.keepPcAwake ?? DEFAULT_DESKTOP_PREFERENCES.keepPcAwake,
     };
   }
 
@@ -84,7 +86,7 @@ export class SettingsView {
 
 /** Which desktop-relevant preferences differ (all of them on the first load). */
 export function changedPreferences(next: Settings, previous: Settings | null): Array<keyof DesktopPreferences> {
-  const keys: Array<keyof DesktopPreferences> = ['theme', 'openAtLogin', 'autoDownloadUpdates'];
+  const keys: Array<keyof DesktopPreferences> = ['theme', 'openAtLogin', 'autoDownloadUpdates', 'keepPcAwake'];
   if (!previous) return keys;
   return keys.filter(key => next.preferences[key] !== previous.preferences[key]);
 }

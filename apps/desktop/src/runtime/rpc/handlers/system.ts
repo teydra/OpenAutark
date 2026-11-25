@@ -47,7 +47,7 @@ const SECURE_DEVICE_SETTINGS: ReadonlySet<string> = new Set(['routing', 'voice',
 /** Preferences that change the PC itself (login item, updates). Owner 12.11.2026: my own securely paired
  * phone reaches all my settings, so a secure 'settings' device changes them too (main applies them on change); a plain-LAN
  * device or a colleague does not. */
-const PC_PREFERENCES: ReadonlySet<string> = new Set(['openAtLogin', 'autoDownloadUpdates']);
+const PC_PREFERENCES: ReadonlySet<string> = new Set(['openAtLogin', 'autoDownloadUpdates', 'keepPcAwake']);
 const MAX_TOPICS = 256;
 const MAX_DRAFT = 100_000;
 /** The answer to every caller of system.prepareRestart but main's own link – read by the agent whose script called it. */

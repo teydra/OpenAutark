@@ -122,7 +122,7 @@ export function validateSettings(s: Settings): void {
   oneOf(ui.theme, 'preferences.theme');
   intIn(ui.sidebarWidth, 'preferences.sidebarWidth');
   intIn(ui.workspaceWidth, 'preferences.workspaceWidth');
-  for (const key of ['sidebarOpen', 'workspaceOpen', 'enterSends', 'openAtLogin', 'autoDownloadUpdates'] as const) boolean(ui[key], `preferences.${key}`);
+  for (const key of ['sidebarOpen', 'workspaceOpen', 'enterSends', 'openAtLogin', 'autoDownloadUpdates', 'keepPcAwake'] as const) boolean(ui[key], `preferences.${key}`);
   if (ui.navOrder !== undefined && (!Array.isArray(ui.navOrder) || ui.navOrder.length > NAV_ORDER_MAX || ui.navOrder.some((key) => typeof key !== 'string' || !NAV_KEY.test(key)))) {
     bad('preferences.navOrder', `a list of up to ${NAV_ORDER_MAX} destination keys such as "tasks"`);
   }

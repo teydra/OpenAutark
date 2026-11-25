@@ -31,6 +31,8 @@ export interface Preferences {
   enterSends: boolean;
   openAtLogin: boolean;
   autoDownloadUpdates: boolean;
+  /** 0.3.20: this PC does not go to standby while the app runs and the PC is on mains power (main/keep-awake.ts); the screen may still turn off. */
+  keepPcAwake: boolean;
   /** The person's order of the rail's destinations (ui/shell/nav-order.ts); [] or absent = the default order. */
   navOrder?: string[];
 }
