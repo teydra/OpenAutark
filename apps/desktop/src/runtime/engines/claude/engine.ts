@@ -75,6 +75,7 @@ import { ClaudeRebuilder } from './rebuilder.ts';
 import { nodeFiles, type FileOps } from './rebuild.ts';
 import { AGENT_ENV, CeilingFlag, LEAN_ENV, coreTools, hubConfig, promptArgs } from './lean.ts';
 import { asAgent } from '../wf-shim.ts'; // B-085
+import { withOwnTemp } from '../temp-env.ts'; // 25.11.2026
 import { ClaudeKept, KEPT_GONE } from './kept.ts'; // KI-Runde 17.11.2026: a call voice's kept process
 import { ClaudeTurns, type Attempt } from './turns.ts';
 import { secureTurn } from './permissions.ts'; // Sicher-Runde 19.11.2026: Secure mode
@@ -219,7 +220,8 @@ export class ClaudeEngine implements Engine {
       if (input.outputSchema) args.push('--json-schema', JSON.stringify(input.outputSchema));
       args.push(...(target ? ['--resume', target.resume, ...(target.fork ? ['--fork-session', '--session-id', target.fork] : [])] : ['--session-id', sessionId]));
       const content = await this.content(traceRefused ? { ...input, input: [traceInput(input.trace!.calls), ...input.input] } : input);
-      const env = asAgent({ ...this.status.envFor(input.account), ...LEAN_ENV, ...(agentTurn ? AGENT_ENV : {}), ...target?.env }, agentTurn ? input.agentId : undefined); // B-085: its wf writes as the agent; AGENT_ENV: a one-hour cache for an agent's session
+      const plain = asAgent({ ...this.status.envFor(input.account), ...LEAN_ENV, ...(agentTurn ? AGENT_ENV : {}), ...target?.env }, agentTurn ? input.agentId : undefined); // B-085: its wf writes as the agent; AGENT_ENV: a one-hour cache for an agent's session
+      const env = secure ? withOwnTemp(plain, this.deps.tempDir) : plain; // 25.11.2026: Secure mode's own temp folder (temp-env.ts)
       const fresh = !resume && agentTurn ? { ref: sessionId, generation } : undefined; // B-080: announced at the CLI's system/init
       if (fresh || resume) this.trust.opened(input.account, fresh?.ref ?? resume!); // pending until the turn's end seals it
       ran = await this.turns.attempt(exe.command, args, env, input, content, fresh, secure);

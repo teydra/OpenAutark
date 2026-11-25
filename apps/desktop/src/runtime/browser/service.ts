@@ -22,6 +22,7 @@ import { snapshotChanges } from './diff.ts';
 import { isChallengeAnswer, isHumanCheck } from './human-check.ts';
 import { runSteps, type BatchStep } from './batch.ts';
 import type { BatchOutcome, Mark, PageState, Reviewed, TabInfo } from './states.ts';
+import { passSite, takeHeld, type NavGuard } from './nav-guard.ts';
 
 export type { BatchStep } from './batch.ts';
 export type { BatchOutcome, Mark, PageState, Reviewed, TabInfo } from './states.ts';
@@ -39,6 +40,8 @@ export interface BrowserDeps {
   idleMs?: number; // default 10 min
   actionTimeoutMs?: number; // default 10 s
   settleMs?: number; // pause after an action before the verifying snapshot (default 400 ms)
+  /** 25.11.2026: Secure mode's check of a tab's move to another site (nav-guard.ts); absent: none. */
+  guard?: NavGuard;
 }
 
 export class BrowserService {
@@ -71,11 +74,14 @@ export class BrowserService {
       : input.tab ? this.pool.page(session, input.tab) : activePage(session) ?? await session.context.newPage();
     this.pool.track(session, page);
     session.active = page;
+    passSite(session, url); // its site passed the gate (browser.open) or the person opened it (nav-guard.ts)
+    takeHeld(session);
     let response: unknown;
     try {
       response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     } catch (error) {
-      throw translateError(error, undefined);
+      const held = takeHeld(session); // a redirect of the page's own script to another site
+      throw held ? new WorkforceError('forbidden', held) : translateError(error, undefined);
     } finally {
       this.pool.changed(agentId);
     }
@@ -103,11 +109,15 @@ export class BrowserService {
     if (!input.steps.length || input.steps.length > BATCH_MAX) throw new WorkforceError('bad_request', `A batch has 1 to ${BATCH_MAX} steps.`);
     const { session, page, tab } = await this.tabOf(agentId, input.tab, input.use);
     const before = this.mark(session, page);
+    takeHeld(session);
     const run = await runSteps(page, input.steps, {
       tab, motion: input.motion ?? DEFAULT_MOTION, timeoutMs: this.timeout(), file: (file) => workspaceFile(this.deps.paths.workspace, file), secret: input.secret,
       stop: () => (this.takeovers.active(agentId) ? PERSON_USING : undefined),
     });
-    return { ...await this.review(session, page, before, input.full), ...run, total: input.steps.length };
+    const reviewed = await this.review(session, page, before, input.full);
+    const held = takeHeld(session); // 25.11.2026: a click or form that would have moved the tab to a site not open yet
+    if (held) reviewed.changes = { ...reviewed.changes, text: `${held}\n${reviewed.changes.text}`.trim() };
+    return { ...reviewed, ...run, total: input.steps.length };
   }
 
   /** What the agent last saw of `page` – before steps; review() compares against it. */

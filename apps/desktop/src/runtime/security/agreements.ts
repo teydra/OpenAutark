@@ -54,8 +54,8 @@ function otherPcsFact(security: SecuritySettings, name: string): string {
 
 /** The company's own folders as policy.ts ownFolders() has them (FX1 M4: what is open, truthfully). */
 const OWN: Readonly<Record<'read' | 'write', string>> = {
-  read: "the team's own folders: the workspace and its projects, the company's data folder (not its keys, secrets, sign-ins or database), the app's resources and the temp folders",
-  write: "the team's own folders: the workspace and its projects (not its shared skills), my home and the memory in the company's data folder, and the temp folders",
+  read: "the team's own folders: the workspace and its projects, the company's data folder (not its keys, secrets, sign-ins or database), the app's resources and the company's own temp folder (my shells' TEMP; not the PC's shared temp)",
+  write: "the team's own folders: the workspace and its projects (not its shared skills), my home and the memory in the company's data folder, and the company's own temp folder (my shells' TEMP; not the PC's shared temp)",
 };
 
 /** A topic text's heading (the general text: how I decide in Trust AI mode, when I check in Secure mode). */
@@ -80,6 +80,10 @@ function secureFact(security: SecuritySettings, key: SecuritySwitch, name: strin
     if (security.computer === 'yes') return `${label}: open for every app; ${own}`;
     if (security.computer === 'chosen' && security.computerApps.length) return `${label}: open for ${list(security.computerApps)}; for any other app ${asks} first; ${own}`;
     return `${label}: ${asks} before ${EACH.computer}; ${own}`;
+  }
+  if (key === 'web' && security.web === 'chosen') { // 25.11.2026: a search is open, a new site asks once
+    const sites = security.webDomains ?? [];
+    return `${label}: searching is open${sites.length ? `, and so are ${list(sites)} with their subdomains` : ''}; before my first visit to any other site ${asks} – once, or always for that site.`;
   }
   return security[key] === 'yes' ? `${label}: open.` : `${label}: ${asks} before ${EACH[key]}.`;
 }

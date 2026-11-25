@@ -358,7 +358,7 @@ function keySchema(def: KeyDef, pc: PcDefaults): Plain {
   const value = defaultOf(def, pc);
   const nullable = value === undefined;
   if (def.type === 'array') {
-    Object.assign(out, { type: 'array', ...(def.options ? { items: { enum: def.options }, uniqueItems: true } : {}) });
+    Object.assign(out, { type: nullable ? ['array', 'null'] : 'array', ...(def.options ? { items: { enum: def.options }, uniqueItems: true } : {}) }); // nullable: security.webDomains
   } else {
     out.type = nullable ? [def.type, 'null'] : def.type;
     if (def.options && def.type !== 'boolean') out.enum = nullable ? [...def.options, null] : def.options;

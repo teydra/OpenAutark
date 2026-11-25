@@ -46,8 +46,13 @@ const engine = (spawn: any, security?: () => any) => new CodexEngine({
 
 test('codex secure: the turn\'s sandbox and approval policy follow the security scope', () => {
   assert.deepEqual(turnPermissions('full', { write: ['/work', 'relative'], commands: 'ask' }), {
-    approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandboxPolicy: { type: 'workspaceWrite', writableRoots: ['/work'], networkAccess: true },
+    approvalPolicy: 'untrusted', approvalsReviewer: 'user',
+    sandboxPolicy: { type: 'workspaceWrite', writableRoots: ['/work'], networkAccess: true, excludeTmpdirEnvVar: true, excludeSlashTmp: true },
   });
+  // 25.11.2026: the PC's temp folders are no write root in Secure mode; the sandbox's network only when the web is open everywhere
+  assert.equal((turnPermissions('full', { write: ['/work'], commands: 'ask', web: 'yes' }).sandboxPolicy as any).networkAccess, true);
+  assert.equal((turnPermissions('full', { write: ['/work'], commands: 'ask', web: 'chosen' }).sandboxPolicy as any).networkAccess, false);
+  assert.equal((turnPermissions('full', { write: ['/work'], commands: 'ask', web: 'ask' }).sandboxPolicy as any).networkAccess, false);
   assert.equal(turnPermissions('full', { write: ['/work'], commands: 'yes' }).approvalPolicy, 'on-request');
   assert.deepEqual(turnPermissions('full', { write: 'all', commands: 'yes' }).sandboxPolicy, { type: 'dangerFullAccess' });
   assert.deepEqual(turnPermissions('read', { write: 'all', commands: 'yes' }).sandboxPolicy, { type: 'readOnly', networkAccess: false }, 'a read turn stays read-only');
@@ -63,7 +68,7 @@ test('codex secure: approval requests go through the gate, for this step only', 
   assert.equal(result.stop, 'done');
   const start = server.requests.find((r) => r.method === 'turn/start').params;
   assert.equal(start.approvalPolicy, 'untrusted');
-  assert.deepEqual(start.sandboxPolicy, { type: 'workspaceWrite', writableRoots: ['/work'], networkAccess: true });
+  assert.deepEqual(start.sandboxPolicy, { type: 'workspaceWrite', writableRoots: ['/work'], networkAccess: true, excludeTmpdirEnvVar: true, excludeSlashTmp: true });
   assert.deepEqual(server.replies.get(901), { decision: 'accept' }, 'never for the session');
   assert.deepEqual(server.replies.get(902), { decision: 'decline' });
   assert.deepEqual(fake.gates.map((g) => [g.capability, g.path, g.summary]), [
@@ -71,6 +76,22 @@ test('codex secure: approval requests go through the gate, for this step only', 
     ['commands', undefined, 'Run: npm install'],
   ]);
   assert.ok(fake.gates.every((g) => g.agentId === 'ag_1' && g.signal instanceof AbortSignal && g.fingerprint.startsWith('codex:')));
+});
+
+test('codex secure (25.11.2026): a Secure-mode thread\'s shells get TMP, TEMP and TMPDIR at the own temp folder; Trust keeps the PC\'s', async () => {
+  for (const mode of ['secure', 'trust'] as const) {
+    const server = appServer();
+    const e = new CodexEngine({
+      supervisor: testSupervisor(server.spawn), finder: fakeFinder({ codex: '/bin/codex' }), cwd: '/tmp', version: '0.2.0', realpath: async (dir) => dir,
+      security: fakeSecurity({ mode, gate: () => ({ ok: true }) }).lookup, tempDir: '/data/tmp', shellEnv: { GIT_X: '1' },
+    });
+    await e.run(turnInput().input);
+    await e.dispose();
+    const set = server.requests.find((r) => r.method === 'thread/start').params.config.shell_environment_policy.set;
+    assert.equal(set.GIT_X, '1', `${mode}: the safe git env stays`);
+    if (mode === 'secure') assert.deepEqual([set.TMP, set.TEMP, set.TMPDIR], ['/data/tmp', '/data/tmp', '/data/tmp']);
+    else assert.deepEqual([set.TMP, set.TEMP, set.TMPDIR], [undefined, undefined, undefined]);
+  }
 });
 
 test('codex secure: a Trust-mode company keeps full access and accepts for the session at once', async () => {

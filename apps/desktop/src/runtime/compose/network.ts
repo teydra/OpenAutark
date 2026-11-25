@@ -27,6 +27,7 @@ import { RestartSignIn, signInTool } from '../computer/signin.ts';
 import { KvRepo } from '../store/kv.ts';
 import { BrowserService } from '../browser/service.ts';
 import { startBrowserView } from '../browser/view.ts';
+import type { NavGuard } from '../browser/nav-guard.ts';
 import { PointerHub } from '../pointers/hub.ts'; // B-055
 import { registerSideView } from '../devices/side-view.ts'; // B-076
 import { registerBrowserView } from '../devices/browser-view.ts'; // 21.11.2026
@@ -70,6 +71,15 @@ export interface Network {
   announceCaps(): Promise<void>;
 }
 
+/** Secure mode's site check for the agents' own browsers (browser/nav-guard.ts), read from services.security at each step. */
+export function navGuardOf(services: () => Pick<RuntimeServices, 'security'>): NavGuard {
+  const security = () => { try { return services().security; } catch { return undefined; } };
+  return {
+    active: () => { const now = security()?.current(); return now?.mode === 'secure' && now.web !== 'yes'; },
+    open: (agentId, site) => security()?.check({ agentId, capability: 'web', site, fingerprint: '' }) === 'open',
+  };
+}
+
 export function createNetwork(options: NetworkOptions): Network {
   const { core } = options;
   const s: RuntimeServices = core.services;
@@ -85,7 +95,7 @@ export function createNetwork(options: NetworkOptions): Network {
     s.tools.register(signInTool(signIn));
     void signIn.start();
   }
-  const browser = new BrowserService({ paths: s.paths, log: s.log });
+  const browser = new BrowserService({ paths: s.paths, log: s.log, guard: navGuardOf(services) }); // 25.11.2026: Secure mode's site check (browser/nav-guard.ts)
   startBrowserView(services, browser); // the person's live view of agent browsers (rpc browser.*)
   registerSideView(core.mesh, services); // B-076: this PC's side-browser tabs for the owner's other PCs (mesh side.*)
   registerBrowserView(core.mesh, services); // 21.11.2026: this PC's agents' own browsers for the owner's other PCs (mesh browser.*)

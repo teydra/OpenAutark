@@ -8,9 +8,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CRITICAL_TOPICS, securityDefaults } from '../../../src/shared/model/security-settings.ts';
 import {
-  addTo, answerOptions, changeOrigin, changeValues, choiceLabel, cleanApp, cleanFolder, confirmText, fieldName, firstRunSecurity, listInForce, listKey,
+  addTo, answerOptions, changeOrigin, changeValues, choiceLabel, cleanApp, cleanFolder, cleanSite, COMMANDS_OPEN_HINT, confirmText, fieldName, firstRunSecurity, listInForce, listKey,
   lockedState, LOCK_WORD, MODE_ROWS, MODE_TEXT, modeTitle, needsDoubleConfirm, nextLock, opensToTexts, placeName, plainNote,
-  switchChoices, switchMode, topicWrite,
+  SWITCH_HINT, switchChoices, switchHint, switchMode, topicWrite,
 } from '../../../src/ui/settings/security-model.ts';
 
 test('the two modes: Trust AI and Secure, one or two plain sentences each, and the page\'s two-line text', () => {
@@ -50,7 +50,20 @@ test('the choices per switch, the values\' words and the lists', () => {
   assert.deepEqual(switchChoices('money').map((choice) => choice.label), ['Yes', 'Ask']);
   assert.deepEqual(switchChoices('otherPcs').map((choice) => choice.label), ['Yes', 'Ask', 'No'], 'Umzug 21.11.2026: calls from agents on other PCs');
   assert.equal(choiceLabel('computer', 'chosen'), 'Chosen apps');
-  assert.deepEqual([listKey('read'), listKey('write'), listKey('computer'), listKey('web')], ['readFolders', 'writeFolders', 'computerApps', undefined]);
+  assert.deepEqual([listKey('read'), listKey('write'), listKey('computer'), listKey('web'), listKey('commands')], ['readFolders', 'writeFolders', 'computerApps', 'webDomains', undefined]);
+  // 25.11.2026: the web switch – all sites, the chosen ones (a new one asks once), or ask each time
+  assert.deepEqual(switchChoices('web').map((choice) => [choice.value, choice.label]), [['yes', 'All sites'], ['chosen', 'Chosen sites'], ['ask', 'Ask']]);
+  assert.equal(listInForce(securityDefaults('secure'), 'web'), true, 'Secure mode starts with chosen sites');
+  assert.equal(fieldName('security.webDomains'), 'Chosen sites');
+  assert.deepEqual([cleanSite('https://WWW.Example.com/a?b'), cleanSite('example.org'), cleanSite('docs.example.org:8443'), cleanSite('[::1]')], ['example.com', 'example.org', 'docs.example.org', '::1']);
+  assert.deepEqual([cleanSite(''), cleanSite('two words'), cleanSite('file:///etc/passwd'), cleanSite('data:text/html,x')], [null, null, null, null]);
+  assert.equal(placeName({ kind: 'site', value: 'example.com' }), 'example.com');
+  assert.deepEqual(answerOptions({ capability: 'web', place: { kind: 'site', value: 'example.com' } }).map((option) => option.label), ['Allow once', 'Always: Web', 'Always: example.com', 'Decline']);
+  // Konrad 25.11.2026: commands open in Secure mode reads past the folder rules – the row says so
+  assert.equal(switchHint('secure', 'commands', 'yes'), COMMANDS_OPEN_HINT);
+  assert.equal(COMMANDS_OPEN_HINT, 'Open: commands run without asking and can read any file this user can, including keys');
+  assert.equal(switchHint('secure', 'commands', 'ask'), SWITCH_HINT.commands);
+  assert.equal(switchHint('trust', 'commands', 'yes'), SWITCH_HINT.commands, 'Trust AI mode: commands are open anyway');
   const secure = securityDefaults('secure');
   assert.equal(listInForce(secure, 'read'), true);
   assert.equal(listInForce({ ...secure, read: 'all' }, 'read'), false);

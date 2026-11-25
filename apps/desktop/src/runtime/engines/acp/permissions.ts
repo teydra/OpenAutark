@@ -7,7 +7,7 @@
 // Owns: the kind → switch mapping and the step's line for the person. Never: answers a hub tool's request (turn.ts allows
 // those; the registry gates each call) or picks the option (updates.ts permissionOutcome).
 
-import type { SecuritySwitch } from '../../../shared/model/security-settings.ts';
+import { siteOfUrl, type SecuritySwitch } from '../../../shared/model/security-settings.ts';
 import type { SecurityService } from '../../security/service.ts';
 import { effectOf, gateNative, nativeFingerprint, type NativeTurn } from '../codex/native-gate.ts';
 import { isRecord, str } from '../shared.ts';
@@ -20,7 +20,7 @@ const KINDS: Readonly<Record<string, SecuritySwitch>> = {
 const clip = (text: string) => (text.length > 200 ? `${text.slice(0, 199)}…` : text);
 
 /** What one own tool call's permission request is about: its switch, its files and one line (undefined: nothing to ask). */
-export function acpStep(call: Record<string, unknown>): { capability: SecuritySwitch; paths: string[]; summary: string; tool: string; args: unknown } | undefined {
+export function acpStep(call: Record<string, unknown>): { capability: SecuritySwitch; paths: string[]; summary: string; tool: string; args: unknown; site?: string } | undefined {
   const kind = str(call.kind) ?? 'other';
   if (kind === 'think') return undefined;
   const raw = isRecord(call.rawInput) ? call.rawInput : {};
@@ -30,13 +30,15 @@ export function acpStep(call: Record<string, unknown>): { capability: SecuritySw
   const command = str(raw.command);
   const summary = capability === 'commands' && command ? `Run: ${command}` : title || `${kind} ${paths.join(', ')}`.trim();
   // What it does – its command, files, URL – never the title the CLI words for the person (native-gate.ts effectOf).
-  return { capability, paths, summary: clip(summary), tool: kind, args: effectOf({ ...raw, ...(paths.length ? { paths } : {}) }) };
+  const url = capability === 'web' ? str(raw.url) : undefined;
+  const site = url ? siteOfUrl(url) : ''; // 25.11.2026: web 'chosen' asks once per new site
+  return { capability, paths, summary: clip(summary), tool: kind, args: effectOf({ ...raw, ...(paths.length ? { paths } : {}) }), ...(site ? { site } : {}) };
 }
 
 /** The gate's answer to an own tool call's permission request: true lets it run. */
 export async function acpAllowed(security: SecurityService, turn: NativeTurn, call: Record<string, unknown>, signal: AbortSignal): Promise<boolean> {
   const step = acpStep(call);
   if (!step) return true;
-  const result = await gateNative(security, { ...turn, capability: step.capability, paths: step.paths, summary: step.summary, fingerprint: nativeFingerprint('acp', step.tool, step.args), signal });
+  const result = await gateNative(security, { ...turn, capability: step.capability, paths: step.paths, summary: step.summary, ...(step.site ? { site: step.site } : {}), fingerprint: nativeFingerprint('acp', step.tool, step.args), signal });
   return result.ok;
 }

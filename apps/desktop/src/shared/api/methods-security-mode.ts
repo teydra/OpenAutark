@@ -3,7 +3,7 @@
 // the person's own sessions change that section). Handlers: runtime/rpc/handlers/security-mode.ts.
 // Merged into Methods by module augmentation. Owns: these method shapes. Never: behaviour.
 
-import type { ApprovalAnswer, SecurityMode, SecuritySwitch, SecurityTopic } from '../model/security-settings.ts';
+import type { ApprovalAnswer, ApprovalPlace, SecurityMode, SecuritySwitch, SecurityTopic } from '../model/security-settings.ts';
 
 /** One topic text as Settings › Security shows it: the file's text, or the default with `{{name}}` filled in. */
 export interface TopicText {
@@ -23,8 +23,8 @@ export interface ApprovalRequest {
   capability: SecuritySwitch;
   /** What the agent would do, one line: "Read C:\Users\…\taxes.pdf", "Run: npm install", "Open Excel". */
   summary: string;
-  /** Offered for "always allow this place": a folder (the file's folder) or an app (process name). */
-  place?: { kind: 'folder' | 'app'; value: string };
+  /** Offered for "always allow this place": a folder (the file's folder), an app (process name) or a site (web 'chosen'). */
+  place?: ApprovalPlace;
   /** The chat the agent was working for, when there is one. */
   chatId?: string;
 }

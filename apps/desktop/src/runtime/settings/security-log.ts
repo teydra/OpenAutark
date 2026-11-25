@@ -37,7 +37,7 @@ export const FILE_EDIT: SecurityActor = { kind: 'other', name: 'An edit of the f
 export const LINKED_PC: SecurityActor = { kind: 'other', name: 'A linked PC' };
 
 /** The keys of the section `security` in the order settings.json shows them. */
-const SECURITY_KEYS: ReadonlyArray<keyof SecuritySettings & string> = ['mode', 'read', 'readFolders', 'write', 'writeFolders', 'commands', 'web', 'computer', 'computerApps', 'phone', 'message', 'publish', 'accounts', 'setup', 'team', 'money'];
+const SECURITY_KEYS: ReadonlyArray<keyof SecuritySettings & string> = ['mode', 'read', 'readFolders', 'write', 'writeFolders', 'commands', 'web', 'webDomains', 'computer', 'computerApps', 'phone', 'message', 'publish', 'accounts', 'setup', 'team', 'money'];
 const valueText = (value: unknown): string => (Array.isArray(value) ? value.join(', ') : String(value ?? ''));
 
 /** Each logged setting: its name in the log, where it lives in settings.json (section, key) and its value as text. */

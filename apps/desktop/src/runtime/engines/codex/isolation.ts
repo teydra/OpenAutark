@@ -125,13 +125,17 @@ export function turnAccess(input: Pick<EngineTurnInput, 'tools' | 'mcp' | 'cwd' 
  * open folders (`workspaceWrite` + writableRoots, the network open; full access when files are open everywhere) and runs
  * 'untrusted' when commands ask (Codex asks before every command it does not know as safe), else 'on-request'.
  */
-export function turnPermissions(access: TurnAccess = 'full', secure?: { write: 'all' | string[]; commands: 'yes' | 'ask' }): Record<string, unknown> {
+export function turnPermissions(access: TurnAccess = 'full', secure?: { write: 'all' | string[]; commands: 'yes' | 'ask'; web?: 'yes' | 'chosen' | 'ask' }): Record<string, unknown> {
   if (access === 'full' && secure) {
+    // 25.11.2026: the sandbox's network is open only when the web is open everywhere; otherwise a command's network
+    // access goes to the app as an approval request with its host (approvals.ts), asked once per new site
+    const network = secure.web === undefined || secure.web === 'yes';
     return {
       approvalPolicy: secure.commands === 'ask' ? 'untrusted' : 'on-request',
       approvalsReviewer: REVIEWER,
       sandboxPolicy: secure.write === 'all' ? { type: 'dangerFullAccess' }
-        : { type: 'workspaceWrite', writableRoots: secure.write.filter((dir) => path.isAbsolute(dir)), networkAccess: true }, // Codex takes absolute roots only
+        // Codex takes absolute roots only; 25.11.2026: not the PC's temp folders either (TMPDIR, /tmp) – the own <data>/tmp is a root
+        : { type: 'workspaceWrite', writableRoots: secure.write.filter((dir) => path.isAbsolute(dir)), networkAccess: network, excludeTmpdirEnvVar: true, excludeSlashTmp: true },
     };
   }
   return {
