@@ -1,0 +1,108 @@
+# Owns: proving that the Linux AppImage built with electron-builder's static Type-2 runtime (toolsets.appimage in
+# apps/desktop/package.json) starts on a runner without libfuse2, with the keyring behaviour and the glibc minimum
+# measured, next to the same build with the legacy FUSE2 runtime (toolsets.appimage 0.0.0) as the control (task_gcje1607).
+# Never: publishes, signs, tags, uploads to a release or runs on any branch other than the one named below.
+name: AppImage Type-2 check
+on:
+  push:
+    branches: [feature/appimage-type2]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: appimage-type2-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.2'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci --no-fund --no-audit
+      - run: npm run build
+      - name: Build the AppImage with the configured toolset (package.json) – the Type-2 static runtime
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node -p "'configured toolsets.appimage = ' + JSON.stringify(require('./package.json').build.toolsets)"
+          node scripts/package-desktop.mjs --linux AppImage --x64 --publish never
+          mkdir -p ../../out
+          mv dist/autark-linux-x64.AppImage ../../out/autark-type2.AppImage
+      - name: Build the control with the legacy FUSE2 toolset (0.0.0) from the same unpacked app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node scripts/package-desktop.mjs --linux AppImage --x64 --publish never --prepackaged dist/linux-unpacked -c.toolsets.appimage=0.0.0
+          mv dist/autark-linux-x64.AppImage ../../out/autark-legacy.AppImage
+          ls -l ../../out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: appimages
+          path: out/*.AppImage
+          retention-days: 3
+          compression-level: 0
+
+  check:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: type2, expect_start: pass }
+          - { variant: legacy, expect_start: fail }
+    env:
+      VARIANT: ${{ matrix.variant }}
+      EXPECT_START: ${{ matrix.expect_start }}
+      IMAGE: ${{ github.workspace }}/out/autark-${{ matrix.variant }}.AppImage
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.2'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: appimages
+          path: out
+      - run: chmod +x out/*.AppImage
+      - name: a) libfuse2 is not installed
+        run: bash .github/appimage-type2/checks.sh a
+      - name: b) AppImage type 2 and its runtime
+        if: always()
+        run: bash .github/appimage-type2/checks.sh b
+      - name: c) start under xvfb without libfuse2 and without --appimage-extract-and-run
+        if: always()
+        run: bash .github/appimage-type2/checks.sh c
+      - name: c2) what the Type-2 runtime still needs (fusermount hidden)
+        if: always() && matrix.variant == 'type2'
+        run: bash .github/appimage-type2/checks.sh c2
+      - name: install the test dependencies for d)
+        if: always()
+        working-directory: apps/desktop
+        run: npm ci --no-fund --no-audit --ignore-scripts
+      - name: d) keyring – safeStorage backend and Autark's behaviour
+        if: always()
+        run: bash .github/appimage-type2/checks.sh d
+      - name: e) glibc minimum, runtime and content separately
+        if: always()
+        run: bash .github/appimage-type2/checks.sh e
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: keyring-window-${{ matrix.variant }}
+          path: ${{ runner.temp }}/appimage-keyring-shots-${{ matrix.variant }}/*.png
+          if-no-files-found: ignore

@@ -95,6 +95,9 @@
       "node_modules/onnxruntime-common/**"
     ],
     "artifactName": "autark-${version}-${os}-${arch}.${ext}",
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
     "publish": {
       "provider": "github",
       "owner": "teydra",
