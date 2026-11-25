@@ -140,14 +140,14 @@ final class UseBubble {
 
     /** Invisible until showAfterShot (a step's thread, never the main one): returns once a frame without it reached the
      *  screen, at most WAIT_MS. */
-    void hideForShot() {
+    boolean hideForShot() throws InterruptedException {
         CountDownLatch hidden = new CountDownLatch(1);
         main.post(() -> {
             if (view == null) { hidden.countDown(); return; }
             view.setVisibility(View.INVISIBLE);
             afterFrame(hidden::countDown);
         });
-        await(hidden);
+        return hidden.await(WAIT_MS, TimeUnit.MILLISECONDS);
     }
 
     void showAfterShot() { main.post(() -> { if (view != null) view.setVisibility(View.VISIBLE); }); }

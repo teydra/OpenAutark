@@ -4,9 +4,8 @@
 // with the finger at a side edge – or an accessibility long-click – turns it into the tab), the tab (10 × 36 dp at the nearest side edge; a
 // tap brings the dot back) and the panel beside the dot – icons only: screenshot, dictate, call, send, close (back to
 // the dot) –, one text field (1 line, up to 4), a strip of the shots taken (a tap removes one; at most TodoPost.MAX) and
-// one short status line. Owner 19.11.2026: a draft gets one automatic screenshot – opening the panel takes it only while
-// the draft is empty (no text, no shot); closing and opening again shows the draft as it was; the camera takes one more
-// after the person went somewhere else (UseService.capture – the bubble and this button are hidden for that frame).
+// one short status line. Opening does not capture the screen. The camera adds optional shots; Send captures the
+// current screen (UseService.capture hides both overlays) before any task can go out.
 // Dictation (owner 20.11.2026: as good as the app's own – the phone's recognizer heard "We got to steer" for "Wie geht es
 // dir?") records the voice and the PC hears it, the same path as the app's composer (Dictation: WAV pieces,
 // files.upload, voice.transcribe in the profile's language); the words land at the end of the field once the PC has
@@ -19,10 +18,8 @@
 // dropped there, the button is hidden ("hidden" in SharedPreferences "todo_button") – hidden is hidden, no tab – until
 // the person pulls it out of the round icon in the Autark app's top row (BubblePull: it comes out under the finger and
 // follows it; while it is out there is no second one, and the page's icon hears out() through BubblePull.changed).
-// Holding the dot (HOLD_MS without moving) is a quick task without opening anything: the screenshot at once, the
-// dot's red ring while it records (Dictation), a white ring while the PC hears it after the release, then the words and
-// that one shot go out as above; the dot shows ✓. Nothing heard, no microphone right or a failed post: the panel opens with the shot, the words and one
-// line (a failed post keeps its client id). Where the dot sits and on which side the tab is stays in SharedPreferences "todo_button".
+// Holding the dot starts recording without hiding it. Lifting the finger takes the screenshot and ends recording;
+// after transcription both go out. Cancel aborts. A failed attempt keeps any words and says why.
 // The window never takes key focus: a tap into the field types through BubbleTyping, a tiny app window below the
 // navigation bar (owner 20.11.2026: the keyboard of an overlay covered Home and Back – Android layers the keyboard right
 // above the window it types into, and an accessibility overlay sits above the navigation bar); the field shows the
@@ -68,6 +65,8 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 final class TodoButton {
@@ -111,6 +110,12 @@ final class TodoButton {
         thread.setDaemon(true);
         return thread;
     });
+    // A slow link/upload must never make a send capture a later page.
+    private final ExecutorService sendCapture = Executors.newSingleThreadExecutor(job -> {
+        Thread thread = new Thread(job, "autark-todo-send-shot");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final Runnable onLink = () -> main.post(this::sync);
     private final List<ImageView> buttons = new ArrayList<>();
     /** The call running in the bubble, or null. */
@@ -118,7 +123,7 @@ final class TodoButton {
     /** The hide target while the dot is dragged, and whether the finger is over it. */
     private TextView bin;
     private boolean overBin;
-    /** A screenshot is on its way (a second automatic one never starts meanwhile). */
+    /** A manual screenshot is on its way. */
     private boolean shooting;
 
     private FrameLayout root;
@@ -134,22 +139,21 @@ final class TodoButton {
     /** The panel's dictation take, or null; whether the PC hears it now; whether Send waits for its words. */
     private Dictation dictation;
     private boolean transcribing;
-    private boolean sendAfter;
+    private FutureTask<TodoPost.Shot> sendAfter;
+    private UseLink sendLink;
     private GradientDrawable dotRound;
     private ImageView dotMark;
     private TextView dotCheck;
-    /** The quick task of a hold: its own post (one shot, its client id) and its dictation take. */
-    private final TodoPost quick = new TodoPost();
+    private final TodoHold hold = new TodoHold();
     private Dictation holdTake;
-    private boolean holding;
-    private boolean released;
+    private UseLink holdLink;
+    private String holdWords;
+    private String holdProblem;
+    private FutureTask<TodoPost.Shot> holdShot;
     /** The language the PC hears the person in: the Autark profile's (validated, cached for the PC it came from), else the phone's. */
     private volatile String profileLanguage;
     /** The link whose profile language was asked for; one ask per link (a failed ask lets the next sync ask again). */
     private UseLink languageFor;
-    /** The hold's shot (JPEG and thumbnail), written by the worker before any later job of the worker reads it. */
-    private volatile byte[] holdJpeg;
-    private volatile Bitmap holdThumb;
     private boolean busy;
     /** The text while the window is gone (the link paused); never stored anywhere else. */
     private String draft = "";
@@ -176,23 +180,24 @@ final class TodoButton {
     void close() {
         UseLink.onLinked(null);
         work.shutdownNow();
+        sendCapture.shutdownNow();
         main.post(() -> { closed = true; dropDictation(); dropHold(); remove(); });
     }
 
     // ------------------------------------------------------------------ screenshot frame (a worker thread)
 
     /** Invisible until showAfterShot: returns once a frame without it reached the screen, at most WAIT_MS. */
-    void hideForShot() {
+    boolean hideForShot() throws InterruptedException {
         CountDownLatch hidden = new CountDownLatch(1);
         main.post(() -> {
             if (root == null) { hidden.countDown(); return; }
-            root.setVisibility(View.INVISIBLE);
+            root.setAlpha(0f); // keep the live touch target attached during a PC screenshot
             root.postOnAnimation(() -> main.postDelayed(hidden::countDown, FRAME_MS));
         });
-        try { hidden.await(WAIT_MS, TimeUnit.MILLISECONDS); } catch (InterruptedException stop) { Thread.currentThread().interrupt(); }
+        return hidden.await(WAIT_MS, TimeUnit.MILLISECONDS);
     }
 
-    void showAfterShot() { main.post(() -> { if (root != null) root.setVisibility(View.VISIBLE); }); }
+    void showAfterShot() { main.post(() -> { if (root != null) root.setAlpha(1f); }); }
 
     // ------------------------------------------------------------------ window
 
@@ -428,20 +433,20 @@ final class TodoButton {
             private float downX, downY;
             private int startX, startY;
             private boolean dragging, held;
-            private final Runnable hold = () -> { held = true; holdStart(); };
+            private final Runnable threshold = () -> { if (view == dot && view.isShown()) held = holdStart(); };
 
             @Override public boolean onTouch(View v, MotionEvent event) {
-                if (params == null) return false;
+                if (params == null) { main.removeCallbacks(threshold); return false; }
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         downX = event.getRawX(); downY = event.getRawY();
                         startX = params.x; startY = params.y;
                         dragging = false; held = false;
-                        if (calling == null) main.postDelayed(hold, HOLD_MS); // during a call every tap ends it, however slow
+                        if (calling == null) main.postDelayed(threshold, HOLD_MS); // during a call every tap ends it, however slow
                         return true;
                     case MotionEvent.ACTION_MOVE: {
                         float dx = event.getRawX() - downX, dy = event.getRawY() - downY;
-                        if (!dragging && !held && TodoPlace.dragged(dx, dy, slop)) { dragging = true; main.removeCallbacks(hold); showBin(); }
+                        if (!dragging && !held && TodoPlace.dragged(dx, dy, slop)) { dragging = true; main.removeCallbacks(threshold); showBin(); }
                         if (dragging) {
                             int[] screen = screen();
                             params.x = TodoPlace.clamp(startX + Math.round(dx), dp(DOT_DP), screen[0]);
@@ -452,7 +457,7 @@ final class TodoButton {
                         return true;
                     }
                     case MotionEvent.ACTION_UP:
-                        main.removeCallbacks(hold);
+                        main.removeCallbacks(threshold);
                         if (held) { holdRelease(); return true; }
                         boolean hide = dragging && overBin;
                         removeBin();
@@ -466,9 +471,9 @@ final class TodoButton {
                         }
                         return true;
                     case MotionEvent.ACTION_CANCEL:
-                        main.removeCallbacks(hold);
+                        main.removeCallbacks(threshold);
                         removeBin();
-                        if (held) holdRelease();
+                        if (held && !hold.released()) dropHold();
                         return true;
                     default:
                         return false;
@@ -577,32 +582,40 @@ final class TodoButton {
 
     // ------------------------------------------------------------------ the hold: a quick task from the dot
 
-    /** The finger rests on the dot: the screenshot now, then recording with the red ring (without the microphone right: just the shot). */
-    private void holdStart() {
-        if (busy || holding || calling != null || look != Look.DOT) return;
-        holding = true;
-        released = false;
-        holdJpeg = null;
-        holdThumb = null;
-        quick.clear();
-        if (Build.VERSION.SDK_INT >= 30) run(() -> {
-            byte[][] jpeg = new byte[1][];
-            Bitmap thumb = shot(jpeg);
-            holdJpeg = jpeg[0];
-            holdThumb = thumb;
+    /** At the hold threshold start the same recorder as the panel, without touching the overlay. */
+    private boolean holdStart() {
+        if (busy || calling != null || look != Look.DOT) return false;
+        return hold.begin(() -> {
+            UseLink link = UseLink.linked();
+            if (!Mic.allowed(service)) {
+                holdProblem = german ? "Mikrofon nicht freigegeben – tippe auf das Mikrofon." : "Microphone not allowed – tap the mic to enable it.";
+            } else if (link == null) {
+                holdProblem = german ? "Gerade nicht mit deinem PC verbunden." : UseLink.UNLINKED;
+            } else {
+                Dictation take = new Dictation(service, link, language(), this::holdHeard, this::finishHoldTake);
+                if (take.start()) {
+                    holdTake = take;
+                    holdLink = link;
+                    dotRound.setStroke(dp(3), RED);
+                } else {
+                    take.cancel();
+                    holdProblem = german ? "Das Mikrofon ging nicht auf." : "The microphone did not open.";
+                }
+            }
         });
-        if (!Mic.allowed(service)) return;
-        Dictation take = new Dictation(service, UseLink.linked(), language(), (text, problem) -> holdHeard(text, problem), this::holdRelease);
-        if (!take.start()) return;
-        holdTake = take;
-        dotRound.setStroke(dp(3), RED);
     }
 
-    /** The finger lifted: the PC hears the take (a white ring meanwhile), then holdHeard; nothing recorded – done now. */
+    /** Only a real lift takes the picture; if the recorder hit its limit, its words wait for the lift. */
     private void holdRelease() {
-        if (!holding || released) return;
-        released = true;
-        if (holdTake == null) { holdDone("", null); return; }
+        hold.release(() -> {
+            if (holdTake != null || (holdWords != null && !holdWords.isEmpty())) holdShot = captureAtSend();
+            if (holdTake != null) finishHoldTake();
+            else holdDone();
+        });
+    }
+
+    private void finishHoldTake() {
+        if (holdTake == null) return;
         dotRound.setStroke(dp(3), Color.WHITE);
         holdTake.finish();
     }
@@ -610,76 +623,73 @@ final class TodoButton {
     private void holdHeard(String text, String problem) {
         if (holdTake == null) return;
         holdTake = null;
-        if (dotRound != null) dotRound.setStroke(0, Color.TRANSPARENT);
-        holdDone(text, problem);
+        holdWords = text.trim();
+        holdProblem = problem;
+        if (hold.released()) holdDone();
     }
 
-    /** The hold goes (the service went off): its take is dropped, nothing goes out. */
     private void dropHold() {
         if (holdTake != null) holdTake.cancel();
+        if (holdShot != null) holdShot.cancel(true);
         holdTake = null;
-        holding = false;
+        holdWords = null;
+        holdProblem = null;
+        holdLink = null;
+        holdShot = null;
+        hold.reset();
+        if (dotRound != null) dotRound.setStroke(0, Color.TRANSPARENT);
     }
 
-    /** The language the PC hears the person in: the profile's, else the phone's. */
     private String language() { return SpeechLang.tag(profileLanguage, Locale.getDefault().toLanguageTag()); }
 
-    /** The hold is over: its words go out with its shot, or – no words – the panel opens with the shot and the reason. */
-    private void holdDone(String words, String problem) {
-        if (!holding) return;
-        holding = false;
-        String text = words.trim();
-        if (text.isEmpty()) {
-            boolean mic = Mic.allowed(service);
-            String note = problem != null ? problem : !mic ? null : german ? "Nichts gehört – schreib es hier." : "Nothing heard – type it here.";
-            run(() -> main.post(() -> holdToPanel("", null, note))); // after the worker's capture job: the shot is there (or none came)
+    private void holdDone() {
+        String text = holdWords == null ? "" : holdWords;
+        String problem = holdProblem;
+        UseLink link = holdLink;
+        FutureTask<TodoPost.Shot> picture = holdShot;
+        holdShot = null; // the send now owns the image
+        dropHold();
+        if (text.isEmpty() || problem != null || link != UseLink.linked()) {
+            if (picture != null) picture.cancel(true);
+            holdToPanel(text, null, problem != null ? problem
+                    : link != UseLink.linked() ? unreachableLine()
+                    : german ? "Nichts gehört – schreib es hier." : "Nothing heard – type it here.");
             return;
         }
-        UseLink link = UseLink.linked();
+        TodoPost quick = new TodoPost();
         busy = true;
         run(() -> {
             String note;
-            boolean waits = false;
             try {
-                if (holdJpeg != null && quick.shots().isEmpty()) quick.add(holdJpeg);
-                String[] task = deliver(link, text, quick);
+                String[] task = deliver(link, text, quick, requiredPicture(picture));
                 if (task == null) throw new Failed(german ? "Der PC hat keine Aufgabe zurückgegeben." : "The PC gave no task back.");
                 main.post(this::holdSent);
                 return;
+            } catch (Unreachable error) {
+                note = unreachableLine();
             } catch (Failed error) {
                 note = error.getMessage();
-                waits = error instanceof Unreachable;
             } catch (RuntimeException error) {
                 android.util.Log.w("autark", "to-do quick send failed: " + error.getClass().getName());
                 note = german ? "Senden ging nicht." : "Sending failed.";
             }
             String line = note;
-            boolean wait = waits;
-            main.post(() -> { busy = false; holdToPanel(text, quick.clientId(), line); if (wait && field != null) waitForPc(field.getText().toString(), link); });
+            main.post(() -> { busy = false; holdToPanel(text, quick.clientId(), line); });
         });
     }
 
     private void holdSent() {
         busy = false;
-        quick.clear();
-        holdJpeg = null;
-        holdThumb = null;
         if (dotMark == null) return;
         dotMark.setVisibility(View.GONE);
         dotCheck.setVisibility(View.VISIBLE);
         main.postDelayed(() -> { if (dotMark != null) { dotCheck.setVisibility(View.GONE); dotMark.setVisibility(View.VISIBLE); } }, DONE_MS);
     }
 
-    /** Nothing lost: the panel with the hold's shot, its words and one line (a failed post's client id goes along). */
+    /** Keep the words and failure in the panel. On retry capture the page again with the same client id. */
     private void holdToPanel(String words, String clientId, String note) {
         if (root == null) return;
         if (clientId != null) post.adopt(clientId);
-        byte[] jpeg = holdJpeg;
-        Bitmap thumb = holdThumb;
-        if (jpeg != null && thumb != null && post.add(jpeg)) thumbs.add(thumb);
-        holdJpeg = null;
-        holdThumb = null;
-        quick.clear();
         if (!words.isEmpty() && field != null) {
             String now = field.getText().toString().trim();
             setText(now.isEmpty() ? words : now + " " + words);
@@ -762,12 +772,9 @@ final class TodoButton {
         return view;
     }
 
-    /** The dot tapped: the panel – and, for a new (empty) draft, its one screenshot of what is on the screen right now. */
+    /** Open the draft without capturing a page the person has not sent. */
     private void open() {
-        if (look == Look.PANEL) return;
-        show(Look.PANEL);
-        boolean fresh = post.shots().isEmpty() && (field == null || field.getText().toString().trim().isEmpty());
-        if (fresh && !shooting) shoot();
+        if (!busy && !hold.active() && look != Look.PANEL) show(Look.PANEL);
     }
 
     /** Back to the dot; the text and the shots stay for the next opening (gone only with the service). */
@@ -790,14 +797,17 @@ final class TodoButton {
     // ------------------------------------------------------------------ screenshots
 
     private void shoot() {
-        if (Build.VERSION.SDK_INT < 30 || busy) return;
-        if (post.full()) { say(german ? "Höchstens " + TodoPost.MAX + " Screenshots." : "At most " + TodoPost.MAX + " screenshots."); return; }
+        if (Build.VERSION.SDK_INT < 30 || busy || shooting) return;
+        if (post.shots().size() >= TodoPost.MAX - 1) {
+            say(german ? "Ein Platz bleibt für den Screenshot beim Senden frei." : "One slot is reserved for the screenshot taken on Send.");
+            return;
+        }
         endTyping(); // the keyboard is not part of the screenshot
         shooting = true;
         run(() -> {
             byte[][] jpeg = new byte[1][];
             Bitmap thumb = shot(jpeg);
-            if (thumb == null) { main.post(() -> { shooting = false; say(german ? "Gerade kein Screenshot möglich." : "No screenshot right now."); }); return; }
+            if (thumb == null || jpeg[0] == null) { main.post(() -> { shooting = false; say(german ? "Gerade kein Screenshot möglich." : "No screenshot right now."); }); return; }
             byte[] bytes = jpeg[0];
             main.post(() -> {
                 shooting = false;
@@ -818,13 +828,49 @@ final class TodoButton {
             full = service.capture();
         }
         if (full == null) return null;
-        int[] size = TodoPlace.shotSize(full.getWidth(), full.getHeight());
-        Bitmap scaled = size[0] == full.getWidth() ? full : Bitmap.createScaledBitmap(full, size[0], size[1], true);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        scaled.compress(Bitmap.CompressFormat.JPEG, 85, out);
-        jpeg[0] = out.toByteArray();
+        Bitmap scaled = scaleShot(full);
+        jpeg[0] = shotJpeg(scaled);
         int thumbHeight = dp(THUMB_DP);
         return Bitmap.createScaledBitmap(scaled, Math.max(1, Math.round(scaled.getWidth() * thumbHeight / (float) scaled.getHeight())), thumbHeight, true);
+    }
+
+    private static Bitmap scaleShot(Bitmap full) {
+        int[] size = TodoPlace.shotSize(full.getWidth(), full.getHeight());
+        return size[0] == full.getWidth() ? full : Bitmap.createScaledBitmap(full, size[0], size[1], true);
+    }
+
+    private static byte[] shotJpeg(Bitmap scaled) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        return scaled.compress(Bitmap.CompressFormat.JPEG, 85, out) ? out.toByteArray() : null;
+    }
+
+    /** Queue before dictation finishes or the link is probed. No delayed retry on a later page. */
+    private FutureTask<TodoPost.Shot> captureAtSend() {
+        long deadline = SystemClock.elapsedRealtime() + 650;
+        boolean keyboardWasOurs = typing;
+        endTyping();
+        FutureTask<TodoPost.Shot> picture = new FutureTask<>(() -> {
+            Bitmap full = service.capture(deadline, keyboardWasOurs);
+            if (full == null) return null;
+            byte[] jpeg = shotJpeg(scaleShot(full));
+            return jpeg == null ? null : new TodoPost.Shot(jpeg);
+        });
+        sendCapture.execute(picture);
+        return picture;
+    }
+
+    private TodoPost.Shot requiredPicture(FutureTask<TodoPost.Shot> picture) throws Failed, InterruptedException {
+        if (picture != null) {
+            try {
+                TodoPost.Shot shot = picture.get();
+                if (shot != null) return shot;
+            } catch (ExecutionException error) {
+                android.util.Log.w("autark", "to-do send screenshot failed: " + error.getCause().getClass().getName());
+            }
+        }
+        if (Build.VERSION.SDK_INT < 30) throw new Failed(german ? "Nicht gesendet – Screenshots brauchen Android 11 oder neuer." : "Not sent – screenshots require Android 11 or later.");
+        throw new Failed(german ? "Nicht gesendet – kein Screenshot möglich. Prüfe die Bildschirmfreigabe für Autark und tippe erneut auf Senden."
+                : "Not sent – no screenshot available. Check Autark’s screen access and tap Send again.");
     }
 
     /** The thumbnails, in the order of post.shots(). */
@@ -861,6 +907,7 @@ final class TodoButton {
 
     /** The mic: a tap records (the mic orange), the next tap hands the take to the PC; its words land at the end of the field. */
     private void dictate() {
+        if (busy) return;
         if (dictation != null) { finishDictation(); return; } // a second tap ends the take
         if (!Mic.allowed(service)) {
             collapse();
@@ -900,9 +947,19 @@ final class TodoButton {
             if (field != null) setText(next); else draft = next;
         }
         say(problem != null ? problem : text.isEmpty() ? (german ? "Nichts verstanden." : "Didn't catch that.") : null);
-        boolean send = sendAfter;
-        sendAfter = false;
-        if (send && problem == null) submit();
+        FutureTask<TodoPost.Shot> picture = sendAfter;
+        UseLink link = sendLink;
+        sendAfter = null;
+        sendLink = null;
+        if (picture == null) return;
+        String words = field == null ? "" : field.getText().toString().trim();
+        if (problem != null || (words.isEmpty() && post.shots().isEmpty()) || link != UseLink.linked()) {
+            picture.cancel(true);
+            setBusy(false);
+            if (problem == null && link != UseLink.linked()) waitForPc(words, link);
+            return;
+        }
+        submit(words, link, picture);
     }
 
     /** The take is dropped (the window goes, the link went): nothing more is sent. */
@@ -910,7 +967,9 @@ final class TodoButton {
         if (dictation != null) dictation.cancel();
         dictation = null;
         transcribing = false;
-        sendAfter = false;
+        if (sendAfter != null) { sendAfter.cancel(true); setBusy(false); }
+        sendAfter = null;
+        sendLink = null;
         if (mic != null) { mic.clearColorFilter(); mic.setAlpha(1f); }
     }
 
@@ -936,19 +995,30 @@ final class TodoButton {
 
     private void submit() {
         if (busy || calling != null) return;
-        if (dictation != null) { sendAfter = true; finishDictation(); return; } // Send while recording: the words first, then it sends
         String text = field.getText().toString().trim();
-        List<TodoPost.Shot> shots = post.shots();
-        if (text.isEmpty() && shots.isEmpty()) { say(german ? "Schreib oder sag, was zu tun ist." : "Type or say what needs doing."); return; }
+        if (dictation == null && text.isEmpty() && post.shots().isEmpty()) {
+            say(german ? "Schreib oder sag, was zu tun ist." : "Type or say what needs doing.");
+            return;
+        }
         UseLink link = UseLink.linked();
         if (link == null) { say(german ? "Gerade nicht mit deinem PC verbunden." : UseLink.UNLINKED); return; }
-        post.clientIdFor(text); // the same id for the same draft, a new one when the text or shots changed
         setBusy(true);
-        endTyping();
+        FutureTask<TodoPost.Shot> picture = captureAtSend();
+        if (dictation != null) {
+            sendAfter = picture;
+            sendLink = link;
+            finishDictation();
+        } else {
+            submit(text, link, picture);
+        }
+    }
+
+    private void submit(String text, UseLink link, FutureTask<TodoPost.Shot> picture) {
+        post.clientIdFor(text); // a fresh automatic shot alone never changes a retry's id
         say(german ? "Wird gesendet …" : "Sending …");
         run(() -> {
             try {
-                String[] task = deliver(link, text, post);
+                String[] task = deliver(link, text, post, requiredPicture(picture));
                 if (task == null) throw new Failed(german ? "Der PC hat keine Aufgabe zurückgegeben." : "The PC gave no task back.");
                 main.post(this::sent);
             } catch (Unreachable error) {
@@ -964,12 +1034,12 @@ final class TodoButton {
 
     /** The worker thread: every shot of `from` up (each once), then tasks.quickCreate with its client id; the task read
      *  from the answer, or null. */
-    private String[] deliver(UseLink link, String text, TodoPost from) throws Failed, InterruptedException {
+    private String[] deliver(UseLink link, String text, TodoPost from, TodoPost.Shot currentPage) throws Failed, InterruptedException {
         if (link == null) throw new Unreachable(german ? "Gerade nicht mit deinem PC verbunden." : UseLink.UNLINKED);
         if (!reachable(link)) throw new Unreachable(german ? "Der PC hat nicht geantwortet." : "The PC did not answer.");
         List<String[]> attachments = new ArrayList<>();
-        for (TodoPost.Shot shot : from.shots()) {
-            String name = from.name(shot);
+        for (TodoPost.Shot shot : from.shotsWith(currentPage)) {
+            String name = "screen-" + (attachments.size() + 1) + ".jpg";
             if (shot.fileId == null) {
                 String id = TodoPost.fileId(answer(link, "files.upload", TodoPost.upload(name, shot.jpeg)));
                 if (id == null) throw new Failed(german ? "Der PC hat den Screenshot nicht angenommen." : "The PC did not take the screenshot.");
@@ -1006,7 +1076,12 @@ final class TodoButton {
      * automatic retry: a draft never goes to a PC the person did not see it for.
      */
     private void waitForPc(String text, UseLink link) {
-        say(german ? "Nicht gesendet – dein PC ist nicht erreichbar. Tippe auf Senden, wenn er wieder da ist." : "Not sent – your PC is not reachable. Tap send when it is back.");
+        say(unreachableLine());
+    }
+
+    private String unreachableLine() {
+        return german ? "Nicht gesendet – dein PC ist nicht erreichbar. Tippe auf Senden, wenn er wieder da ist."
+                : "Not sent – your PC is not reachable. Tap send when it is back.";
     }
 
     /** The task is there: ✓, the draft empty, back to the dot. */
@@ -1016,7 +1091,7 @@ final class TodoButton {
         main.postDelayed(() -> { setBusy(false); say(null); if (look == Look.PANEL) collapse(); }, DONE_MS);
     }
 
-    /** The draft went out as a task: no text, no shots – the next opening starts a new draft (with its own screenshot). */
+    /** The draft went out as a task: no text, no shots – the next opening starts a new draft. */
     private void draftSent() {
         post.clear();
         thumbs.clear();
@@ -1055,7 +1130,7 @@ final class TodoButton {
     private String[] route(UseLink link, String text) throws Failed, InterruptedException {
         String[] task;
         try {
-            task = deliver(link, text, post);
+            task = deliver(link, text, post, null);
         } catch (Failed | RuntimeException error) {
             main.post(() -> keepSaid(text)); // nothing said is lost
             throw error instanceof Failed ? (Failed) error : new Failed(german ? "Senden ging nicht." : "Sending failed.");

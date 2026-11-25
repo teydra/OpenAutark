@@ -31,12 +31,15 @@ import android.graphics.Path;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
+import android.os.SystemClock;
 import android.os.Bundle;
 import android.util.Base64;
+import android.util.Log;
 import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -230,21 +233,33 @@ public final class UseService extends AccessibilityService {
     /** The screen as the person's apps draw it – without the bubble and the to-do button (Android 11+; a thread of the
      *  caller's, never the main one). One at a time: Android hands out at most one screenshot per second. Null when
      *  Android handed none over. */
-    Bitmap capture() throws InterruptedException {
+    Bitmap capture() throws InterruptedException { return capture(Long.MAX_VALUE, false); }
+
+    /** A user send has a deadline: don't attach a different page because another capture held the lock. */
+    Bitmap capture(long deadline, boolean waitForKeyboard) throws InterruptedException {
         if (Build.VERSION.SDK_INT < 30) return null;
         synchronized (shooting) {
+            while (waitForKeyboard && keyboardVisible()) {
+                if (SystemClock.elapsedRealtime() >= deadline) return null;
+                Thread.sleep(16);
+            }
+            if (SystemClock.elapsedRealtime() >= deadline) return null;
             AtomicReference<Bitmap> shot = new AtomicReference<>();
             CountDownLatch done = new CountDownLatch(1);
             TodoButton button = todo;
-            bubble.hideForShot();
-            if (button != null) button.hideForShot();
             try {
+                if (!bubble.hideForShot() || (button != null && !button.hideForShot())) return null;
+                if (SystemClock.elapsedRealtime() >= deadline || Thread.currentThread().isInterrupted()) return null;
                 takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
                     @Override public void onSuccess(ScreenshotResult result) {
-                        Bitmap hardware = Bitmap.wrapHardwareBuffer(result.getHardwareBuffer(), result.getColorSpace());
-                        if (hardware != null) shot.set(hardware.copy(Bitmap.Config.ARGB_8888, false));
-                        result.getHardwareBuffer().close();
-                        done.countDown();
+                        try (android.hardware.HardwareBuffer buffer = result.getHardwareBuffer()) {
+                            Bitmap hardware = Bitmap.wrapHardwareBuffer(buffer, result.getColorSpace());
+                            if (hardware != null) shot.set(hardware.copy(Bitmap.Config.ARGB_8888, false));
+                        } catch (RuntimeException error) {
+                            Log.w("autark", "screen capture conversion failed: " + error.getClass().getName());
+                        } finally {
+                            done.countDown();
+                        }
                     }
                     @Override public void onFailure(int code) { done.countDown(); }
                 });
@@ -255,6 +270,13 @@ public final class UseService extends AccessibilityService {
             }
             return shot.get();
         }
+    }
+
+    private boolean keyboardVisible() {
+        for (AccessibilityWindowInfo window : getWindows()) {
+            if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) return true;
+        }
+        return false;
     }
 
     /** A finger's short press at (x, y) – what the person's own tap does, in every app. */
