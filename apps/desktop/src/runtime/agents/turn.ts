@@ -218,14 +218,17 @@ export class TurnExecutor {
       failedAccounts.push(failed.account.id);
       if (attempt.result.error?.details?.declined === true) failedAccounts.push(failed.route.modelId); // 19.11.2026: a model that declined the conversation stays out of this turn on every account
       const limited = accountFailure(attempt.result) === 'limit';
+      const switchedOff = attempt.result.error?.details?.switchedOff === true; // 25.11.2026: the person switched the plan off while the turn ran on it
       const retry = { ...request, interruption: { at: services.clock.now(), reason: attempt.result.error?.message ?? (limited ? 'Usage limit reached.' : 'The model was unavailable.') } };
       try {
         const alternative = turnRoute(plan, await services.router.route(routeRequest(plan, [...failedAccounts])));
         if (failedAccounts.includes(alternative.accountId)) break; // routing has no other account
         turn = await buildTurn(services, plan, retry, alternative, repairNotes);
         bindTurn(request, turn);
-        services.runs.item(request.runId, { kind: 'note', data: { failover: { from: failed.route.modelId, fromAccount: failed.account.id, to: alternative.modelId, toAccount: alternative.accountId, reason: limited ? 'limit' : 'unavailable', ...(afterTools ? { afterTools } : {}) } }, effectStatus: 'none' });
-        const text = failoverText(plan.agent.name, this.runsOn(turn), { failedName: failed.modelName, sameModel: failed.route.modelId === alternative.modelId, limited });
+        // Once in the log, also for a start model the person had set on that plan (pin): the turn goes on the stand-in, nothing is replaced unseen.
+        if (switchedOff) services.log.info('plan switched off – the turn goes on another account', { agentId: plan.agent.id, runId: request.runId, from: failed.route.modelId, fromAccount: failed.account.id, to: alternative.modelId, toAccount: alternative.accountId, pinned: plan.agent.modelPolicy?.pin === failed.route.modelId });
+        services.runs.item(request.runId, { kind: 'note', data: { failover: { from: failed.route.modelId, fromAccount: failed.account.id, to: alternative.modelId, toAccount: alternative.accountId, reason: limited ? 'limit' : 'unavailable', ...(switchedOff ? { switchedOff: true } : {}), ...(afterTools ? { afterTools } : {}) } }, effectStatus: 'none' });
+        const text = failoverText(plan.agent.name, this.runsOn(turn), { failedName: failed.modelName, sameModel: failed.route.modelId === alternative.modelId, limited, switchedOff });
         this.statusLine(services, plan, request.runId, 'model_switched', text, { from: failed.route.modelId, to: alternative.modelId, effort: alternative.effort, reason: limited ? 'limit' : 'unavailable' });
         attempt = mergeAttempts(first, await runAttempt(services, plan, turn, request, out));
         this.accountFailed(services, turn, attempt);

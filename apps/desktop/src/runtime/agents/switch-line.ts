@@ -66,12 +66,12 @@ export function switchText(agent: string, to: SwitchTo, why?: string): string {
 }
 
 /** The failover line: the model (or account) the turn moved away from and why. */
-export function failoverText(agent: string, to: SwitchTo, input: { failedName: string; sameModel: boolean; limited: boolean }): string {
+export function failoverText(agent: string, to: SwitchTo, input: { failedName: string; sameModel: boolean; limited: boolean; switchedOff?: boolean }): string {
   if (input.sameModel) {
-    const why = input.limited ? 'the first one hit its usage limit' : 'the first one is unavailable right now';
+    const why = input.limited ? 'the first one hit its usage limit' : input.switchedOff ? 'the first one was switched off' : 'the first one is unavailable right now';
     return capText(`${agent} → another account · ${runsOnText(to)} – ${why}`);
   }
-  return switchText(agent, to, input.limited ? `${input.failedName} hit its usage limit` : `${input.failedName} is unavailable right now`);
+  return switchText(agent, to, input.limited ? `${input.failedName} hit its usage limit` : input.switchedOff ? `${input.failedName} was switched off` : `${input.failedName} is unavailable right now`);
 }
 
 /**

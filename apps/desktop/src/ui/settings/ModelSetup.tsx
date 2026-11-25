@@ -16,7 +16,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { envKeyProvider, type DetectionReport, type FoundLogin } from '../../shared/model/providers.ts';
 import { choose } from '../lib/dialog.tsx';
 import { rpc } from '../lib/rpc.ts';
-import { accounts, loadModels } from '../lib/store.ts';
+import { accounts, loadModels, settings } from '../lib/store.ts';
 import { pushToast } from '../lib/toasts.ts';
 import { Button } from '../lib/ui.tsx';
 import { PlanButtons, planFlow, usePlanRescan } from '../onboarding/plan-actions.tsx';
@@ -132,7 +132,9 @@ export function ModelSetup(props: { children?: ComponentChildren }) {
       void loadModels(force);
     } catch { /* the rows still show; the buttons say what is missing */ } finally { setScanned(true); }
   };
-  useEffect(() => { void scan(); }, []);
+  // A dismissal or deliberate re-enable on another PC also refreshes an already-open Models view.
+  const declined = JSON.stringify(settings.value?.preferences.declinedLogins ?? []);
+  useEffect(() => { void scan(); }, [declined]);
   usePlanRescan(() => void scan(true));
   const toggle = (next: 'api' | 'local') => setForm(form === next ? null : next);
   const view = planFlow.value.view;

@@ -27,20 +27,24 @@ export interface SwitchFrom { modelId: string; effort: Effort; temperature?: num
 /** Whose line it is, how the turn's temperature reaches its model (sent), whether that temperature is my own request, and when my start model was set (ModelPolicy.pinBy.at). */
 export interface LineOf { agent: string; sent?: boolean; ownTemperature?: boolean; pinAt?: number }
 
-/** The line of this route when its model differs from my last turn's, or its effort does because somebody asked; `from` = what my last turn ran on (none: a first turn, no line). */
+/** The line for a changed model or requested effort, and for an unavailable pin even when there was no previous turn. */
 export function routeLine(route: RouteDecision, modelName: string, from: SwitchFrom | undefined, of: LineOf): RouteLine | undefined {
-  if (!from) return undefined;
-  const model = from.modelId !== route.modelId;
+  const reasons = reasonParts(route.reason);
+  const unavailablePin = reasons.find((reason) => reason.startsWith('pinned model unavailable'));
+  const newPin = of.pinAt !== undefined && from?.at !== undefined && of.pinAt > from.at;
+  const explainPin = !from || newPin ? unavailablePin : undefined;
+  if (!from && !explainPin) return undefined;
+  const model = from !== undefined && from.modelId !== route.modelId;
   const mine = route.by === BY_REQUEST && !subconsciousWhy(route.reason); // my own model.set or my task's
-  const started = of.pinAt !== undefined && from.at !== undefined && of.pinAt > from.at && reasonParts(route.reason).includes(PIN_TEXT.agent);
-  const asked = model || (from.effort !== route.effort && (mine || started));
-  const warmth = of.ownTemperature === true && from.temperature !== route.temperature;
-  if (!asked && !warmth) return undefined;
+  const started = newPin && reasons.includes(PIN_TEXT.agent);
+  const asked = model || (from !== undefined && from.effort !== route.effort && (mine || started));
+  const warmth = of.ownTemperature === true && from?.temperature !== route.temperature;
+  if (!asked && !warmth && !explainPin) return undefined;
   const to = { modelName, effort: route.effort, temperature: route.temperature, sent: of.sent };
   return {
-    text: switchText(of.agent, to, asked ? switchWhy(route, from) : REQUESTED_WHY),
+    text: switchText(of.agent, to, explainPin || (asked && from ? switchWhy(route, from) : REQUESTED_WHY)),
     details: {
-      from: from.modelId, to: route.modelId, effort: route.effort, reason: route.reason, by: route.by,
+      ...(from ? { from: from.modelId } : {}), to: route.modelId, effort: route.effort, reason: route.reason, by: route.by,
       ...(route.temperature !== undefined ? { temperature: route.temperature, temperatureSent: of.sent === true } : {}),
     },
   };

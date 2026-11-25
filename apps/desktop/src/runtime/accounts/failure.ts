@@ -85,6 +85,7 @@ export function recordAccountFailure(deps: FailureDeps, account: Account, model:
     if (fresh && modelOnlyLimit(fresh, now, model)) return failure;
   }
   if (result.error?.details?.local === true || result.error?.details?.stalled === true) return failure; // B-080: our own engine process
+  if (result.error?.details?.switchedOff === true) return failure; // 25.11.2026: the person's own switch – the account is off, not cooling (turn-attempt.ts, stall-watch.ts cutSwitchedOff)
   const wait = result.error?.retryAfterMs ?? (failure === 'limit' ? LIMIT_COOLDOWN_MS : OVERLOAD_COOLDOWN_MS);
   deps.accounts.markLimited(account.id, now + Math.max(MIN_COOLDOWN_MS, wait));
   return failure;

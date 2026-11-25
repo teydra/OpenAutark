@@ -33,6 +33,12 @@ export interface Preferences {
   autoDownloadUpdates: boolean;
   /** The person's order of the rail's destinations (ui/shell/nav-order.ts); [] or absent = the default order. */
   navOrder?: string[];
+  /**
+   * The plan logins the person said "Not here" to (accounts.declineFound), as the offer's keys such as "codex:default": one
+   * list for the whole company – the settings sync carries it between their PCs, so none of them offers the login again.
+   * "Use" / "Add again" take a key out. Absent = none.
+   */
+  declinedLogins?: string[];
 }
 
 export interface NotificationSettings {

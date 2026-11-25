@@ -8,6 +8,11 @@
 // Owns: these assertions only. Never: a real CLI, account or login (the account harness's scripted CLIs).
 
 import { test } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { SettingsStore } from '../../../src/runtime/settings/service.ts';
+import { settingsPatch, syncedSettings } from '../../../src/runtime/devices/sync/settings.ts';
 import assert from 'node:assert/strict';
 import { HandlerTable, allowedScope, secureScope, type HandlerContext } from '../../../src/runtime/rpc/table.ts';
 import { register as registerProviders } from '../../../src/runtime/rpc/handlers/providers.ts';
@@ -61,6 +66,30 @@ test('"Not here": the login stays out of this company, stays on the PC, and "Add
   const again = await h.service.add({ provider: 'codex', detected: true });
   assert.equal(again.provider, 'codex');
   assert.deepEqual(new DismissedLogins(h.db, () => 0).list(), []);
+});
+
+test('"Not here" reaches another PC, survives restart and rescans, and can be undone explicitly', async (t) => {
+  const dirs = ['a', 'b'].map((name) => mkdtempSync(join(tmpdir(), `autark-decline-${name}-`)));
+  t.after(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
+  const seed = harness();
+  const [a, b] = dirs.map((dataDir) => new SettingsStore({ bus: seed.bus, clock: seed.clock, dataDir }));
+  const left = harness({ settings: a });
+  const right = harness({ settings: b });
+  const copy = (from: SettingsStore, to: SettingsStore) => to.update(settingsPatch(to.get(), JSON.parse(JSON.stringify(syncedSettings(from.get())))));
+  assert.deepEqual((await right.service.detect()).found, [CODEX], 'the other PC already has a cached offer');
+  await left.service.declineFound('codex:default');
+  assert.deepEqual(syncedSettings(a.get())['preferences.declinedLogins'], ['codex:default']);
+  assert.deepEqual(new DismissedLogins(left.db, () => 0).list(), [], 'not stored in PC-local dismissal kv');
+  copy(a, b);
+  assert.deepEqual(right.service.lastDetection()?.found, [], 'even a cached scan reflects the synced decision');
+  const reopened = new SettingsStore({ bus: seed.bus, clock: seed.clock, dataDir: dirs[1] });
+  const restarted = harness({ db: right.db, settings: reopened });
+  const scan = await restarted.service.detect(true);
+  assert.deepEqual([scan.found, scan.clis.find((cli) => cli.provider === 'codex')?.dismissed], [[], true]);
+  assert.deepEqual(restarted.repo.list(), []);
+  await restarted.service.add({ provider: 'codex', detected: true });
+  copy(reopened, a);
+  assert.deepEqual(left.service.lastDetection()?.found, [CODEX], 'the deliberate Add again cleared the shared dismissal');
 });
 
 test('an offer that is gone fails clearly; what is not offered cannot be used or declined', async () => {

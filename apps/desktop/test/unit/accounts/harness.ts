@@ -25,6 +25,7 @@ export const ENV_KEY = 'sk-env-test-0123456789abcdef';
 const SIGN_INS = new Set(['login', 'auth login --claudeai', 'login --device-auth']);
 
 export interface HarnessOptions {
+  settings?: import('../../../src/runtime/accounts/dismissed.ts').DeclinedStore;
   env?: NodeJS.ProcessEnv;
   /** Executables the finder knows (null = not installed). */
   clis?: Record<string, string | null>;
@@ -101,6 +102,7 @@ export function harness(options: HarnessOptions = {}) {
     engines: () => ({ get: engine, all: () => [] }),
     mkdir: options.realMkdir ? undefined : async (dir) => { made.push(dir); },
     detectDeps: { fetch: options.fetch ?? offline, probeTimeoutMs: 1 },
+    settings: options.settings,
   });
   const upserts: Account[] = [];
   bus.on('account.upserted', (account) => upserts.push(account));
