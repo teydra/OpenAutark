@@ -54,7 +54,7 @@ export function stateWords(task: Pick<Task, 'status' | 'waitingOn'>, names: Note
 /** Creation is immutable; task movement is not the same as a technical row update. */
 export function taskAge(task: Task, zone: string, now: number): string {
   const created = `Created on ${dueText(task.createdAt, zone, now)}`;
-  return isFinished(task.status) ? created : `${created} · Idle since ${dueText(task.ledger.movedAt ?? task.createdAt, zone, now)}`;
+  return isFinished(task.status) ? created : `${created} · Stuck since ${dueText(task.ledger.movedAt ?? task.createdAt, zone, now)}`;
 }
 
 export function checklistSummary(task: Task, nextLimit = 100): string | undefined {
