@@ -23,6 +23,7 @@ import { EFFORT_PROPERTY, WHEN_PROPERTY, failure, json } from '../types.ts';
 import { HUMAN_ID } from '../../../shared/ids.ts';
 import type { UiBlock } from '../../../shared/blocks/catalog.ts';
 import { isFinished, type Evidence, type Task, type TaskResult, type TaskWait } from '../../../shared/model/tasks.ts';
+import { writePlan, type PlanItem } from '../../../shared/model/task-plan.ts';
 import type { Effort } from '../../../shared/model/providers.ts';
 import { onlyMeLine, type TaskPatch } from '../../tasks/service.ts';
 import { approveNotes, normalizeAskWidget } from '../../tasks/widgets.ts';
@@ -72,6 +73,12 @@ export function waitOf(ctx: ToolContext, line: string): Omit<TaskWait, 'since'> 
   return { on: 'outside', why };
 }
 
+const PLAN_PROPERTY = {
+  type: 'array', maxItems: 20, description: 'Checklist: ordered points with their checked state. Update replaces the entire list; [] clears it.',
+  items: { type: 'object', additionalProperties: false, required: ['text', 'done'], properties: {
+    text: { type: 'string', minLength: 1, maxLength: 298 }, done: { type: 'boolean' },
+  } },
+};
 const WAIT_PROPERTY = { type: 'string', description: 'What it waits on, in one line: a name or task id first when it waits on them.' };
 const UNTIL_PROPERTY = { ...WHEN_PROPERTY, description: `When to follow up on the wait, not a calendar time. An outside wait defaults to tomorrow at 09:00 local. ${String(WHEN_PROPERTY.description)}` };
 
@@ -112,7 +119,7 @@ function followUpsOf(ctx: ToolContext, task: Task): TaskResult['followUps'] {
   return items.length ? items : undefined;
 }
 
-type AddArgs = { title: string; for?: string; quest?: string; at?: string; minutes?: number; notes?: string; ask?: Record<string, unknown>; after?: string[]; waiting?: string; until?: string; doneWhen?: string; effort?: Effort; priority?: Priority };
+type AddArgs = { title: string; for?: string; quest?: string; at?: string; minutes?: number; notes?: string; ask?: Record<string, unknown>; after?: string[]; waiting?: string; until?: string; plan?: PlanItem[]; doneWhen?: string; effort?: Effort; priority?: Priority };
 
 const addTool = defineTool<AddArgs>({
   name: 'tasks.add',
@@ -130,6 +137,7 @@ const addTool = defineTool<AddArgs>({
       after: { type: 'array', items: { type: 'string' }, maxItems: 20, description: 'The to-dos it comes after; it waits until the last of them ends.' },
       waiting: WAIT_PROPERTY,
       until: UNTIL_PROPERTY,
+      plan: PLAN_PROPERTY,
       doneWhen: { type: 'string', maxLength: 2000, description: 'The outcome in one line – what exists or changed when it is done.' },
       effort: { ...EFFORT_PROPERTY, description: "The effort a colleague's work runs at from its first turn." },
       priority: PRIORITY_PROPERTY,
@@ -173,7 +181,7 @@ const addTool = defineTool<AddArgs>({
     for (const after of args.after ?? []) requireTask(ctx, after);
     const task = await ctx.services.tasks.createTo({
       ...(conversationId ? { conversationId } : {}), ...(ctx.origin ? { origin: ctx.origin } : {}), ...(quest ? { kind: 'quest' as const } : {}),
-      title: args.title, ...(notes ? { notes } : {}), doneWhen: args.doneWhen, parentId, dependsOn: args.after, widget, waitingOn: wait?.wait,
+      title: args.title, ...(notes ? { notes } : {}), doneWhen: args.doneWhen, parentId, dependsOn: args.after, widget, waitingOn: wait?.wait, plan: args.plan && writePlan(args.plan),
       ...(typeof time.at === 'number' ? { at: time.at } : {}), ...(args.minutes ? { minutes: args.minutes } : {}), createdBy: ctx.agent.id,
       ...(args.priority ? { priority: priorityOf(args.priority) } : {}),
       ...(to !== ctx.agent.id && ctx.conversationId ? { givenIn: ctx.conversationId } : {}),
@@ -185,7 +193,7 @@ const addTool = defineTool<AddArgs>({
 
 type UpdateArgs = {
   id?: string; title?: string; notes?: string; doneWhen?: string; for?: string; at?: string; minutes?: number; quest?: string; after?: string[];
-  status?: 'open' | 'waiting' | 'done' | 'dropped'; waiting?: string; until?: string; result?: string; evidence?: Evidence[]; effort?: Effort;
+  status?: 'open' | 'waiting' | 'done' | 'dropped'; waiting?: string; until?: string; plan?: PlanItem[]; result?: string; evidence?: Evidence[]; effort?: Effort;
   priority?: Priority; quiet?: boolean; alsoHandled?: string[];
 };
 
@@ -208,6 +216,7 @@ const updateTool = defineTool<UpdateArgs>({
       status: { type: 'string', enum: ['open', 'waiting', 'done', 'dropped'] },
       waiting: WAIT_PROPERTY,
       until: UNTIL_PROPERTY,
+      plan: PLAN_PROPERTY,
       result: { type: 'string', maxLength: 4000, description: 'Done: what came out, in a few lines the person reads; dropped: why.' },
       evidence: {
         type: 'array', maxItems: 30, description: 'What shows the result: files, links, checks.',
@@ -247,6 +256,7 @@ const updateTool = defineTool<UpdateArgs>({
     const held = ending ? current.steps?.find((todo) => todo.private && !isFinished(todo.status)) : undefined;
     if (held) return failure(onlyMeLine(held.title));
     const patch: TaskPatch = {};
+    if (args.plan !== undefined) patch.plan = writePlan(args.plan);
     if (args.title !== undefined) patch.title = args.title;
     if (args.notes !== undefined) patch.notes = args.notes;
     if (args.doneWhen !== undefined) patch.doneWhen = args.doneWhen;

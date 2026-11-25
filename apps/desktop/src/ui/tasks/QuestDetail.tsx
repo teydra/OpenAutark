@@ -9,6 +9,7 @@
 // (chat/TaskThread.tsx).
 
 import type { Schedule, Task } from '../../shared/model/tasks.ts';
+import { TaskPlan, PlanSummary } from './TaskPlan.tsx';
 import { wallOf, wallTime } from '../../shared/text/when.ts';
 import { Markdown } from '../blocks/markdown.tsx';
 import { TaskThread } from '../chat/TaskThread.tsx';
@@ -41,7 +42,7 @@ function MiniRow(props: { task: Task; who: string; scope: PageScope; now: number
       <button type="button" class={`quest-row${finished ? ' done' : ''}${isMine(task) ? ' you' : ''}`} onClick={() => openDetail(props.scope, task.id)}>
         <span class="quest-ck" aria-hidden="true" />
         <span class="quest-who">{props.who}</span>
-        <span class="quest-what"><span class="quest-title">{task.title}</span>{sub(task, props.now) && <span class="quest-sub">{sub(task, props.now)}</span>}</span>
+        <span class="quest-what"><span class="quest-title">{task.title}</span>{sub(task, props.now) && <span class="quest-sub">{sub(task, props.now)}</span>}<PlanSummary task={task} /></span>
       </button>
     </li>
   );
@@ -81,6 +82,7 @@ export function QuestDetail(props: { scope: PageScope; quest: Task; todos: reado
           </span>
           <span class="quest-bar" aria-hidden="true"><i style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }} /></span>
         </div>
+        <TaskPlan task={quest} />
         <h4 class="detail-label">For you</h4>
         <ul class="quest-rows">
           {yours.map((task) => <MiniRow key={task.id} task={task} who="You" scope={props.scope} now={now} />)}

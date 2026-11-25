@@ -7,6 +7,7 @@
 // Owns: the detail's frame and head. Never: the tool's body, the thread's lines, editing (TaskEdit.tsx) or loading the list.
 
 import type { Task, TaskView } from '../../shared/model/tasks.ts';
+import { TaskPlan } from './TaskPlan.tsx';
 import { HUMAN_ID } from '../../shared/ids.ts';
 import { Markdown } from '../blocks/markdown.tsx';
 import { TaskThread } from '../chat/TaskThread.tsx';
@@ -87,6 +88,7 @@ export function TodoDetail(props: { scope: PageScope; task: Task | TaskView | nu
           {task.widget?.type === 'timer' && typeof task.widget.repeat === 'string' && <span class="task-chip">repeats {task.widget.repeat}</span>}
         </div>
         {task.notes.trim() && <Markdown text={task.notes} class="task-notes" />}
+        <TaskPlan task={task} />
         <TodoWidget task={view} now={now} />
       </div>
       <HistoryHead task={task} now={now} />

@@ -130,6 +130,7 @@ export const setOnlyMe = (task: Task, only: boolean) => change(task, { private: 
 export const setImportant = (task: Task, important: boolean) => change(task, { priority: important ? 1 : 0 }, 'Could not change it');
 /** The title, edited in place in the detail. */
 export const rename = (task: Task, title: string) => change(task, { title }, 'Could not rename it', true);
+export const setPlan = (task: Task, plan: string[]) => change(task, { plan }, 'Could not update the checklist', true);
 /** The time field in the detail: a new `at` (and length), or none. */
 export const setTime = (task: Task, time: { at: number | null; minutes: number | null }) => change(task, time, 'Could not set the time');
 /** "Move to quest": into that quest, or out of its quest (null). */
