@@ -10,8 +10,8 @@
 //   resume), ICE blocked (no candidate reaches the other side: ICE fails at once, or the 15 s pass);
 // - no console line of the page names an address or SDP.
 // WebKit runs the same when Playwright has it installed; on this PC it has not (the test says so and skips).
-// Not proven: a real iPhone (Safari's mDNS names in another WLAN, iOS background kills), mobile networks, STUN in the
-// field. Run: node --test test/native/hosted-rtc.test.mjs
+// Not proven: mDNS discovery (Chromium uses numeric host ICE candidates here), a real iPhone (Safari across a WLAN,
+// iOS background kills), mobile networks, STUN in the field. Run: node --test test/native/hosted-rtc.test.mjs
 // Owns: these assertions. Never: the user's data, the real meeting server, or the website build.
 
 import { test } from 'node:test';
@@ -166,7 +166,11 @@ async function run(t, type, executablePath) {
   await new Promise((resolve) => site.listen(0, '127.0.0.1', resolve));
   t.after(() => site.close());
 
-  const browser = await type.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+  // This same-host fixture is about the data path and fallback, not whether the
+  // runner routes multicast. Otherwise Chromium's .local names can spend 10 s
+  // in werift's mDNS lookup and fail before the key-refusal handshake is reached.
+  const args = type === chromium ? ['--disable-features=WebRtcHideLocalIpsWithMdns'] : [];
+  const browser = await type.launch({ headless: true, args, ...(executablePath ? { executablePath } : {}) });
   t.after(() => browser.close());
   const page = await browser.newPage();
   const consoleLines = [];
