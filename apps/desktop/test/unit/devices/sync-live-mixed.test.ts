@@ -106,22 +106,26 @@ test('new → old: the last, empty message that is lost is sent again with the p
   await settle();
   assert.equal(b.h.chats.summary(chat.id).live?.length, 1, 'B shows the run');
   const receive = b.handlers.get(LIVE_METHOD)!;
-  let failing = 2;
+  let losing = true; // lost until released – the count of lost tries does not depend on how long settle() takes (flaky on main under load, 25.11.2026)
+  let lost = 0;
   b.handlers.set(LIVE_METHOD, async (params, from) => {
-    if ((params as { runs?: unknown[] }).runs?.length === 0 && failing-- > 0) throw new WorkforceError('timeout', 'The linked device did not answer in time.');
+    if ((params as { runs?: unknown[] }).runs?.length === 0 && losing) { lost++; throw new WorkforceError('timeout', 'The linked device did not answer in time.'); }
     return receive(params, from);
   });
   const before = old.got.length;
   a.h.bus.emit('agent.activity', { active: [] }); // the run ends: the empty state goes, and is lost twice
   await settle();
   assert.equal(b.h.chats.summary(chat.id).live?.length, 1, 'a ghost line stays while it is lost');
-  await wait(400); // with nothing running on A, only the owed whole state keeps the rounds going
+  await wait(200); // with nothing running on A, only the owed whole state keeps the rounds going – and it is lost again
+  assert.ok(lost >= 2, `it was lost at least twice first (${lost})`);
+  assert.equal(b.h.chats.summary(chat.id).live?.length, 1, 'the ghost line stays while the pulse rounds keep losing it');
+  losing = false;
+  await wait(400);
   assert.equal(b.h.chats.summary(chat.id).live, undefined, 'the empty state landed');
   assert.deepEqual(old.got.slice(before).map((params) => (params.runs as unknown[]).length), [0], 'once it landed – nothing more');
   const landed = old.got.length;
   await wait(200);
   assert.equal(old.got.length, landed, 'and no more rounds after the old PC took it');
-  assert.equal(failing, -1, 'it was lost twice first');
 });
 
 test('a link swap to an old PC (no link-up): the first command is answered without `v`, fresh is reset and the whole state follows; no command or pulse after', async () => {
@@ -143,7 +147,8 @@ test('a link swap to an old PC (no link-up): the first command is answered witho
   a.h.bus.emit('run.item', call('run_tom', 'C:/data/after-swap.pdf'));
   await settle();
   const first = sent().slice(before);
-  assert.ok(Array.isArray(first[0].c), 'the first message after the swap is still a command');
+  // A pulse round (40 ms here) can fall between the swap and the command: the old PC answers it without `v` just the same, and the whole state follows
+  assert.ok(Array.isArray(first[0].c) || 'h' in first[0], 'the first message after the swap is still a command (or the pulse that was due)');
   assert.ok(Array.isArray(first[1]?.runs) && typeof first[1].s === 'number', 'the answer without `v` brought the whole state at once');
   assert.match(b.h.chats.summary(chat.id).live?.[0].step ?? '', /after-swap\.pdf/, 'the old PC\'s line is whole again');
   const afterWhole = sent().length;
