@@ -25,7 +25,7 @@ import { WorkforceError } from '../../../shared/errors.ts';
 import { chatWakeKey, deliverHandedOver } from '../../chat/delivery-route.ts';
 import { DevicesRepo } from '../repo.ts';
 import { asPerson, fromEmployer, goesBack, withPlanOrigin, heldStatus, markOrigin, moveStatus, noteSent, owedOnce, ownTodos, paidOnce, takenFrom, theirMaker, type StatusMove } from './employee.ts';
-import { homeElsewhere, isCeoPc, linkOf, links, selfId } from './home.ts';
+import { homeElsewhere, isCeoPc, linkOf, links, ownWake, selfId } from './home.ts';
 import { compared, placeSchedules, readRow, TABLE, TABLES, upsert, type Apply, type Wire } from './tables.ts';
 import { hashOf, wins, type Stamp, type Stamps } from './stamps.ts';
 import { handOverTargets } from './takeover.ts'; // Umzug 21.11.2026
@@ -437,12 +437,7 @@ export class RowSync {
     if (home && (home === from || !isCeoPc(this.s.db, home))) return;
     const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
     const origin = wake.origin && typeof wake.origin.source === 'string' ? { source: wake.origin.source, label: String(wake.origin.label ?? '') } : undefined;
-    // B-080: that PC compared the agent's SYSTEM.md or a prompt with its own release (0.3.2–0.3.4 PCs still send them).
-    // 25.11.2026 (ORENDA wake loop 16:31–16:42): the guard was lost with 0.3.18 and never covered 'standard' – a 0.3.9 PC
-    // wakes an agent at home here with "New standard SYSTEM.md" each time its copy of the comment differs from its own
-    // older release, and re-sends the wake at every link-up while it is not confirmed. The home PC keeps the comment
-    // itself and tells nobody (standard.ts), so a standard or prompt wake from another PC is never news here.
-    if (origin && (origin.source === 'standard' || origin.source.startsWith('system-prompt'))) return;
+    if (ownWake(origin?.source)) return; // B-080, 25.11.2026: that PC compared the agent's SYSTEM.md standard or a prompt with its own release (home.ts)
     const chat = text(wake.conversationId);
     const task = text(wake.taskId);
     // A message's wake merges with any wake for the same chat here (as a delivery here would make it).

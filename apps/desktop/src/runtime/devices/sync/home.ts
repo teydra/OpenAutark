@@ -70,6 +70,14 @@ export function homeElsewhere(services: Pick<RuntimeServices, 'db' | 'org'>, age
   return links(services.db).some(({ link }) => link.kind === 'ceo') ? home : undefined;
 }
 
+/**
+ * Whether a wake from another PC (its `origin.source`) says that PC compared the agent's SYSTEM.md standard ('standard') or
+ * a prompt ('system-prompt:…') with its own release: the agent's home PC keeps both itself and wakes nobody for them
+ * (org/standard.ts, context/prompt-updates.ts), so it is never news there. 25.11.2026 (ORENDA 16:31–16:42): a 0.3.9 PC
+ * re-sent "New standard SYSTEM.md" at every link-up; the guard for prompts was lost with 0.3.18 and never covered 'standard'.
+ */
+export const ownWake = (source: string | undefined): boolean => source === 'standard' || (source?.startsWith('system-prompt') ?? false);
+
 /** Umzug 21.11.2026: how long an agent's PC is out of reach here before another PC goes on with it (standIn). */
 export const TAKEOVER_MS = 120_000;
 /** Since when this runtime watches its links for a takeover (takeover.ts attach), by database. */
