@@ -22,6 +22,7 @@ public final class TodoTest {
     private static int assertions;
 
     public static void main(String[] args) throws Exception {
+        holdAndSend();
         place();
         post();
         speech();
@@ -30,6 +31,31 @@ public final class TodoTest {
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/UseService.java"),
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/UseLink.java"));
         System.out.println(assertions + " to-do button place, post and wiring assertions passed.");
+    }
+
+    private static void holdAndSend() {
+        TodoHold hold = new TodoHold();
+        List<String> events = new ArrayList<>();
+        check(hold.begin(() -> events.add("record")));
+        check(hold.active() && !hold.released() && events.equals(Arrays.asList("record")));
+        check(!hold.begin(() -> events.add("unexpected second recorder")));
+        hold.release(() -> events.add("capture"));
+        hold.release(() -> events.add("unexpected second capture"));
+        check(hold.released() && events.equals(Arrays.asList("record", "capture")));
+        hold.reset();
+        check(hold.begin(() -> events.add("record again")));
+        hold.reset(); // ACTION_CANCEL, not ACTION_UP
+        hold.release(() -> events.add("unexpected capture after cancel"));
+        check(!hold.active() && events.equals(Arrays.asList("record", "capture", "record again")));
+
+        TodoPost draft = new TodoPost();
+        draft.add(new byte[] {1}); // explicitly tapped the camera before changing pages
+        String first = draft.clientIdFor("send");
+        TodoPost.Shot firstTap = new TodoPost.Shot(new byte[] {2});
+        TodoPost.Shot retryTap = new TodoPost.Shot(new byte[] {3});
+        check(draft.shotsWith(firstTap).get(1) == firstTap);
+        check(draft.shotsWith(retryTap).get(1) == retryTap && draft.shots().size() == 1);
+        check(first.equals(draft.clientIdFor("send")));
     }
 
     private static void speech() {
@@ -135,8 +161,25 @@ public final class TodoTest {
     }
 
     private static void wiring(String button, String service, String link) {
+        String pressStart = button.substring(button.indexOf(" holdStart() {"), button.indexOf("void holdRelease()"));
+        if (!pressStart.contains("take.start()") || pressStart.contains("captureAtSend()") || pressStart.contains("shot(jpeg)")) {
+            throw new AssertionError("Hold must start the recorder without taking a screenshot.");
+        }
+        check(pressStart.contains("take.start()"));
+        String pressEnd = button.substring(button.indexOf("void holdRelease()"), button.indexOf("void finishHoldTake()"));
+        check(pressEnd.contains("captureAtSend()") && pressEnd.indexOf("captureAtSend()") < pressEnd.indexOf("finishHoldTake()"));
+        check(button.contains("if (held && !hold.released()) dropHold();"));
+        String panelOpen = button.substring(button.indexOf("private void open()"), button.indexOf("private void collapse()"));
+        check(!panelOpen.contains("shoot()") && !panelOpen.contains("captureAtSend()"));
+        String sendTap = button.substring(button.indexOf("private void submit()"), button.indexOf("private void submit(String"));
+        check(sendTap.contains("captureAtSend()") && sendTap.indexOf("captureAtSend()") < sendTap.indexOf("finishDictation()"));
+        check(button.contains("deliver(link, text, post, requiredPicture(picture))")
+                && button.contains("deliver(link, text, quick, requiredPicture(picture))")
+                && button.contains("Nicht gesendet – kein Screenshot möglich."));
+        check(button.contains("sendCapture.execute(picture)") && button.contains("service.capture(deadline, keyboardWasOurs)")
+                && service.contains("elapsedRealtime() >= deadline ||") && service.indexOf("elapsedRealtime() >= deadline ||") < service.indexOf("takeScreenshot("));
         // The AI's screenshot and the button's both go through capture(), which hides the bubble and the button for the frame.
-        check(service.contains("bubble.hideForShot();\n            if (button != null) button.hideForShot();"));
+        check(service.contains("if (!bubble.hideForShot() || (button != null && !button.hideForShot())) return null;"));
         check(service.contains("full = capture();") && service.split("takeScreenshot\\(", -1).length == 2); // one screenshot path
         // Collapsed it never takes key focus or touches outside itself.
         check(button.contains("FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL"));
@@ -147,14 +190,14 @@ public final class TodoTest {
         check(button.contains("TYPE_ACCESSIBILITY_OVERLAY"));
         // JPEG 85, the post's client id reused, the text only in the RPC (no log of it, no preference of it).
         check(button.contains("CompressFormat.JPEG, 85"));
-        check(button.contains("String[] task = deliver(link, text, post);") && button.contains("TodoPost.create(text, attachments, from.clientId())"));
+        check(button.contains("String[] task = deliver(link, text, post, requiredPicture(picture));") && button.contains("TodoPost.create(text, attachments, from.clientId())"));
         check(button.contains("HOLD_MS = 350") && button.contains("if (held) { holdRelease(); return true; }")); // the hold is the quick task
         // the only strings kept: the profile's language tag and the PC it came from (a value read from the PC belongs to that PC)
         check(!button.replace("putString(\"speech_lang\", found).putString(\"speech_lang_origin\", origin)", "").contains("putString(")
                 && !button.matches("(?s).*Log\\.[a-z]\\([^;]*text[^;]*\\);.*"));
         // Owner 20.11.2026 ("We got to steer" for "Wie geht es dir?"): the panel's mic and the hold record, and the PC hears
         // the take in the profile's language – the phone's SpeechRecognizer is gone from the bubble.
-        check(button.contains("new Dictation(service, link, language(),") && button.contains("new Dictation(service, UseLink.linked(), language(),")
+        check(button.contains("new Dictation(service, link, language(),") && button.contains("new Dictation(service, link, language(), this::holdHeard,")
                 && button.contains("SpeechLang.tag(profileLanguage, Locale.getDefault().toLanguageTag())") && !button.contains("SpeechRecognizer"));
         // Review 20.11.2026: phone use reads the app under the person's typing window, never the draft; the AI's gestures
         // pass through the dot too; a hold ends with its window; dictated words reach the typing field.
@@ -162,13 +205,11 @@ public final class TodoTest {
         check(service.contains("if (button != null) button.passThrough(true);") && service.contains("BubbleTyping.aiGesture("));
         check(button.contains("dropHold(); // a hold whose window went") && button.contains("if (typing) BubbleTyping.set(text);"));
         // Send while recording: the words first, then it sends
-        check(button.contains("if (dictation != null) { sendAfter = true; finishDictation(); return; }"));
+        check(button.contains("sendAfter = picture;") && button.contains("submit(words, link, picture);"));
         // one ask of the PC per link, only the language field is read, the kept one belongs to its PC
         check(button.contains("link == languageFor") && button.contains("link.origin()") && button.contains("link.request(\"todos.speechLanguage\"") && button.contains("if (!SpeechLang.isActive(languageFor, link) || !SpeechLang.isActive(UseLink.linked(), link)) return;") && button.contains("{ languageFor = null; dropDictation(); remove(); }") && !button.contains("settings.get"));
         // A call's answer is matched by id; a socket that ends fails every call still waiting.
         check(link.contains("calls.remove(((Number) frame.get(\"id\")).intValue())") && link.contains("failCalls();"));
-        // Owner 19.11.2026: one automatic shot per draft, hidden is hidden, a call never opens the app.
-        check(button.contains("boolean fresh = post.shots().isEmpty() &&") && button.contains("if (fresh && !shooting) shoot();"));
         check(button.contains("UseLink.linked() != null && !place.getBoolean(HIDDEN, false)"));
         // 20.11.: a dead socket carried six recordings for 14 hours - ping before sending, drop it and connect anew, keep the draft, send again with the same id
         check(button.contains("if (!reachable(link)) throw new Unreachable(") && button.contains("link.alive(Resend.PING_MS)") && button.contains("link.reconnect();"));

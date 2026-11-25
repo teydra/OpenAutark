@@ -48,6 +48,7 @@ $sources = @(Get-ChildItem (Join-Path $root 'app/src/main/java/com/teydralab/aut
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/SayChoices.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/TypeTarget.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/TodoPlace.java') +
+    (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/TodoHold.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/SpeechLang.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/Resend.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/TodoPost.java') +
