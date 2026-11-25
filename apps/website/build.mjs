@@ -110,9 +110,10 @@ if (existsSync(join(root, 'public'))) await cp(join(root, 'public'), siteDir, { 
 
 const fontsCss = (await readFile(join(root, 'src/assets/fonts.css'), 'utf8')).replaceAll('url(./fonts/', 'url(../fonts/');
 // The stylesheet is split by area; joined in this order (the cascade) it is still one request.
-const cssParts = await Promise.all(['styles', 'home', 'downloads', 'pages'].map((n) => readFile(join(root, `src/assets/${n}.css`), 'utf8')));
+const cssParts = await Promise.all(['styles', 'home', 'downloads', 'pages', 'stats'].map((n) => readFile(join(root, `src/assets/${n}.css`), 'utf8')));
 await out('assets/site.css', fontsCss + cssParts.join('\n'));
 await out('assets/site.js', await readFile(join(root, 'src/assets/site.js'), 'utf8'));
+await out('assets/stats.js', await readFile(join(root, 'src/assets/stats.js'), 'utf8')); // only the private /stats/ page loads it
 
 const pageFiles = (await readdir(join(root, 'src/pages'))).filter((f) => f.endsWith('.mjs'));
 const built = []; // every page written, in sitemap order (unlisted ones are left out of the sitemap)

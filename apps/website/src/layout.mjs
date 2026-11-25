@@ -1,6 +1,6 @@
 // Owns: the fixed frame every page shares (<head>, header, mobile menu, footer) and small shared blocks.
 // Never: page content; pages only hand in their body. Internal links use BASE, taken from SITE_URL.
-import { site, release, maker, pages, platforms, platformKinds } from './config.mjs';
+import { site, release, maker, pages, platforms, platformKinds, counts } from './config.mjs';
 import { icon, mark, MARK_PATH, MARK_DOT } from './icons.mjs';
 import { featureById } from './data/features.mjs';
 
@@ -11,6 +11,9 @@ export const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
 export const BASE = new URL(`${site.url}/`).pathname;
 export const rootOf = () => BASE;
 export const abs = (slug = '') => `${site.url}/${slug ? `${slug}/` : ''}`;
+
+// The counting notice next to download buttons (build without a counting key: nothing is counted, so no notice).
+export const countNotice = (root) => (counts ? `A click on a download button is counted anonymously, as a number only: <a href="${root}privacy/#counts">what and why</a>` : '');
 
 // The giant word: A's are drawn as the mark (Λ + dot).
 export function kword(cls = '') {
@@ -65,7 +68,7 @@ function footer(root) {
     <div class="ftr__giant">${kword().replace('class="kword ', 'class="kword ftr__kword ')}</div>
     <div class="ftr__base">
       <span>© ${new Date().getFullYear()} ${maker.company} · ${maker.location}</span>
-      <nav aria-label="Legal"><a href="${maker.imprintUrl}" rel="noopener">Imprint</a><a href="${maker.privacyUrl}" rel="noopener">Privacy</a><a href="https://toolradar.com/tools/autark">Autark on Toolradar</a></nav>
+      <nav aria-label="Legal"><a href="${maker.imprintUrl}" rel="noopener">Imprint</a><a href="${root}privacy/">Privacy</a><a href="https://toolradar.com/tools/autark">Autark on Toolradar</a></nav>
     </div>
   </div>
 </footer>`;
@@ -182,6 +185,7 @@ ${body(root)}
 </main>
 ${footer(root)}
 <script>window.__REL=${JSON.stringify({ api: release.api, fallback: release.fallback, windowsFile: release.files.windows, base: root, platforms: platforms.map(({ id, os }) => ({ id, os })) })}</script>
+${counts ? `<script>window.__COUNT=${JSON.stringify({ p: counts.project, k: counts.key })}</script>` : ''}
 <script src="${root}assets/site.js" defer></script>
 </body>
 </html>`;

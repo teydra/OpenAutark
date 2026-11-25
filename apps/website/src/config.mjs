@@ -1,6 +1,7 @@
 // Owns: the name, the address, the release channel, every download and every outside link.
 // Never: page copy or markup; pages read from here.
 // Renaming the product or moving the site = edit this file (or set SITE_URL) and rebuild.
+import { readFileSync } from 'node:fs';
 
 // Where the finished site lives: origin plus base path, no trailing slash.
 // A shared host with a base path builds into the matching dist/ subfolder;
@@ -31,8 +32,8 @@ const OLD_REPO = 'teydra/proactive-agent-workforce-releases';
 const NAMES = RENAMED ? {
   // Since the bridge release 0.3.3 (B-078) the one public home is teydra/OpenAutark. These equal
   // apps/desktop/package.json (productName, artifactName, publish.repo) and apps/android. Android: since 0.3.6 the
-  // website offers the Lite APK (no phone use by agents): Play Protect blocks a sideloaded app that asks for
-  // Accessibility (Samsung, 08.11.2026). The full autark-android.apk stays in the release for installs that have it.
+  // website offers the Lite APK (no phone use by agents; it installed and updated from the site with Play Protect on,
+  // Samsung S9, 25.11.2026). The full autark-android.apk stays in the release for installs that have it.
   repo: 'teydra/OpenAutark',
   app: 'Autark',
   files: { windows: 'autark-windows-x64.exe', macDmg: 'autark-mac-universal.dmg', macZip: 'autark-mac-universal.zip', linux: 'autark-linux-x64.AppImage', android: 'autark-android-lite.apk' },
@@ -150,7 +151,27 @@ export const pages = [
 export const movedPages = [{ from: 'safety', to: 'access' }];
 
 // Pages that are built but stay out of the sitemap and search results (robots noindex).
-export const unlisted = ['pair', 'app'];
+export const unlisted = ['pair', 'app', 'stats'];
+
+// Anonymous counters (25.11.2026): a click on a download button adds 1 to one counter per day and platform in the
+// Firestore of the Autark feedback project (rules: apps/desktop/resources/feedback/firestore.rules, privacy: /privacy/).
+// Nothing identifies the visitor: no id, no cookie, no address stored. The web API key is public by design (restricted to
+// the Firestore API; the rules decide what may be written). It is the one the desktop build ships in
+// apps/desktop/resources/feedback/receiver.json, which this build reads too (COUNTS_API_KEY overrides it). Without a usable
+// key the site is built without counting – the buttons work the same.
+// `authKey` belongs to the private stats page only (COUNTS_AUTH_KEY: a second browser key for Firebase sign-in).
+const API_KEY = /^[A-Za-z0-9_-]{30,60}$/;
+const PROJECT_ID = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
+function readCounts() {
+  let file = {};
+  try { file = JSON.parse(readFileSync(new URL('../../desktop/resources/feedback/receiver.json', import.meta.url), 'utf8')); } catch { /* no local receiver file */ }
+  const key = String(process.env.COUNTS_API_KEY || file.apiKey || '').trim();
+  const project = String(process.env.COUNTS_PROJECT || file.project || 'autark-feedback-7').trim();
+  if (!API_KEY.test(key) || !PROJECT_ID.test(project)) return null;
+  const authKey = String(process.env.COUNTS_AUTH_KEY || '').trim();
+  return { project, key, authKey: API_KEY.test(authKey) ? authKey : '' };
+}
+export const counts = readCounts();
 
 // Where the iPhone web app lives (pages/app.mjs; its shell is generated from apps/desktop/src/ui/hosted into src/app/):
 // origin plus folder, no trailing slash. It needs an origin of its own: browser storage and WebCrypto keys belong to an

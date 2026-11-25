@@ -33,13 +33,13 @@ export const installSteps = {
   android: () => `
     <ol>
       <li><strong>Download</strong> <code>${files.android}</code> on the phone. Chrome may ask whether to keep the file; keep it.</li>
-      <li><strong>Open it.</strong> The first time, Android asks to allow installs from your browser: choose <em>Settings</em>, turn on <em>Allow from this source</em>, go back and choose <em>Install</em>. Leave Play Protect on. If it only warns that it does not know the developer, choose <em>More details</em>, then <em>Install anyway</em>.</li>
+      <li><strong>Open it.</strong> The first time, Android asks to allow installs from your browser: choose <em>Settings</em>, turn on <em>Allow from this source</em>, go back and choose <em>Install</em>.</li>
       <li><strong>Connect it to your company.</strong> Open ${site.name} on the phone and type your PC’s <em>Remote ID</em> (on the PC: Settings → Devices), or scan the QR code shown there. Both screens show the same short code. Choose <em>Accept</em> on the PC.</li>
       <li><strong>Done.</strong> The phone now belongs to your company, not to one PC: the same chats, tasks and notifications as on every PC you linked. Read on one device, read everywhere.</li>
     </ol>
     <p><strong>Updates come inside the app:</strong> a line at the top says when a new version exists. <em>Update</em> downloads it with its progress, checks it against the published SHA-256 and hands it to Android; the first time Android asks you to allow installs from ${site.name}, then you confirm the update.</p>
-    <p><strong>No phone use by agents in this version:</strong> Play Protect blocks apps from outside the Play Store that ask for Accessibility, so the APK behind the big button leaves it out. Chats, tasks, notifications, the microphone and the camera work as before.</p>
-    <p><strong>Full version with phone control:</strong> <code>autark-android.apk</code> lets the AI operate the phone. If Play Protect blocks the install, open the Play Store, tap your profile › Play Protect › Settings (gear), turn off “Scan apps with Play Protect”, install ${site.name}, then turn it back on. After that, turn on ${site.name} under Settings › Accessibility if you want the AI to operate the phone.</p>`,
+    <p><strong>No phone use by agents in this version:</strong> the APK behind the big button leaves out the Accessibility service that phone control needs. Chats, tasks, notifications, the microphone and the camera work as before.</p>
+    <p><strong>Full version with phone control:</strong> <code>autark-android.apk</code> lets the AI operate the phone. After installing it, turn on ${site.name} under Settings › Accessibility if you want the AI to operate the phone.</p>`,
   iphone: () => `
     <ol>
       <li><strong>Open <a href="${appUrl}/">${appUrl.replace(/^https?:\/\//, '')}/</a> in Safari</strong> on the iPhone. There is no App Store app and no Apple account is needed.</li>
