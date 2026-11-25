@@ -11,7 +11,9 @@
 // line naming its own file, once as a note with its next turn
 // (media/outputs.ts saveOutputNotes, the row agents/turn-finish.ts hands over). A comment that is missing (a hire, an edit
 // that dropped it) or only renders other names comes back quietly. Only the agent's home PC writes it, so two PCs on
-// different versions never take turns.
+// different versions never take turns. 25.11.2026: nor does a row from a PC on an older release put its older comment over this
+// one (keepNewerStandard, called where a synced agents row is written – devices/sync/tables.ts), and a wake that PC raises
+// about it is dropped on arrival (devices/sync/rows.ts wakeHere).
 // Owns: the comment's form, which standard an agent has, keeping it current, the swap and that note. Never: changes the
 // agent's own text above the comment except the swap of an untouched standard part.
 
@@ -84,6 +86,33 @@ export function standardNote(kind: StandardKind, before: StandardKind | undefine
     ? 'More of it changed than reads as lines: the whole new standard stands as the comment at the end of my SYSTEM.md.'
     : `The changed lines of the standard:\n${text}`;
   return `${lead} My own text differs from the standard it replaces, so it stays as it is; where a changed line fits my work, I bring my own text in line with it (skill system-prompt). ${body}`;
+}
+
+/**
+ * The revisions (the `rev` of a comment) of every standard this app shipped before the one in force – the shipped files
+ * standard-agent.md and standard-manager.md (git log of resources/prompts). A comment naming one of them is an older
+ * standard; a hash alone cannot say which of two is newer, so whoever edits a shipped standard adds the revision it
+ * replaces here (the test prints the current ones). 25.11.2026: ORENDA – a 0.3.9 PC wrote its own older standard back.
+ */
+export const OLDER_REVS: ReadonlySet<string> = new Set([
+  'dbc85f70', '6e355391', '4625c7cb', '9f832c5f', // standard-agent.md: 0.3.6, 0.3.6+, 0.3.9, 0.3.10
+  'd899ddc2', '7d0c498a', 'be0d6424', '6463e3d3', // standard-manager.md: the same releases
+]);
+
+/**
+ * `incoming` instructions of an agent from another PC, with this PC's comment kept when the incoming one only holds an
+ * older standard (a PC on an older release keeps writing its own): never an older standard over a newer one. The text
+ * above the comment is the incoming one, so a real edit arrives. Only on the PC that keeps the comment itself (not
+ * the agent's home elsewhere), and only against a revision known to be older – an unknown one may be newer.
+ */
+export function keepNewerStandard(s: Pick<RuntimeServices, 'org' | 'db'>, agentId: string, local: string, incoming: string): string {
+  const here = splitStandard(local);
+  const there = splitStandard(incoming);
+  if (!here.rev || !there.rev || !OLDER_REVS.has(there.rev) || OLDER_REVS.has(here.rev)) return incoming;
+  if (here.kind === there.kind && here.rev === there.rev) return incoming;
+  if (homeElsewhere(s, agentId)) return incoming;
+  const kept = [...local.matchAll(BLOCKS)].at(-1)?.[0].trim();
+  return kept ? `${there.own}\n\n${kept}` : incoming;
 }
 
 /** The same text: whitespace (a paragraph split over two lines) reads alike, so it counts as untouched. */

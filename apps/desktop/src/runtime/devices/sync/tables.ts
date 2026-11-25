@@ -34,6 +34,7 @@ import { ownHomes, sharedHome } from '../../accounts/cli-homes.ts';
 import type { Account, ProviderId } from '../../../shared/model/providers.ts';
 import { KvRepo } from '../../store/kv.ts';
 import { firesHere, selfId } from './home.ts';
+import { keepNewerStandard } from '../../org/standard.ts';
 import { planFrom } from './employee.ts';
 import { personPlan } from './plan-peers.ts';
 import { olderRow, olderSchedule } from '../../bridge/quests-2011.ts';
@@ -201,7 +202,10 @@ const agents: Table = {
     const space = row.space_id && !exists(s.db, 'spaces', row.space_id);
     // Umzug 21.11.2026: one spelling for "this PC" – a row naming this PC's own id is stored without one (NULL = this PC).
     const here = row.device_id !== null && row.device_id !== undefined && row.device_id === selfId(s.db);
-    upsert(s.db, 'agents', { ...row, status, ...(manager ? { manager_id: null } : {}), ...(space ? { space_id: null } : {}), ...(here ? { device_id: null } : {}) });
+    // 25.11.2026: a PC on an older release carries its own older standard comment – it never replaces this PC's (standard.ts).
+    const had = existed ? s.db.get<{ instructions: string }>('SELECT instructions FROM agents WHERE id = ?', [sqlValue(row.id)])?.instructions : undefined;
+    const kept = had !== undefined && typeof row.instructions === 'string' ? keepNewerStandard(s, String(row.id), had, row.instructions) : undefined;
+    upsert(s.db, 'agents', { ...row, ...(kept !== undefined ? { instructions: kept } : {}), status, ...(manager ? { manager_id: null } : {}), ...(space ? { space_id: null } : {}), ...(here ? { device_id: null } : {}) });
     return Boolean(manager || space);
   },
   drop: () => {}, // agents are archived, never deleted
