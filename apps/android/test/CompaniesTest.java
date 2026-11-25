@@ -69,6 +69,11 @@ public final class CompaniesTest {
         equal("seed1b", companies.current().seed);
         check(companies.listJson(null).contains("\"name\":\"Teydra Lab\""));
 
+        // The offline screen offers the other companies (never the current one) so a company out of reach is no dead end.
+        equal(1, companies.others().size());
+        equal("c2", companies.others().get(0)[0]);
+        equal("PC B", companies.others().get(0)[1]);
+
         // Cards: name is trimmed and capped; a picture over 16 KB or not data:image is dropped.
         companies.setCard("  Long  ", "https://evil.test/x.png");
         check(!companies.listJson(null).contains("evil.test"));

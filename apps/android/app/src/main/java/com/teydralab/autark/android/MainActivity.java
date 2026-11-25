@@ -249,7 +249,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
             PhoneConnection.Paired paired = companies.current();
             if (link != null) link.connection.check();
             if (paired != null) open(paired);
-        }, this::pickPc);
+        }, this::pickPc, companies.others(), this::switchCompany, this::addCompany);
     }
 
     /** "Forget this phone" (the profile menu: autark-app:forget or the port's 'forget') – the current company only. */

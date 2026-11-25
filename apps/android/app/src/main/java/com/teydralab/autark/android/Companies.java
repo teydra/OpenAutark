@@ -66,6 +66,19 @@ final class Companies {
 
     int size() { return list.size(); }
 
+    /** The other companies as {id, name} rows – what the offline screen offers so a company out of reach is never a dead end. */
+    List<String[]> others() {
+        List<String[]> out = new ArrayList<>();
+        for (Map<String, Object> row : list) {
+            String id = (String) row.get("id");
+            if (id.equals(current)) continue;
+            String name = (String) row.get("name");
+            List<PhoneConnection.Pc> pcs = pcs(row);
+            out.add(new String[] { id, name == null || name.isEmpty() ? (pcs.isEmpty() ? "Company" : pcs.get(0).name) : name });
+        }
+        return out;
+    }
+
     /** A finished pairing: the company that shares a PC fingerprint gets the new keys (same id, port, card), else a new one. Becomes current; returns its id. */
     String add(PhoneConnection.Paired paired) {
         Map<String, Object> same = null;
