@@ -1,0 +1,23 @@
+/* /stats/ – the team's private counts page (pages/stats.mjs, assets/stats.js). Phone first: one column, charts scale to the width. */
+.stats { padding-top: calc(var(--hdr) + 32px); }
+.stats__h { font-family: var(--serif); font-weight: 400; font-size: clamp(36px, 7vw, 64px); margin: 0 0 8px; }
+.stats__lead { margin: 0 0 24px; max-width: 40em; }
+.stats__msg { min-height: 1.4em; color: var(--ink-3); margin: 8px 0; }
+.stats__bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin: 8px 0 20px; }
+.stats__range { display: inline-flex; border: 1px solid var(--line-2); border-radius: 999px; overflow: hidden; }
+.stats__range button, .stats__out { font: inherit; font-size: 14px; padding: 8px 14px; background: none; border: 0; color: var(--ink-2); cursor: pointer; min-height: 40px; }
+.stats__range button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.stats__out { border: 1px solid var(--line-2); border-radius: 999px; }
+.stats__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 8px; }
+.stats__card { border: 1px solid var(--line); border-radius: var(--r); background: var(--white); padding: 14px 16px; }
+.stats__card b { display: block; font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+.stats__card span { font-size: 13px; color: var(--ink-3); }
+.stats__h2 { font-size: 20px; font-weight: 600; margin: 32px 0 2px; }
+.stats__chart { margin: 8px 0 0; }
+.stats__svg { display: block; width: 100%; height: auto; max-width: 880px; touch-action: pan-y; }
+.stats__grid { stroke: var(--line); stroke-width: 1; }
+.stats__tick { fill: var(--ink-3); font: 11px var(--sans); }
+.stats__cursor { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.stats__read { min-height: 1.5em; margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
+.stats__legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 4px 0 0; font-size: 13px; color: var(--ink-2); }
+.stats__legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }

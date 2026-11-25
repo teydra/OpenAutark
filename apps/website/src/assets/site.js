@@ -90,6 +90,27 @@
     const ic = $('.ic', b); if (ic) ic.outerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>';
   });
 
+  /* ── anonymous download count (privacy page › This website) ──
+     A click on a real download link (/get/<platform>) adds 1 to one counter per UTC day and platform in our own
+     Firestore, straight from the browser. The request carries nothing but that counter: no id, no cookie, no referrer,
+     no page address. It never delays the download: the link works as usual, the count is sent on the side and a
+     failure is ignored. Without window.__COUNT (a build without the key) nothing is sent. */
+  const COUNT = window.__COUNT;
+  const DOWNLOADS = /\/get\/(windows|mac|mac-zip|linux|android|android-full)\/?$/;
+  if (COUNT) document.addEventListener('click', (e) => {
+    try {
+      const a = e.target instanceof Element ? e.target.closest('a[href]') : null;
+      const m = a && DOWNLOADS.exec(new URL(a.href, location.href).pathname);
+      if (!m) return;
+      const doc = `projects/${COUNT.p}/databases/(default)/documents/dl/${new Date().toISOString().slice(0, 10)}_${m[1]}`;
+      fetch(`https://firestore.googleapis.com/v1/projects/${COUNT.p}/databases/(default)/documents:commit?key=${COUNT.k}`, {
+        method: 'POST', keepalive: true, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ writes: [{ transform: { document: doc, fieldTransforms: [{ fieldPath: 'n', increment: { integerValue: '1' } }] } }] }),
+      }).catch(() => { /* offline or blocked: no count, no harm */ });
+    } catch { /* never in the way of the download */ }
+  }, true);
+
   /* ── /pair/: show the Remote ID the PC's QR code carries (#<id>) ── */
   const pairId = $('[data-pair-id]');
   if (pairId) {

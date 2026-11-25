@@ -1,6 +1,6 @@
 // Owns: the fixed frame every page shares (<head>, header, mobile menu, footer) and small shared blocks.
 // Never: page content; pages only hand in their body. Internal links use BASE, taken from SITE_URL.
-import { site, release, maker, pages, platforms, platformKinds } from './config.mjs';
+import { site, release, maker, pages, platforms, platformKinds, counts } from './config.mjs';
 import { icon, mark, MARK_PATH, MARK_DOT } from './icons.mjs';
 import { featureById } from './data/features.mjs';
 
@@ -182,6 +182,7 @@ ${body(root)}
 </main>
 ${footer(root)}
 <script>window.__REL=${JSON.stringify({ api: release.api, fallback: release.fallback, windowsFile: release.files.windows, base: root, platforms: platforms.map(({ id, os }) => ({ id, os })) })}</script>
+${counts ? `<script>window.__COUNT=${JSON.stringify({ p: counts.project, k: counts.key })}</script>` : ''}
 <script src="${root}assets/site.js" defer></script>
 </body>
 </html>`;
