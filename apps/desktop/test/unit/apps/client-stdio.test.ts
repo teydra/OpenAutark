@@ -101,7 +101,8 @@ test('a program that dies at start: its error line, with tokens and the app\'s o
 });
 
 test('a program that only prints text: the handshake times out with a hint; 2024-11-05 over stdio is accepted', async () => {
-  const error = await open('garbage', undefined, 300).catch((caught: unknown) => caught);
+  // 2 s, not 300 ms: the fixture prints its text at once, but node's own start can take longer than 300 ms on a loaded PC – then the hint never gets a line (25.11.2026)
+  const error = await open('garbage', undefined, 2_000).catch((caught: unknown) => caught);
   assert.ok(error instanceof McpTimeout);
   assert.equal(error.message, 'The app\'s program wrote text that is not MCP.');
   const old = await open('old');
