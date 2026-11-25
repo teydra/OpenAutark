@@ -30,6 +30,15 @@ export interface MicrophoneOptions {
   blockMs?: number;
   /** An open stream to listen to instead of opening the microphone; close() leaves its tracks running. */
   stream?: MediaStream;
+  /** Plain capture without echo cancellation, noise suppression and gain control. On Android these make the WebView record
+   *  as a call (VOICE_COMMUNICATION: the phone switches to call mode and dims other apps); dictation only needs the voice. */
+  plain?: boolean;
+}
+
+/** The constraints a microphone is opened with: the voice-call set, or (plain) none of the processing. */
+export function microphoneConstraints(plain: boolean | undefined): MediaTrackConstraints {
+  const on = !plain;
+  return { echoCancellation: on, noiseSuppression: on, autoGainControl: on };
 }
 
 const BLOCK = 4096;
@@ -46,7 +55,7 @@ export async function openMicrophone(onSamples?: SampleListener, options: Microp
     if (given) stream = given;
     else {
       await bridge?.armMedia(['audio']).catch(() => undefined);
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints(options.plain), video: false });
     }
   } catch (error) {
     void early?.then((graph) => graph.dispose(), () => undefined);

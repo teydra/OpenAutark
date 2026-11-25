@@ -53,7 +53,7 @@ test('the AudioWorklet tap is its own bundle next to index.html (the CSP allows 
   const build = read('scripts/build.mjs');
   assert.match(build, /entryPoints: \['src\/ui\/lib\/pcm-worklet\.ts'\], outfile: 'app\/ui\/pcm-worklet\.js'/);
   assert.match(read('src/ui/lib/pcm-worklet.ts'), /export const PCM_TAP_MODULE = 'pcm-worklet\.js';/);
-  assert.match(read('src/ui/lib/dictation.ts'), /\{ sampleRate: PCM_RATE, blockMs: BLOCK_MS \}/, 'dictation asks for 16 kHz');
+  assert.match(read('src/ui/lib/dictation.ts'), /\{ sampleRate: PCM_RATE, blockMs: BLOCK_MS, plain: true \}/, 'dictation asks for 16 kHz, plain (no call processing)');
 });
 
 test('B-082: a take goes in with its marks hidden; unheard recordings stay as chips or toasts with "Transcribe again"', () => {
