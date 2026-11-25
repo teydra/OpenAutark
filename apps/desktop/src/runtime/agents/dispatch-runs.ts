@@ -54,6 +54,7 @@ import type { LiveStatus } from './dispatch-live.ts';
 import { turnEndedEarly } from './split-turn.ts'; // B-057
 import { abandonRun, armRelease, CRASH_NOTE, RELEASE_MS, settleCrash } from './dispatch-settle.ts'; // B-059 #17/#18
 import type { FoldWhy } from './compaction-policy.ts';
+import type { TurnMemoryGate } from './dispatch-memory.ts';
 import './context-fold.ts'; // TurnRequest.fold, TurnOutcome.fold
 
 const MINUTE_MS = 60_000;
@@ -71,6 +72,8 @@ export function retryAt(entry: Pick<RunEntry, 'conversationId' | 'taskId' | 'att
 export interface TurnDeps {
   services: () => RuntimeServices;
   executor: { execute(request: TurnRequest): Promise<TurnOutcome> };
+  /** Main and split lanes share admission; their engine is not yet known when the dispatcher picks a wake. */
+  memoryGate?: Pick<TurnMemoryGate, 'wait'>;
   /** B-059 #18: how long an aborted main-lane turn may take to end before it is released (default RELEASE_MS; tests). */
   releaseMs?: number;
 }
@@ -227,6 +230,17 @@ export class RunningTurns {
     await Promise.resolve(); // never run the executor (or finish) inside pump()
     const services = this.deps.services();
     try {
+      if (!request.signal.aborted && this.deps.memoryGate) {
+        await this.deps.memoryGate.wait(request.signal, (phase, note) => {
+          const data = { agentId: entry.agentId, runId: entry.runId, splitId: entry.split?.splitId, ...note };
+          if (phase === 'waiting') {
+            services.log.info('turn waiting for memory headroom', data);
+            this.onStatus(entry, 'Waiting for available memory');
+          } else {
+            services.log.warn('starting turn after bounded memory wait', data);
+          }
+        });
+      }
       if (request.signal.aborted) { // interrupted before it started
         if (entry.split) turnEndedEarly(services, entry.runId, entry.split, entry.control.stopKind === 'human' ? 'stopped' : 'cut');
         return;

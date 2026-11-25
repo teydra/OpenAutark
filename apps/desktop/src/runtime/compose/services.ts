@@ -80,6 +80,7 @@ import { Registry } from '../tools/registry.ts';
 import { registerBuiltinTools } from '../tools/builtin/index.ts';
 import { TurnExecutor } from '../agents/turn.ts';
 import { DispatcherImpl } from '../agents/dispatcher.ts';
+import { TurnMemoryGate } from '../agents/dispatch-memory.ts';
 import { WorkStop, bindWorkStop } from '../agents/work-stop.ts';
 import { createCalls } from '../calls/wiring.ts';
 import { createCalendar } from './calendar.ts'; // B-041 My day: calendar, sources, estimates, day service, morning run
@@ -306,7 +307,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   mesh.register(RELAY_METHOD, (params, from) => receiveNotification(s, notifications, params, from));
   createChatMirror(s); // B-050 K8 (a): the derived chat folders <data>/chats (chat-files/mirror.ts; after the mesh: chat.json names this PC); stop step 'chat mirror'
 
-  const dispatcher = new DispatcherImpl({ services, executor: new TurnExecutor(services) });
+  const dispatcher = new DispatcherImpl({ services, executor: new TurnExecutor(services), memoryGate: new TurnMemoryGate() });
   s.dispatcher = dispatcher;
   org.setActivitySource(() => dispatcher.activity());
   createSplits(s); // B-057: services.splits on the dispatcher's lanes (compose/splits.ts)
