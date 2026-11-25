@@ -18,8 +18,11 @@
 // Reload first, the pane's menu cell last (`trail`) – with the PC's mark ("on office-pc"; in a narrow pane its icon) and,
 // on a touch screen, the touch / touchpad switch as fixed cells before the address. A dialog the page opens there
 // (alert, confirm …) lies over the picture in one fixed place with its answers. While that PC cannot be reached one
-// calm line takes the picture's place and the pulls try again every RETRY_MS; while this window has no connection the offline line stands there and input is dropped, never
-// sent later. Nothing moves: the cells are fixed, buttons only change their color, the touch buttons float.
+// calm line takes the picture's place after PROBLEM_GRACE_MS and the pulls try again every RETRY_MS. Konrad 24.11.2026: while
+// this window's own connection is away the last picture stays and nothing shows here (the status line's one quiet line
+// comes after 5 s, even before the first picture); clicks, keys and pastes made meanwhile wait in order and go once
+// it is back (rpc.ts, up to its QUEUE_LIMIT_MS – later ones are said once afterwards).
+// Nothing moves: the cells are fixed, buttons only change their color, the touch buttons float.
 // Owns: the feed of remote side tabs, their picture boxes, this view and its PC-name lookup (helpers: remote-web.ts).
 // Never: loads the page here, runs a feed per view (browser-feed.ts shares one per tab), or keeps what the person types.
 
@@ -34,7 +37,7 @@ import { Button, Icon, IconButton, Spinner } from '../lib/ui.tsx';
 import { createBrowserFeed, type FeedView } from './browser-feed.ts';
 import { Address, useCoarsePointer, useDocumentVisible } from './BrowserLive.tsx';
 import { BrowserSurface } from './BrowserSurface.tsx';
-import { OFFLINE, remoteKey, remoteTarget, sayOnce, whileOpen } from './remote-web.ts';
+import { PROBLEM_GRACE_MS, farProblem, remoteKey, remoteTarget, sayOnce } from './remote-web.ts';
 import { useSpace } from './space.ts';
 
 /** After a failed pull (the PC is offline), the next try while the view stays. */
@@ -146,6 +149,19 @@ function useRemoteView(key: string, watching: boolean): FeedView<SideViewState, 
   return view;
 }
 
+/** `problem` once it has stood `ms` (its text may change meanwhile, e.g. "seen 2 min ago"); null before and once it is gone. */
+function useLate(problem: string | null, ms: number): string | null {
+  const has = problem !== null;
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    setLate(false);
+    if (!has) return;
+    const timer = setTimeout(() => setLate(true), ms);
+    return () => clearTimeout(timer);
+  }, [has]);
+  return has && late ? problem : null;
+}
+
 const fresh = sayOnce(SAY_AGAIN_MS);
 /** An input the page did not take: said in the status line, the same text at most once per SAY_AGAIN_MS. */
 function inputFailed(error: unknown): void {
@@ -189,7 +205,10 @@ export function RemoteWebTab(props: RemoteWebTabProps) {
     if (editing !== undefined) { if (!focused && Date.now() - pressAt.current < KEYS_AFTER_TAP_MS) field.focus({ preventScroll: true }); }
     else if (focused) field.blur();
   }, [editing]);
-  const problem = rpc.status.value !== 'open' ? OFFLINE : error ?? state?.error ?? null;
+  // Konrad 24.11.2026: a drop under PROBLEM_GRACE_MS shows nothing – the last picture stays and input waits (rpc.ts holds it)
+  const connected = rpc.status.value === 'open';
+  const late = useLate(connected ? farProblem(error, state?.error) : null, PROBLEM_GRACE_MS);
+  const problem = connected ? late : null; // only the global connection line speaks while this window is disconnected
   const shown = problem ? null : frame;
   const usable = can('side.input');
   const ready = Boolean(state && !problem && can('side.nav'));
@@ -197,10 +216,10 @@ export function RemoteWebTab(props: RemoteWebTabProps) {
   const go = (nav: Omit<SideNav, 'device' | 'tab'>) => {
     rpc.call('side.nav', { ...remoteTarget(key), ...nav }).catch((failure) => toastError(failure, 'The page could not do that'));
   };
-  const send = whileOpen(() => rpc.status.peek() === 'open', (frameTab: string, input: BrowserInput) => {
+  const send = (frameTab: string, input: BrowserInput) => {
     if (input.kind === 'mouse' && input.type === 'up') pressAt.current = Date.now(); // this viewer's own tap: the keyboard may follow it
-    return rpc.call('side.input', { ...remoteTarget(remoteKey(device, frameTab)), input });
-  });
+    return rpc.call('side.input', { ...remoteTarget(remoteKey(device, frameTab)), input }); // while the connection is away it waits in order
+  };
   const switchMode = () => { const next: InputMode = mode === 'pad' ? 'touch' : 'pad'; keepMode(next); setMode(next); };
 
   return (

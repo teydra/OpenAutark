@@ -1,11 +1,12 @@
 // B-076 on the UI side: the remote website tab's helpers (src/ui/workspace/remote-web.ts) – a tab on a PC is one feed
 // key and back (no device: this PC), the same input failure is said once in a while – and the feed's pull loop with
 // `retryMs` (browser-feed.ts): a PC that cannot be reached shows its reason, the loop asks again after the wait and the
-// picture comes back by itself; without a view nothing is asked any more. Offline, a tap is dropped at once and never
-// replayed after the reconnect (whileOpen). The view's wiring is read from its source (no DOM here): its picture never
+// picture comes back by itself; without a view nothing is asked any more. Konrad 24.11.2026: while this window's
+// connection is away the last picture stays and a tap waits for the connection (quiet-reconnect.test.ts has the whole
+// path through rpc). The view's wiring is read from its source (no DOM here): its picture never
 // takes the keyboard by itself (BrowserSurface autoFocus false – only a click does), the pane's tab shortcuts stay the
-// app's, its toolbar keeps the address row's cells in their places with the pane's menu cell last, the offline line
-// stands in the picture's place while the connection is down, and the page's dialog lies over the picture.
+// app's, its toolbar keeps the address row's cells in their places with the pane's menu cell last, a problem stands in
+// the picture's place only after the grace, and the page's dialog lies over the picture.
 // Owns: these assertions only. Never: a DOM, runtime or socket.
 
 import { test } from 'node:test';
@@ -13,7 +14,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OFFLINE, remoteKey, remoteTarget, sayOnce, whileOpen } from '../../../src/ui/workspace/remote-web.ts';
+import { PROBLEM_GRACE_MS, farProblem, remoteKey, remoteTarget, sayOnce } from '../../../src/ui/workspace/remote-web.ts';
+import { LOST_TEXT } from '../../../src/ui/lib/rpc-error.ts';
 import { createInputSender } from '../../../src/ui/workspace/browser-input.ts';
 import type { BrowserInput } from '../../../src/shared/model/browser.ts';
 import { createBrowserFeed, type FeedView } from '../../../src/ui/workspace/browser-feed.ts';
@@ -74,27 +76,39 @@ test('a failed pull shows its reason and is tried again after retryMs while the 
   assert.ok(calls <= after + 1, 'without a view the loop ends');
 });
 
-test('offline, a tap is dropped at once and never replayed after the reconnect; online it goes to the page', async () => {
-  let open = false;
+test('Konrad 24.11.2026: this window\'s dropped connection is no problem of the picture; a far PC\'s problem shows after the grace', () => {
+  assert.equal(farProblem(LOST_TEXT), null, 'the pulls the drop broke start again on reconnect');
+  assert.equal(farProblem('Your PC is not reachable right now – nothing was sent.'), null);
+  assert.equal(farProblem('office-pc is not reachable (seen 2 min ago).'), 'office-pc is not reachable (seen 2 min ago).');
+  assert.equal(farProblem(null, 'The page crashed.'), 'The page crashed.');
+  assert.equal(farProblem(LOST_TEXT, 'The page crashed.'), 'The page crashed.');
+  assert.equal(PROBLEM_GRACE_MS, 5000);
+});
+
+test('a tap made while the connection is away waits for it instead of failing (the sender drops nothing behind a lost one)', async () => {
   const sent: string[] = [];
   const failed: string[] = [];
-  const send = whileOpen(() => open, async (tab: string, input: BrowserInput) => { sent.push(`${tab} ${input.kind}`); return { ok: true }; });
-  const sender = createInputSender(send, (error) => { failed.push((error as Error).message); });
+  let open = false;
+  const waiting: Array<() => void> = [];
+  const send = (tab: string, input: BrowserInput) => new Promise<unknown>((resolve, reject) => {
+    if (input.kind === 'key' && input.key === 'x') { reject(new Error(LOST_TEXT)); return; } // on its way when the drop came
+    const go = () => { sent.push(`${tab} ${input.kind} ${input.kind === 'mouse' ? input.type : ''}`); resolve({ ok: true }); };
+    if (open) go(); else waiting.push(go);
+  });
+  const sender = createInputSender(send, (error) => { failed.push((error as Error).message); }, { window: 8, lost: (error) => (error as Error).message === LOST_TEXT });
   const tap: BrowserInput = { kind: 'mouse', type: 'down', x: 10, y: 20, width: 400, height: 300, button: 'left', clicks: 1 };
+  sender.push('web-1', { kind: 'key', type: 'down', key: 'x', code: '' });
   sender.push('web-1', tap);
   sender.push('web-1', { ...tap, type: 'up' });
   await wait(0);
-  assert.deepEqual(failed, [OFFLINE], 'said once');
-  assert.equal(sender.pending(), 0, 'nothing waits for the connection');
+  assert.deepEqual(failed, [], 'a lost input says nothing');
   open = true;
+  for (const go of waiting.splice(0)) go();
   await wait(0);
-  assert.deepEqual(sent, [], 'nothing is replayed when it is back');
-  sender.push('web-1', tap);
-  await wait(0);
-  assert.deepEqual(sent, ['web-1 mouse']);
+  assert.deepEqual(sent, ['web-1 mouse down', 'web-1 mouse up'], 'in order once it is back');
 });
 
-test('the remote tab: no keyboard grab on a picture appearing, the address row\'s cells in their places, offline line, the page\'s dialog', () => {
+test('the remote tab: no keyboard grab on a picture appearing, the address row\'s cells in their places, one connection line, the page\'s dialog', () => {
   const tab = source('RemoteWebTab.tsx');
   const surface = source('BrowserSurface.tsx');
   assert.match(tab, /<BrowserSurface [^]*?autoFocus=\{false\} appKeys /, 'the picture appearing (a tab switch on the other PC, a recovery) never takes the keyboard');
@@ -105,8 +119,12 @@ test('the remote tab: no keyboard grab on a picture appearing, the address row\'
   const order = ['label="Back"', 'label="Forward"', 'label="Reload"', 'class="remote-web-mark"', '<Address', 'browser-live-trail'].map((cell) => toolbar.indexOf(cell));
   assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]!)), `Back, Forward, Reload first, the menu cell last: ${order.join(', ')}`);
   assert.match(source('WorkspacePane.tsx'), /<RemoteWebTab [^>]*trail=\{<PaneMenu id=\{entry\.id\} \/>\}/, 'the pane\'s menu cell (All tabs, History, Full view) is there');
-  assert.match(tab, /rpc\.status\.value !== 'open' \? OFFLINE/, 'the offline line takes the picture\'s place while the connection is down');
+  assert.match(tab, /const connected = rpc\.status\.value === 'open'/);
+  assert.match(tab, /const late = useLate\(connected \? farProblem\(error, state\?\.error\) : null, PROBLEM_GRACE_MS\)/, 'show a far PC problem only while connected, after its grace');
+  assert.match(tab, /const problem = connected \? late : null;\s*[^\n]*\n\s*const shown = problem \? null : frame/, 'the connection line alone speaks, with or without a picture');
+  assert.doesNotMatch(tab, /Offline .+the page shows again|\bOFFLINE\b/, 'never duplicate the global status in this pane');
   assert.match(tab, /send=\{send\}/);
-  assert.match(tab, /const send = whileOpen\(\(\) => rpc\.status\.peek\(\) === 'open'/);
+  assert.match(tab, /const send = \(frameTab: string, input: BrowserInput\) => \{/, 'input goes to rpc.call, which holds it while the connection is away');
+  assert.match(source('BrowserSurface.tsx'), /lost: \(error\) => connectionFailure\(error\) === 'lost'/, 'the surface\'s sender drops nothing behind an input the drop took');
   assert.match(tab, /state\?\.dialog && <PageDialog [^>]*onAnswer=\{\(answer\) => go\(\{ dialog: answer \}\)\}/, 'the page\'s dialog is answered from here');
 });

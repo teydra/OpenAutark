@@ -1,6 +1,6 @@
 // B-076: a side tab watched from another PC or a phone (src/main/side-driver/caster.ts) on a fake DevTools debugger and a
 // manual clock: only the three Input commands pass, an address is made absolute like the address field does; `on` starts
-// the screencast with the agents' live-view settings (JPEG 60, ≤ 1280 px) and the page focused, every frame is acknowledged
+// the remote screencast (JPEG 45, ≤ 1280 px) and the page focused, every frame is acknowledged
 // at once and at most one per 100 ms (B-081) – the newest – goes on with the page; the cast ends a minute after the last renewal
 // or at `on: false`; input is the person's (agents yield, a press keeps the tab) and a failure never echoes it. A dialog
 // the page opens travels with the page, input waits for its answer and the watcher gives it; a watch that ends lets the
@@ -85,13 +85,13 @@ test('sideNav takes exactly one of an http(s) address (made absolute) or back / 
   }
 });
 
-test('on: the page wakes, the screencast runs with the live-view settings and the page counts as focused', async () => {
+test('on: the page wakes, the screencast runs with the remote-view settings and the page counts as focused', async () => {
   const r = rig();
   r.contents.url = 'https://mail.example/inbox';
   const result = await r.caster.cast({ tab: TAB, on: true });
   assert.equal(result.page?.url, 'https://mail.example/inbox');
   assert.equal(r.caster.watched(TAB), true);
-  assert.deepEqual(r.dbg.named('Page.startScreencast').map((c) => c.params), [{ format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 }]);
+  assert.deepEqual(r.dbg.named('Page.startScreencast').map((c) => c.params), [{ format: 'jpeg', quality: 45, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 }]);
   assert.deepEqual(r.dbg.named('Emulation.setFocusEmulationEnabled').map((c) => c.params), [{ enabled: true }]);
   await r.caster.cast({ tab: TAB, on: true }); // a renewal starts nothing new
   assert.equal(r.dbg.named('Page.startScreencast').length, 1);

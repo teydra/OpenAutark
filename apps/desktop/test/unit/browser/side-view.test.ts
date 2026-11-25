@@ -106,6 +106,38 @@ test('the owner (and a linked PC passing on its owner) gets a frame every 100 ms
   assert.equal((answered as SidePull | undefined)?.frame?.data, 'F2');
 });
 
+test('unchanged pictures are not sent again; a new viewer gets a full picture, input and page metadata stay live', async () => {
+  const r = rig();
+  const start = await r.pull('dev_phone', A);
+  r.update(A, 'F1');
+  const first = await r.pull('dev_phone', A, { state: start.state.at });
+  const after = { frame: first.frame!.at, state: first.state.at };
+  const waiting = r.pull('dev_phone', A, after);
+  r.update(A, 'F1', { zoom: 2 });
+  assert.equal((await r.views.current(A)).frame?.at, after.frame);
+  await r.views.input(A, { kind: 'mouse', type: 'down', x: 640, y: 200, width: 1280, height: 800, button: 'left' });
+  const { x, y } = r.inputs.at(-1)!.commands[0]!.params;
+  assert.deepEqual([x, y], [320, 100], 'input uses the latest metadata even without new pixels');
+  assert.deepEqual((await r.pull('other_viewer', A)).frame, first.frame, 'a new viewer still gets a full JPEG');
+
+  await r.timers.advance(300);
+  r.views.update({
+    tab: A, live: true,
+    page: { ...first.state, title: 'New title' },
+    frame: { data: 'F1', meta: { deviceWidth: 1280, deviceHeight: 800, offsetTop: 0, pageScaleFactor: 1, zoom: 2 } },
+  });
+  const next = await waiting;
+  assert.equal(next.state.title, 'New title');
+  assert.equal(next.frame, undefined, 'page changes never resend the same picture');
+
+  r.update(A, 'F1', { deviceWidth: 640 });
+  const resized = await r.pull('dev_phone', A, { ...after, state: next.state.at });
+  assert.equal(resized.frame?.width, 640, 'viewport changes still get a new picture stamp');
+  await r.timers.advance(300);
+  r.update(A, 'F2', { deviceWidth: 640 });
+  assert.equal((await r.pull('dev_phone', A, { frame: resized.frame?.at, state: resized.state.at })).frame?.data, 'F2');
+});
+
 test('renewals come at most once per RENEW_MS; the cast is turned off PULL_GRACE_MS after the last pull', async () => {
   const r = rig();
   const first = await r.pull('owner', A);

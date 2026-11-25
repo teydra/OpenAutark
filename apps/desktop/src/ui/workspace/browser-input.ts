@@ -95,8 +95,10 @@ const isMove = (input: BrowserInput | undefined): boolean => input?.kind === 'mo
  * a wider window a move also waits while another move is unanswered (the newest replaces it), and a press, key or
  * text behind it sends it first. The first failure drops what waits (keys meant for a page that is gone) and is
  * reported once – inputs already on their way that fail with it are not reported again; a failed move is not reported.
+ * Konrad 24.11.2026: with `lost`, an input that failed only because the connection broke under it (`lost(error)`) drops
+ * nothing and says nothing – what waits goes on in order once the connection is back (rpc.ts holds calls made meanwhile).
  */
-export function createInputSender(send: (tab: string, input: BrowserInput) => Promise<unknown>, onError: (error: unknown) => void, options: { window?: number } = {}): InputSender {
+export function createInputSender(send: (tab: string, input: BrowserInput) => Promise<unknown>, onError: (error: unknown) => void, options: { window?: number; lost?: (error: unknown) => boolean } = {}): InputSender {
   const most = Math.max(1, Math.floor(options.window ?? 1));
   let queue: Queued[] = [];
   let open = 0; // calls unanswered
@@ -106,7 +108,7 @@ export function createInputSender(send: (tab: string, input: BrowserInput) => Pr
   const settle = (sent: Queued, at: number, error?: unknown) => {
     open--;
     if (isMove(sent.input)) moving--;
-    if (error !== undefined) {
+    if (error !== undefined && !options.lost?.(error)) {
       if (at === round) { round++; queue = []; }
       if (!isMove(sent.input) && at !== said) { said = at; onError(error); }
     }

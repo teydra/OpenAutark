@@ -1,10 +1,11 @@
 // Pure helpers of the remote website tab (RemoteWebTab.tsx, B-076): the feed key of a tab on a PC and the call target
-// it stands for (no device: this PC), the rule that says the same input failure only once in a while, and the send
-// that refuses at once while the connection is down (what the person does offline is dropped, never sent later).
+// it stands for (no device: this PC), which remote problems can replace the picture, and the rule that says
+// the same input failure only once in a while. Konrad 24.11.2026 (Stanislaus: red banners on every short drop): a drop of this window's
+// connection keeps the last picture and shows nothing here – the status line's one quiet line says it after 5 s – and
+// what the person does meanwhile is held in order and sent once the connection is back (rpc.ts, up to QUEUE_LIMIT_MS).
 // Owns: these helpers. Never: renders, calls the runtime or keeps input.
 
-/** The calm line in the picture's place while this window has no connection. */
-export const OFFLINE = 'Offline – the page shows again when the connection is back.';
+import { connectionFailure } from '../lib/rpc-error.ts';
 
 /** The feed key of `tab` on `device` (device ids never hold a '|'). */
 export const remoteKey = (device: string, tab: string): string => `${device}|${tab}`;
@@ -28,7 +29,14 @@ export function sayOnce(ms: number, now: () => number = Date.now): (text: string
   };
 }
 
-/** `send` while the connection is open; otherwise it fails at once, so a tap made offline never lands later on a page that changed. */
-export function whileOpen<A extends unknown[], R>(open: () => boolean, send: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
-  return (...args) => (open() ? send(...args) : Promise.reject(new Error(OFFLINE)));
+/** A problem only shows after it stood this long (Konrad 24.11.2026: a drop under 5 s shows nothing; the last picture stays). */
+export const PROBLEM_GRACE_MS = 5000;
+
+/**
+ * The problem the far side reports (a failed pull's text, the page's own error) – but not this window's own connection
+ * going away (connectionFailure: the status line's one connection line says that, and the pulls start again on reconnect).
+ */
+export function farProblem(error: string | null | undefined, pageError?: string | null): string | null {
+  if (error && !connectionFailure(error)) return error;
+  return pageError || null;
 }
