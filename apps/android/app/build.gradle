@@ -10,6 +10,9 @@
 // APK carries its native library for arm64-v8a and armeabi-v7a only (phones; on an x86 emulator the app stays on its
 // tunnel), compressed (useLegacyPackaging: ~7.8 MB more download instead of 14.5 MB; Android unpacks it at install – its
 // arm64 ELF segments are 16 KB-aligned, as Play asks).
+// Owner 25.11.2026 (anonymous usage count, README › What Autark counts): copyUsageReceiver puts the feedback receiver's file (project and
+// public web key of the Firestore counter, public by design – no secret) into assets/usage/receiver.json, so the phone's count reaches
+// the same counter as the PCs' (usage/UsageCount).
 // Never: bundles desktop credentials or web UI copies, or holds a key or password itself.
 plugins { id 'com.android.application' }
 def releaseKeystore = System.getenv('AUTARK_ANDROID_KEYSTORE')
@@ -38,7 +41,7 @@ android {
         versionName = '0.3.20'
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' } // F25: libwebrtc for phones only (x86 would add ~20 MB)
     }
-    sourceSets { main { assets.srcDir('build/generated/tour') } } // the feedback video page (build.ps1)
+    sourceSets { main { assets.srcDir('build/generated/tour'); assets.srcDir('build/generated/usage') } } // the feedback video page (build.ps1); the usage counter's address
     flavorDimensions = ['store']
     productFlavors {
         site { dimension = 'store' }
@@ -76,6 +79,11 @@ android {
         jniLibs { useLegacyPackaging = true } // F25: libwebrtc compressed in the APK (decision 16.11.2026: download size first)
     }
 }
+def copyUsageReceiver = tasks.register('copyUsageReceiver', Copy) {
+    from(rootProject.file('../desktop/resources/feedback/receiver.json'))
+    into(layout.buildDirectory.dir('generated/usage/usage'))
+}
+tasks.named('preBuild') { dependsOn(copyUsageReceiver) }
 dependencies {
     // Ed25519 and X25519 for Android 8+ (the platform has them only from Android 13); the same version Gradle already caches.
     implementation 'org.bouncycastle:bcprov-jdk18on:1.79'

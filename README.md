@@ -173,8 +173,11 @@ under a separate operating-system user or in a virtual machine, and connect only
 
 ## Network connections
 
-Autark has **no telemetry, analytics or crash reporting**. These are the connections the app makes. Settings named
-below live in `settings.json` in Autark's data folder and in the Settings pages.
+Autark has **no crash reporting and no tracking of what you do**. The one thing it counts is described in
+[What Autark counts](#what-autark-counts): an anonymous number of how often Autark is used, with a switch to turn it
+off. These are the
+connections the app makes. Settings named below live in `settings.json` in Autark's data folder and in the Settings
+pages.
 
 **By itself, without any setup**
 
@@ -182,6 +185,7 @@ below live in `settings.json` in Autark's data folder and in the Settings pages.
 |---|---|---|---|
 | GitHub (`github.com/teydra/OpenAutark`) | Update check and download | Desktop: every minute while the window is open, every 15 minutes in the tray. Android: every 30 minutes | The check has no switch. Downloads start only on your click unless `autoDownloadUpdates` is on |
 | Meeting server (`telecoding-relay.onrender.com`, ours) | Your PCs and phones find each other by Remote ID; a phone that cannot reach the PC directly is tunnelled through it. It sees addresses and end-to-end encrypted bytes | While the app runs | `devices.relay: ""`, or your own server ([services/remote-relay](services/remote-relay/README.md)) |
+| Usage counter (Google Firestore, project of ours) | Adds 1 to a number: the platform and the hour. See [What Autark counts](#what-autark-counts) | At most once an hour, and only while Autark is being used | Settings › Security › Anonymous usage count, or `usage.count: false` |
 | STUN (`stun.cloudflare.com`) | The PC and a phone learn their public address for a direct WebRTC connection | From the version after 0.3.9: when a phone connects | `devices.stun: []` or `devices.rtc: false` |
 | OpenRouter (`openrouter.ai/api/v1/models`) | Public price list of AI models | One GET a day, sends no data of yours | No switch |
 | `openautark.com/model-priors.json` (ours) | Our rating of AI models, a static file | One GET a day, sends no data of yours | No switch |
@@ -215,6 +219,30 @@ below live in `settings.json` in Autark's data folder and in the Settings pages.
 
 Agents that have the shell or the web open can also reach any address themselves. Code signing timestamp
 servers are contacted only when we build a release, never by the app.
+
+## What Autark counts
+
+We want to know whether anyone uses Autark, so installed copies add 1 to a counter. This is everything that is sent:
+
+- **What:** one request to our Firestore project (`autark-feedback-7`) that raises the number `n` of the document
+  `use/<UTC day>-<platform>-<UTC hour>` by 1, for example `use/2026-11-25-windows-15`. On the first count of a UTC day it
+  also raises `dev` by 1, which gives a rough count of devices per day.
+- **Platform:** `windows`, `mac`, `linux` or `android`. Nothing else: no device or install ID, no version, no language, no
+  company, agent, user, model, chat, file or other content. Google receives the request's IP address as with any
+  connection; we store none, and the database rules accept no other field.
+- **When:** at most once per device per UTC hour, and only in an hour in which Autark was used – on a PC when you send a
+  message or an agent starts a turn, on Android while the app is in front. A closed or idle Autark sends nothing.
+- **What stays on the device:** only the last hour that was counted (one line), so it does not count twice. Failed
+  counts are dropped, not retried, and never slow Autark down.
+- **Switch:** Settings › Security › **Anonymous usage count** (default on; on Android also in the app's first-start
+  screen and in its Settings). Off means nothing is sent from that moment. In `settings.json`: `usage.count: false`.
+  The switch is per PC and never synced.
+- **Where in the code:** desktop [`apps/desktop/src/runtime/usage/`](apps/desktop/src/runtime/usage) (`signal.ts` is the
+  whole request, `service.ts` decides when), Android
+  [`apps/android/app/src/main/java/com/teydralab/autark/android/usage/`](apps/android/app/src/main/java/com/teydralab/autark/android/usage)
+  (`UsageSignal.java` is the whole request). The rules are in
+  [`apps/desktop/resources/feedback/firestore.rules`](apps/desktop/resources/feedback/firestore.rules). Development builds
+  (not installed from a release) never send it.
 
 ## The public library
 

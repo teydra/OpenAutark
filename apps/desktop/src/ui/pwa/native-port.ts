@@ -17,6 +17,8 @@
 // STIMME 21.11.2026: page → app {t:'hear', id, data, mime, language?} – a dictation piece (base64) the app (0.3.18+, its
 // 'status' says hear:true – nativeCan('hear')) posts to the person's ChatGPT plan itself; app → page {t:'heard', id, text}
 // or {t:'heard', id, error} (lib/dictation-direct.ts).
+// USAGE 25.11.2026: page → app {t:'usage', on?} sets this phone's anonymous usage count switch (when `on` is given) and asks
+// for its state; app → page {t:'usage', on, text} (replayed; settings/phone-usage.ts).
 // Owns: the port, parsing and dispatch. Never: what a message means (phone-companies.ts, share.ts, … decide).
 
 type NativeMessage = Record<string, unknown>;
@@ -26,7 +28,7 @@ let port: MessagePort | null = null;
 let started = false;
 const handlers = new Map<string, Set<Handler>>();
 const last = new Map<string, NativeMessage>();
-const REPLAYED = new Set(['companies', 'status', 'crash', 'bubble.state']);
+const REPLAYED = new Set(['companies', 'status', 'crash', 'usage', 'bubble.state']);
 
 /** True once the app handed the page its port. */
 export function hasNativePort(): boolean {

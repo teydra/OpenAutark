@@ -49,6 +49,7 @@ import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 import com.teydralab.autark.android.pair.PairRun;
 import com.teydralab.autark.android.pair.PairScreens;
+import com.teydralab.autark.android.usage.UsageCount;
 import com.teydralab.autark.android.relay.PhoneConnection;
 import java.io.IOException;
 import java.util.List;
@@ -116,6 +117,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         setContentView(root); // first: the window's decor exists before SystemBars asks it for the insets controller
         optional(() -> { SystemBars.install(this, root, content); PairScreens.bars(SystemBars::apply); });
         PairScreens.tour(IntroTour.carried(this) ? this::showTour : null); // "How feedback works" on the first level
+        PairScreens.usage(() -> UsageCount.on(this), on -> UsageCount.set(this, on)); // the first level's tick of the anonymous usage count (owner 25.11.2026)
         createWebView();
         if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::goBack);
         pendingRoute = state == null ? null : PhoneRoutes.place(state.getString("route"));
@@ -390,6 +392,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     @Override public void onBackPressed() { goBack(); }
     @Override protected void onResume() {
         super.onResume();
+        optional(() -> UsageCount.resumed(this)); // owner 25.11.2026: the app in front is "in use" – the anonymous usage count (usage/UsageCount)
         if (port != null) resumed();
     }
     private void resumed() {
@@ -404,7 +407,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         optional(() -> PhoneUseAsk.settle(this)); // phone use there and agreed (or the full build after the upgrade): the request goes
         optional(() -> UpdateCheck.start(this, updates));
     }
-    @Override protected void onPause() { paused = true; AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
+    @Override protected void onPause() { paused = true; UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         String place = web == null || setup ? null : PhoneRoutes.place(web.getUrl());
