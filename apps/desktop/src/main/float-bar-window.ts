@@ -24,7 +24,7 @@ const MAX_BODY = 16 * 1024 * 1024; // a two-minute dictation as base64 WAV is ab
 export interface FloatElectron {
   BrowserWindow: new (options: BrowserWindowConstructorOptions) => BrowserWindow;
   fromPartition(partition: string, options: { cache: boolean }): Session;
-  screen: { getDisplayNearestPoint(point: { x: number; y: number }): { workArea: Rect } };
+  screen: { getDisplayNearestPoint(point: { x: number; y: number }): { workArea: Rect }; getCursorScreenPoint(): { x: number; y: number } };
   globalShortcut: { register(accelerator: string, callback: () => void): boolean; unregister(accelerator: string): void };
   Menu: { buildFromTemplate(template: MenuItemConstructorOptions[]): { popup(options: { window: BrowserWindow }): void } };
 }
@@ -84,6 +84,7 @@ export function openFloatBar(electron: FloatElectron, deps: FloatDeps): { close(
     bounds: () => win.getBounds(),
     setBounds: (rect) => { if (!win.isDestroyed()) win.setBounds(rect); },
     workArea: (point) => electron.screen.getDisplayNearestPoint({ x: Math.round(point.x), y: Math.round(point.y) }).workArea,
+    cursor: () => electron.screen.getCursorScreenPoint(),
     show: (next, focus) => {
       look = next;
       hidden = false;
@@ -151,7 +152,7 @@ export function startFloatBar(
   electron: {
     BrowserWindow: FloatElectron['BrowserWindow'];
     session: { fromPartition(partition: string, options: { cache: boolean }): Session };
-    screen: { getDisplayNearestPoint(point: { x: number; y: number }): DisplayAt; getAllDisplays(): Array<{ id: number }>; getPrimaryDisplay(): DisplayAt };
+    screen: { getDisplayNearestPoint(point: { x: number; y: number }): DisplayAt; getCursorScreenPoint(): { x: number; y: number }; getAllDisplays(): Array<{ id: number }>; getPrimaryDisplay(): DisplayAt };
     globalShortcut: FloatElectron['globalShortcut'];
     nativeImage: { createFromBuffer(buffer: Buffer): NativeImage };
     Menu: FloatElectron['Menu'];
@@ -180,7 +181,7 @@ export function startFloatBar(
     open: (request: NavigateRequest) => { window.show(); renderer.sendWhenLoaded(IPC.navigate, request); },
     call: (conversationId) => { window.load(); renderer.sendWhenLoaded(IPC.navigate, { conversationId, call: true } satisfies NavigateRequest); },
     endCall: (conversationId) => renderer.sendWhenLoaded(IPC.bubbleEnd, conversationId), // after a navigate still queued for a loading page
-    shownChanged: (shown) => deps.tray.setBubble(shown),
+    shownChanged: (shown) => { deps.tray.setBubble(shown); renderer.send(IPC.bubbleState, { available: true, out: shown }); }, // and the rail icon (0.3.20)
     primaryArea: () => screen.getPrimaryDisplay().workArea,
     log: deps.log,
   });

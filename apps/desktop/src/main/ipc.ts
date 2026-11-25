@@ -10,7 +10,7 @@
 // injected).
 
 import { IPC } from '../shared/api/desktop.ts';
-import type { BubbleCall, IpcResult, PickKind, RuntimeStatus, TitleBarLayout } from '../shared/api/desktop.ts';
+import type { BubbleCall, BubbleHandleState, BubbleHandleStep, IpcResult, PickKind, RuntimeStatus, TitleBarLayout } from '../shared/api/desktop.ts';
 import type { FileRef, UpdateState } from '../shared/model/system.ts';
 import * as args from './ipc-args.ts';
 import { externalUrl, isTrustedSender } from './security.ts';
@@ -58,6 +58,9 @@ export interface IpcDeps {
   voiceLive?(on: boolean): void;
   /** The page's call for the floating bubble (float-bar.ts setCall), checked here. */
   bubbleCall?(call: BubbleCall | null): void;
+  /** 0.3.20: the rail icon pulls the floating bubble out (float-bar.ts handle); its state for the icon. */
+  bubbleHandle?(step: BubbleHandleStep): void;
+  bubbleState?(): BubbleHandleState;
   log?(line: string): void;
 }
 
@@ -177,6 +180,8 @@ export function registerIpc(ipc: IpcMainLike, deps: IpcDeps): void {
   // owner 19.11.2026: voice live (the window's background throttling) and the page's call for the floating bubble
   on(IPC.voiceLive, (_event, on) => deps.voiceLive?.(on === true));
   on(IPC.bubbleCall, (_event, call) => deps.bubbleCall?.(bubbleCallOf(call)));
+  on(IPC.bubbleHandle, (_event, step) => { if (step === 'pull' || step === 'move' || step === 'drop' || step === 'press') deps.bubbleHandle?.(step); });
+  handle(IPC.bubbleStateGet, async () => deps.bubbleState?.() ?? { available: false, out: false });
 
   // B-044: network back. A hidden window that shares the preload sends it too – dropped without a refusal line.
   ipc.on(IPC.online, event => {

@@ -5,7 +5,7 @@
 
 import { IconButton } from '../lib/ui.tsx';
 import type { IconName } from '../lib/ui.tsx';
-import { forYouCount, route } from '../lib/store.ts';
+import { forYouCount, preferences, route } from '../lib/store.ts';
 import { navigate } from '../lib/router.ts';
 import type { RouteView } from '../lib/router.ts';
 import { useContextMenu } from '../lib/context-menu.tsx';
@@ -16,6 +16,7 @@ import { dropSide, isDragged, navDrag, navMenu, navOrder, onNavKey } from './rai
 import { UpdateButton } from './UpdateButton.tsx';
 import { QuotaRail } from './QuotaRail.tsx';
 import { ProfileButton } from './ProfileMenu.tsx';
+import { desktopBubble } from './DesktopBubbleHandle.tsx';
 import { SidebarToggle } from './WindowBar.tsx';
 
 interface Destination {
@@ -57,7 +58,7 @@ function RailItem(props: { id: RailKey }) {
 export function Rail() {
   return (
     <nav class="rail" aria-label="Main">
-      <div class="rail-header"><SidebarToggle /></div>
+      <div class="rail-header">{(!desktopBubble.value.available || !preferences.value.sidebarOpen) && <SidebarToggle />}</div>
       <div class="rail-top">
         {navOrder.value.map((id) => <RailItem key={id} id={id} />)}
       </div>

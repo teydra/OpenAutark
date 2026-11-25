@@ -7,7 +7,9 @@
 
 import { updatePreferences } from '../lib/store.ts';
 import { ColumnResize } from './ColumnResize.tsx';
-import { ZoneHeader } from './views.ts';
+import { Header } from '../lib/header.tsx';
+import { desktopBubble, desktopBubbleLead } from './DesktopBubbleHandle.tsx';
+import { SidebarToggle } from './WindowBar.tsx';
 import type { DesktopViews } from './views.ts';
 
 export const SIDEBAR_MIN = 200;
@@ -16,9 +18,12 @@ export const SIDEBAR_DEFAULT = 288;
 
 export function Sidebar(props: { view: DesktopViews['side']; width: number; onLiveWidth: (width: number | null) => void }) {
   const { view } = props;
+  const header = view.header();
+  const bubble = desktopBubble.value.available;
   return <>
     <aside class="sidebar" aria-label="Sidebar">
-      <ZoneHeader key={view.key} read={view.header} zone="side" />
+      <Header key={view.key} {...header} zone="side" lead={bubble ? desktopBubbleLead : header.lead}
+        cells={bubble ? [...(header.cells ?? []), { id: 'sidebar-toggle', slot: <SidebarToggle /> }] : header.cells} />
       <div class="sidebar-body" key={view.key}>{view.body}</div>
     </aside>
     <ColumnResize label="Resize sidebar" class="sidebar-resize" width={props.width} min={SIDEBAR_MIN} max={SIDEBAR_MAX}

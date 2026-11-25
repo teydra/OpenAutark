@@ -19,13 +19,13 @@ import { TourIcon } from './icons.tsx';
 import { fitScale, formatTime, keyAction, nextTime, stepTime, timeAt } from './player-model.ts';
 import { Scene } from './Scene.tsx';
 import type { Variant } from './scene-layout.ts';
-import { ANDROID_TOUR, TOURS } from './timeline.ts';
+import { ANDROID_TOUR, DESKTOP_BUBBLE_TOUR, TOURS } from './timeline.ts';
 
 export const TOUR_TITLE = 'How to send feedback';
 export const END_TEXT = 'Only the Teydra team can read your feedback – it is encrypted on your PC.';
 
-export function TourPlayer(props: { onDone: () => void; autoplay?: boolean; variant?: Variant; skip?: boolean; note?: string; bubble?: boolean }) {
-  const tour = props.bubble ? ANDROID_TOUR : TOURS[props.variant ?? 'desktop'];
+export function TourPlayer(props: { onDone: () => void; autoplay?: boolean; variant?: Variant; skip?: boolean; note?: string; bubble?: boolean; desktopBubble?: boolean }) {
+  const tour = props.bubble ? ANDROID_TOUR : props.desktopBubble ? DESKTOP_BUBBLE_TOUR : TOURS[props.variant ?? 'desktop'];
   const { duration, chapters, clamp, layout } = tour;
   const percent = (at: number) => `${((at / duration) * 100).toFixed(3)}%`;
   const [t, setT] = useState(0);

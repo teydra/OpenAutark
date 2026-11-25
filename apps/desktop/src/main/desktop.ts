@@ -387,7 +387,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
     clipboardWrite: text => clipboard.writeText(text),
     openExternal: url => shell.openExternal(url),
     titleBarLayout: layout => mainWindow.setTitleBarLayout(layout),
-    titleBarDim: dim => mainWindow.setTitleBarDim(dim), voiceLive: on => mainWindow.setVoiceLive(on), bubbleCall: call => floatBar?.bar.setCall(call), // 19.11.2026
+    titleBarDim: dim => mainWindow.setTitleBarDim(dim), voiceLive: on => mainWindow.setVoiceLive(on), bubbleCall: call => floatBar?.bar.setCall(call), bubbleHandle: step => floatBar?.bar.handle(step), bubbleState: () => ({ available: !!floatBar, out: !!floatBar?.bar.shown }), // 19.11.2026; 0.3.20: the rail icon
     log: line => log.line(line),
   }));
 

@@ -206,7 +206,7 @@ function compile(layout: Layout, bubble: boolean): Script {
     move({ x: icon.x + 4, y: layout.header + 18 }, 83, { drag: true, size: 20 }); // a little away: the pull starts
     s.pull.start = now;
     set('out', true);
-    caption('Pull it out – it follows your finger.');
+    caption(layout.variant === 'desktop' ? 'Drag it out with your mouse, or click to bring it back.' : 'Pull it out – it follows your finger.');
     move(layout.drop, 84, { drag: true, size: 40 });
     wait(160);
     release();
@@ -302,3 +302,4 @@ export const TOURS: Readonly<Record<Variant, Tour>> = { desktop: tourOf(DESKTOP)
 
 /** The Android app's tour (phone-page.tsx): the phone's, with the bubble chapter before the end card. */
 export const ANDROID_TOUR: Tour = tourOf(PHONE, true);
+export const DESKTOP_BUBBLE_TOUR: Tour = tourOf(DESKTOP, true);

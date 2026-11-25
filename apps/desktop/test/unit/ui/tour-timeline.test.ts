@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANDROID_TOUR, CELL_TIP, RIPPLE_MS, SENT_LINE, TOURS, WORDS, type Tour } from '../../../src/ui/tour/timeline.ts';
+import { ANDROID_TOUR, DESKTOP_BUBBLE_TOUR, CELL_TIP, RIPPLE_MS, SENT_LINE, TOURS, WORDS, type Tour } from '../../../src/ui/tour/timeline.ts';
 import { DESKTOP, PEN, PHONE, center, inside, type Layout, type Rect, type Variant } from '../../../src/ui/tour/scene-layout.ts';
 import type { Point } from '../../../src/shared/model/pointer-motion.ts';
 
@@ -222,4 +222,13 @@ test('the Android tour: the phone\'s story, then the bubble chapter – the top 
   assert.deepEqual(end.bubble, layout.drop, 'it stays where it was dropped');
   assert.equal(end.handle.on && end.out.on, true, 'the icon stays in the row, faint');
   assert.ok(layout.drop!.y > layout.header && layout.drop!.y < layout.h, 'dropped on the screen');
+});
+
+test('the desktop bubble tour moves the handle to the drop point and keeps it there', () => {
+  const tour = DESKTOP_BUBBLE_TOUR;
+  assert.ok(tour.chapters.some(chapter => chapter.title === 'Bubble'));
+  assert.ok(tour.firstOn('out') > tour.firstOn('handle'));
+  const end = tour.stateAt(tour.duration);
+  assert.deepEqual(end.bubble, tour.layout.drop);
+  assert.ok(tour.captions.some(caption => caption.text.includes('mouse')));
 });

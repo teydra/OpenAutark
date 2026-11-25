@@ -51,6 +51,8 @@ export interface FloatWindow {
   redraw(): void;
   /** The right-click menu at the pointer. */
   menu(items: FloatMenuItem[]): void;
+  /** Where the pointer is on the screen (DIP) – the rail icon's pull follows it. */
+  cursor(): { x: number; y: number };
 }
 
 export interface FloatDeps {
@@ -119,6 +121,8 @@ export class FloatBar {
   /** This draft had its automatic screenshot (the first opening); a sent draft starts again. */
   private autoShot = false;
   private hidden = false;
+  /** The rail icon holds the bubble under the pointer (handle). */
+  private pulling = false;
   /** Counts the panel's cancels of a take being heard: a take heard across one drops its words. */
   private hearing = 0;
   /** The call the app's page reports, and the one asked for until the page reports it (with its expiry). */
@@ -160,10 +164,37 @@ export class FloatBar {
   /** The tray's Show/Hide bubble: hidden keeps the draft and the place; shown comes back as the dot (or the tab, the pill). */
   setHidden(hidden: boolean): FloatView {
     if (hidden === this.hidden) return this.view();
+    this.pulling = false;
     this.hidden = hidden;
     this.place(this.look === 'tab' ? 'tab' : 'dot', false);
     this.deps.shownChanged?.(!hidden);
     return this.view();
+  }
+
+  /**
+   * 0.3.20 (owner 24.11.2026): the round icon in the app's left rail. `pull` brings the bubble out as the dot under the
+   * pointer (also a hidden one), `move` keeps it under the pointer, `drop` leaves it where it is and keeps that place;
+   * `press` (a click without a drag) brings a hidden bubble back to its last place. Main reads the pointer itself.
+   */
+  handle(step: 'pull' | 'move' | 'drop' | 'press'): void {
+    if (step === 'press') { if (this.hidden) this.setHidden(false); return; }
+    if (step === 'pull') {
+      if (this.hidden) { this.hidden = false; this.deps.shownChanged?.(true); }
+      const at = this.window.cursor();
+      this.dot = { x: Math.round(at.x - DOT / 2), y: Math.round(at.y - DOT / 2), width: DOT, height: DOT };
+      this.pulling = true;
+      this.place('dot', false);
+      return;
+    }
+    if (!this.pulling) return;
+    const at = this.window.cursor();
+    this.dot = inside({ x: Math.round(at.x - DOT / 2), y: Math.round(at.y - DOT / 2), width: DOT, height: DOT }, this.window.workArea(at));
+    const area = this.area();
+    this.window.setBounds(this.look === 'call' || this.look === 'panel' ? panelAt(this.dot, area, this.look) : this.dot);
+    if (step === 'drop') {
+      this.pulling = false;
+      this.keep();
+    }
   }
 
   /**
@@ -179,6 +210,7 @@ export class FloatBar {
 
   /** The app's page is gone (window closed, renderer died): its call – and one still starting – ended with it. */
   pageGone(): void {
+    if (this.pulling) { this.pulling = false; this.keep(); }
     if (!this.call && !this.calling) return;
     this.stopCalling();
     this.call = null;

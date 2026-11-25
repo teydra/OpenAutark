@@ -11,14 +11,15 @@ import { closeTour, tourAutoplay, tourOpen, tourVariant } from './open.ts';
 import type { Variant } from './scene-layout.ts';
 import { TOUR_TITLE, TourPlayer } from './TourPlayer.tsx';
 
-export function TourDialog(props: { phone?: boolean }) {
+export function TourDialog(props: { phone?: boolean; desktopBubble?: boolean }) {
   if (!tourOpen.value) return null;
-  return <TourModal variant={tourVariant(Boolean(props.phone))} />;
+  return <TourModal variant={tourVariant(Boolean(props.phone))} desktopBubble={props.desktopBubble} />;
 }
 
-function TourModal(props: { variant: Variant }) {
+function TourModal(props: { variant: Variant; desktopBubble?: boolean }) {
   const { variant } = props;
   const ref = useRef<HTMLDialogElement>(null);
+  const showDesktopBubble = useRef(variant === 'desktop' && props.desktopBubble === true);
   useLayoutEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
@@ -30,7 +31,7 @@ function TourModal(props: { variant: Variant }) {
       onCancel={(event) => { event.preventDefault(); closeTour(); }}
       onClick={(event) => { if (event.target === ref.current) closeTour(); }}
     >
-      <TourPlayer onDone={closeTour} autoplay={tourAutoplay.peek()} variant={variant} />
+      <TourPlayer onDone={closeTour} autoplay={tourAutoplay.peek()} variant={variant} desktopBubble={showDesktopBubble.current} />
     </dialog>
   );
 }

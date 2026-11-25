@@ -31,6 +31,7 @@ function rig(options: { fail?: number; assignee?: { kind: string; id?: string };
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
   let menu: FloatMenuItem[] = [];
   let visible = true;
+  let cursor = { x: 0, y: 0 };
   let saved: FloatPlace | null = null;
   let failures = options.fail ?? 0;
   let shots = 0;
@@ -68,8 +69,9 @@ function rig(options: { fail?: number; assignee?: { kind: string; id?: string };
     hide: () => { visible = false; },
     redraw: () => {},
     menu: (items) => { menu = items; },
+    cursor: () => cursor,
   });
-  return { bar, calls, opened, called, ended, shown, timers, looks, bounds: () => bounds, saved: () => saved, visible: () => visible, menu: () => menu };
+  return { bar, setCursor: (x: number, y: number) => { cursor = { x, y }; }, calls, opened, called, ended, shown, timers, looks, bounds: () => bounds, saved: () => saved, visible: () => visible, menu: () => menu };
 }
 
 test('placement: the panel opens towards the middle, the tab sits on the nearest edge, all inside the work area', () => {
@@ -360,4 +362,42 @@ test('the app page gone (window closed, renderer died) ends the pill and a call 
   const source = readFileSync(new URL('../../../src/main/float-bar-window.ts', import.meta.url), 'utf8');
   assert.match(source, /endCall: \(conversationId\) => renderer\.sendWhenLoaded\(IPC\.bubbleEnd, conversationId\)/);
   assert.match(source, /window\.onPageGone\(\(\) => opened\.bar\.pageGone\(\)\)/);
+});
+
+// 0.3.20 (owner 24.11.2026): the rail icon of the app pulls the floating bubble out under the pointer (handle).
+test('the rail icon: pull puts the dot under the pointer, move follows it, drop keeps the place; a hidden bubble comes out', () => {
+  const r = rig({ kept: { x: 100, y: 100, look: 'dot', hidden: true } });
+  assert.equal(r.visible(), false);
+  r.setCursor(700, 400);
+  r.bar.handle('pull');
+  assert.equal(r.visible(), true);
+  assert.equal(r.bar.shown, true);
+  assert.deepEqual(r.bounds(), { x: 700 - DOT / 2, y: 400 - DOT / 2, width: DOT, height: DOT });
+  assert.deepEqual(r.shown, [false, true], 'the tray and the icon hear that it is out');
+  r.setCursor(900, 520);
+  r.bar.handle('move');
+  assert.deepEqual(r.bounds(), { x: 900 - DOT / 2, y: 520 - DOT / 2, width: DOT, height: DOT });
+  r.setCursor(1000, 560);
+  r.bar.handle('drop');
+  assert.deepEqual([r.saved()?.x, r.saved()?.y, r.saved()?.hidden], [1000 - DOT / 2, 560 - DOT / 2, undefined], 'kept where it was let go');
+  r.setCursor(50, 50);
+  r.bar.handle('move'); // no pull running: the bubble stays
+  assert.equal(r.bounds().x, 1000 - DOT / 2);
+});
+
+test('the rail icon: a click (press) brings a hidden bubble back to its last place and does nothing to one that is out', () => {
+  const r = rig({ kept: { x: 300, y: 200, look: 'dot', hidden: true } });
+  r.bar.handle('press');
+  assert.equal(r.visible(), true);
+  assert.deepEqual([r.bounds().x, r.bounds().y], [300, 200]);
+  const before = r.shown.length;
+  r.bar.handle('press');
+  assert.equal(r.shown.length, before);
+});
+
+test('the rail icon: a pull near the screen edge stays inside the work area', () => {
+  const r = rig();
+  r.setCursor(5000, -40);
+  r.bar.handle('pull');
+  assert.ok(r.bounds().x + DOT <= AREA.width && r.bounds().y >= 0);
 });

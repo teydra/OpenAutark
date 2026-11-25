@@ -43,8 +43,8 @@ test('the iPhone web app plays it once, on its first start after pairing; elsewh
   assert.equal(firstVideoHere(true, { getItem: () => { throw new Error('denied'); }, setItem: () => undefined }), false);
   const shell = source('src/ui/shell/Shell.tsx');
   assert.match(shell, /useEffect\(\(\) => \{ if \(firstVideoHere\(\)\) openTour\(\{ autoplay: true \}\); \}, \[\]\);/);
-  assert.match(shell, /<TourDialog phone=\{isMobile\.value\} \/>/, 'the phone layout plays the phone\'s tour');
+  assert.match(shell, /<TourDialog phone=\{isMobile\.value\} desktopBubble=\{desktopBubble\.value\.available\} \/>/, 'the phone layout plays the phone\'s tour');
   const dialog = source('src/ui/tour/TourDialog.tsx');
-  assert.match(dialog, /<TourModal variant=\{tourVariant\(Boolean\(props\.phone\)\)\} \/>/, 'the opening\'s variant stays while it plays (open.ts tourVariant – tour-variant.test.ts)');
-  assert.match(dialog, /<TourPlayer onDone=\{closeTour\} autoplay=\{tourAutoplay\.peek\(\)\} variant=\{variant\} \/>/);
+  assert.match(dialog, /<TourModal variant=\{tourVariant\(Boolean\(props\.phone\)\)\} desktopBubble=\{props\.desktopBubble\} \/>/, 'the opening\'s variant stays while it plays (open.ts tourVariant – tour-variant.test.ts)');
+  assert.match(dialog, /<TourPlayer onDone=\{closeTour\} autoplay=\{tourAutoplay\.peek\(\)\} variant=\{variant\} desktopBubble=\{showDesktopBubble\.current\} \/>/);
 });
