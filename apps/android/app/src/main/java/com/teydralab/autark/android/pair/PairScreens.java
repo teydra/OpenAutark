@@ -19,7 +19,9 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import com.teydralab.autark.android.ConnectionAddress;
+import com.teydralab.autark.android.usage.UsageText;
 import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 public final class PairScreens {
@@ -32,6 +34,8 @@ public final class PairScreens {
     private static Runnable onCancel;
     private static BiConsumer<String, String> bars;
     private static Runnable tour;
+    private static BooleanSupplier usageOn;
+    private static Consumer<Boolean> usageSet;
     private static int level, from;
     private static String typed = "";
     private static ScanView scan;
@@ -54,6 +58,9 @@ public final class PairScreens {
 
     /** Optional: paints the system bar strips (CSS colours top, bottom) for each level, e.g. SystemBars::apply. */
     public static void bars(BiConsumer<String, String> paint) { bars = paint; }
+
+    /** Optional (owner 25.11.2026): the anonymous usage count's switch on level 1 – its state and what a tap on it does; null shows no row. */
+    public static void usage(BooleanSupplier on, Consumer<Boolean> set) { usageOn = on; usageSet = set; }
 
     /** Optional: what "How feedback works" on level 1 plays (MainActivity: the feedback video); null shows no link. */
     public static void tour(Runnable play) { tour = play; }
@@ -130,6 +137,7 @@ public final class PairScreens {
         Runnable play = tour;
         if (play != null) page.addView(look.quiet("How feedback works", look.link, play), look.spaced(8, 0));
         page.addView(new View(activity), PairLook.fill());
+        if (usageOn != null && usageSet != null) page.addView(look.check("Anonymous usage count", UsageText.SENTENCE, usageOn.getAsBoolean(), usageSet), look.spaced(8, 0));
         page.addView(slot(), PairLook.row(look.dp(44)));
         page.addView(look.primary("Scan QR code", PairScreens::scan), PairLook.row(look.dp(56)));
         page.addView(look.quiet("Enter the code instead", look.link, PairScreens::code), look.spaced(8, 0));

@@ -19,7 +19,8 @@
 // (the phone hears dictation itself): the page's 'hear' {id, data (base64), mime, language} – a dictation piece – goes to
 // the person's ChatGPT plan from here (phoneuse/PlanHearing over the company's UseLink, on a thread of its own) and is
 // answered 'heard' {id, text} or {id, error} (the page then sends it to the PC as before); 'status' says hear:true so
-// the page knows. Never: addJavascriptInterface, a second port, a message from another origin, a picture of anything but
+// the page knows. Owner 25.11.2026 (anonymous usage count): the page's 'usage' {on?} sets this phone's switch (usage/UsageCount) and every 
+// 'usage' {on, text} goes to the page – to each new one, and as the answer – so Settings › Security shows the phone's own switch. Never: addJavascriptInterface, a second port, a message from another origin, a picture of anything but
 // the app's window, or the plan login to the page.
 package com.teydralab.autark.android;
 
@@ -42,6 +43,8 @@ import java.util.function.Supplier;
 import com.teydralab.autark.android.phoneuse.BubblePull;
 import com.teydralab.autark.android.phoneuse.PlanHearing;
 import com.teydralab.autark.android.phoneuse.UseLink;
+import com.teydralab.autark.android.usage.UsageCount;
+import com.teydralab.autark.android.usage.UsageText;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -118,8 +121,14 @@ final class NativePort {
         view = loaded;
         if (companies != null) send(companies);
         if (status != null) send(status);
+        sendUsage();
         BubblePull.listen(activity, bubble); // sends the current state to this page at once
         sendCrash();
+    }
+
+    /** Owner 25.11.2026: this phone's anonymous usage count – the switch and its words – to the page, which shows it in Settings › Security and answers a tap with {t:'usage', on}. */
+    private void sendUsage() {
+        try { send(new JSONObject().put("t", "usage").put("on", UsageCount.on(activity)).put("text", UsageText.SENTENCE)); } catch (JSONException ignored) { /* never for these values */ }
     }
 
     /** The last crash's report the person chose to send (main thread): it goes to the page once it has its port. */
@@ -219,6 +228,7 @@ final class NativePort {
             case "refused": listener.refused(); break;
             case "wake": { String id = text(in, "id"); if (id != null) listener.wake(id, text(in, "key"), text(in, "name")); break; }
             case "shot": shot(); break;
+            case "usage": if (in.has("on")) UsageCount.set(activity, in.optBoolean("on")); sendUsage(); break;
             case "hear": hear(text(in, "id"), text(in, "data"), text(in, "mime"), text(in, "language")); break;
             case "voice.live": voice(in.optBoolean("on"), text(in, "kind")); break;
             case "bubble.pull": { int[] at = onScreen(in); BubblePull.pull(activity, at == null ? -1 : at[0], at == null ? -1 : at[1]); break; }

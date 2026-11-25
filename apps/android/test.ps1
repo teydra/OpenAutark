@@ -58,16 +58,19 @@ $sources = @(Get-ChildItem (Join-Path $root 'app/src/main/java/com/teydralab/aut
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/InstallSource.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/UpdateRelease.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/pair/QrDecode.java') +
+    (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/usage/UsageSignal.java') +
+    (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/usage/UsageCounter.java') +
     @(Get-ChildItem (Join-Path $root 'test') -Filter '*.java' | ForEach-Object FullName) +
     @(Get-ChildItem (Join-Path $root 'test/phoneuse') -Filter '*.java' | ForEach-Object FullName) +
     @(Get-ChildItem (Join-Path $root 'test/pair') -Filter '*.java' | ForEach-Object FullName) +
+    @(Get-ChildItem (Join-Path $root 'test/usage') -Filter '*.java' | ForEach-Object FullName) +
     @(Get-ChildItem (Join-Path $root 'test/routes') -Filter '*.java' | ForEach-Object FullName) +
     @(Get-ChildItem (Join-Path $root 'test/relay') -Filter '*.java' -ErrorAction SilentlyContinue | ForEach-Object FullName)
 & $javac -encoding UTF-8 -Xlint:all -cp $libs -d $out @sources
 if ($LASTEXITCODE -ne 0) { throw 'Host test compilation failed.' }
 $classpath = "$out;$libs"
 # B-078: the SAS interop vectors (desktop remote/sas.ts) and phone use's screen tree and gestures run here too.
-foreach ($test in 'ConnectionAddressTest', 'RelayCryptoTest', 'relay.RemotePairTest', 'phoneuse.ScreenTreeTest', 'phoneuse.DisclosureTest', 'phoneuse.UseLinkThreadTest', 'phoneuse.TypedTextTest', 'phoneuse.UseStateTest', 'phoneuse.SayChoicesTest', 'phoneuse.TypeTargetTest', 'phoneuse.TodoTest', 'phoneuse.AppNamesTest', 'phoneuse.SpokenAudioTest', 'phoneuse.PlanHearingTest', 'UpdateReleaseTest', 'pair.QrDecodeTest', 'CompaniesTest', 'CssColorTest', 'relay.ReconnectTest', 'relay.CodeChainTest', 'relay.LinksTest', 'relay.DirectRouteTest', 'relay.RtcSignalTest', 'relay.RtcWayTest', 'relay.WakeTest', 'PhoneRoutesTest', 'ShellWiringTest', 'VolumePairTest', 'PhoneUseAskRuleTest') {
+foreach ($test in 'ConnectionAddressTest', 'RelayCryptoTest', 'relay.RemotePairTest', 'phoneuse.ScreenTreeTest', 'phoneuse.DisclosureTest', 'phoneuse.UseLinkThreadTest', 'phoneuse.TypedTextTest', 'phoneuse.UseStateTest', 'phoneuse.SayChoicesTest', 'phoneuse.TypeTargetTest', 'phoneuse.TodoTest', 'phoneuse.AppNamesTest', 'phoneuse.SpokenAudioTest', 'phoneuse.PlanHearingTest', 'UpdateReleaseTest', 'pair.QrDecodeTest', 'CompaniesTest', 'CssColorTest', 'relay.ReconnectTest', 'relay.CodeChainTest', 'relay.LinksTest', 'relay.DirectRouteTest', 'relay.RtcSignalTest', 'relay.RtcWayTest', 'relay.WakeTest', 'PhoneRoutesTest', 'ShellWiringTest', 'VolumePairTest', 'PhoneUseAskRuleTest', 'usage.UsageCounterTest') {
     # autark.android: UpdateReleaseTest reads UpdateCheck/SelfUpdate's wiring from the sources.
     & $runtime "-Dautark.android=$root" -cp $classpath "com.teydralab.autark.android.$test"
     if ($LASTEXITCODE -ne 0) { throw "Host test $test failed." }

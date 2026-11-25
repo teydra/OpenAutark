@@ -12,11 +12,13 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.CheckBox;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import com.teydralab.autark.android.R;
+import java.util.function.Consumer;
 
 final class PairLook {
     static final int ACCENT = 0xFF2C665A;
@@ -78,6 +80,26 @@ final class PairLook {
         view.setBackground(touch(null, (color & 0xFFFFFF) | 0x30000000));
         view.setOnClickListener(clicked -> action.run());
         return view;
+    }
+
+    /** A ticked row: a box and its title and sentence beside it (owner 25.11.2026: the anonymous usage count on the first level, same wording as Settings). */
+    View check(String title, String text, boolean checked, Consumer<Boolean> changed) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.TOP);
+        row.setPadding(dp(12), dp(8), dp(12), dp(8));
+        row.setBackground(round(card, 12, line));
+        CheckBox box = new CheckBox(activity);
+        box.setChecked(checked);
+        box.setButtonTintList(ColorStateList.valueOf(dark ? link : ACCENT));
+        box.setContentDescription(title);
+        box.setOnCheckedChangeListener((view, on) -> changed.accept(on));
+        row.addView(box, new LinearLayout.LayoutParams(-2, -2));
+        TextView words = text(title + " – " + text, 13, muted, false);
+        words.setGravity(Gravity.START);
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        row.setOnClickListener(clicked -> box.toggle());
+        return row;
     }
 
     /** The back mark at a level's top left (48 x 48 dp). */

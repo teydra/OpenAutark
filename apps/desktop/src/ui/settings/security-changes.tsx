@@ -16,6 +16,7 @@ import { rpc } from '../lib/rpc.ts';
 import { updateSettings } from '../lib/store.ts';
 import { act, ActionButton, Group, Note, Row, Toggle } from './controls.tsx';
 import { changeOrigin, changeValues, fieldName, opensToTexts } from './security-model.ts';
+import { setPhoneUsage, usePhoneUsage } from './phone-usage.ts';
 import { USAGE_HINT, USAGE_TEXT, USAGE_TITLE } from './usage-count.ts';
 
 export function LibraryGroup(props: { share: boolean; locked: boolean; lockNote: string }) {
@@ -39,6 +40,7 @@ export function LibraryGroup(props: { share: boolean; locked: boolean; lockNote:
 export function UsageGroup(props: { on: boolean; locked: boolean; lockNote: string }) {
   const [pending, setPending] = useState<boolean | null>(null);
   const shown = pending ?? props.on;
+  const phone = usePhoneUsage();
   const change = (to: boolean) => {
     if (pending !== null || to === props.on) return;
     setPending(to);
@@ -49,6 +51,11 @@ export function UsageGroup(props: { on: boolean; locked: boolean; lockNote: stri
       <Row label={USAGE_TITLE} hint={props.locked ? props.lockNote : USAGE_TEXT}>
         {props.locked ? <Note>{props.on ? 'On' : 'Off'}</Note> : <Toggle label={USAGE_TITLE} checked={shown} onChange={change} />}
       </Row>
+      {phone ? (
+        <Row label="This phone" hint={phone.text}>
+          <Toggle label={`${USAGE_TITLE} on this phone`} checked={phone.on} onChange={(to) => { setPhoneUsage(to); }} />
+        </Row>
+      ) : null}
     </Group>
   );
 }
