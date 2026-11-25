@@ -10,7 +10,9 @@
 // 17.11.2026 (owner 06.11.: sharing stays on by default; it must be seen and easy to turn off): under the mode rows one
 // ticked box, "Public library" – unticked, Start writes settings.library.publish false (Settings › Security has the switch).
 // The typed name, company, the mode choice and the tick survive a remount (desktop ↔ phone shell) and Back until Start.
-// Owns: this card. Never: creates agents, changes a setting other than the profile, security and library.publish, or
+// 25.11.2026: below it a second ticked box, "Anonymous usage count" (settings.usage.count, runtime/usage; README › What Autark
+// counts) with what is sent – unticked, Start writes usage.count false (Settings › Security has the switch).
+// Owns: this card. Never: creates agents, changes a setting other than the profile, security, library.publish and usage.count, or
 // draws the tour.
 
 import { useState } from 'preact/hooks';
@@ -19,6 +21,7 @@ import { settings, updateSettings } from '../lib/store.ts';
 import { toastError } from '../lib/toasts.ts';
 import { Button } from '../lib/ui.tsx';
 import { firstRunSecurity, MODE_ROWS } from '../settings/security-model.ts';
+import { USAGE_TEXT, USAGE_TITLE, usageOn, usagePatch } from '../settings/usage-count.ts';
 import { startSpotlight } from '../tour/Spotlight.tsx';
 import { libraryPatch, previousStep, profilePatch } from './first-run-model.ts';
 import { finishFirstRun, goStep } from './first-run.ts';
@@ -27,7 +30,7 @@ import { Card, StatusLine } from './parts.tsx';
 const value = (event: Event) => (event.currentTarget as HTMLInputElement).value;
 
 /** What the person typed and chose outlives a remount (the window switching between desktop and phone shell) until Start. */
-const draft: { name?: string; company?: string; mode?: SecurityMode; share?: boolean } = {};
+const draft: { name?: string; company?: string; mode?: SecurityMode; share?: boolean; usage?: boolean } = {};
 
 /** The tick's text (the README's "The public library" says the same in full). */
 export const SHARE_TITLE = 'Public library';
@@ -43,6 +46,8 @@ export function AboutCard() {
   const setMode = (next: SecurityMode) => { draft.mode = next; setModeState(next); };
   const [share, setShareState] = useState(draft.share ?? settings.value?.library?.publish !== false);
   const setShare = (next: boolean) => { draft.share = next; setShareState(next); };
+  const [usage, setUsageState] = useState(draft.usage ?? usageOn(settings.value)); // 25.11.2026: the anonymous usage count, on unless unticked
+  const setUsage = (next: boolean) => { draft.usage = next; setUsageState(next); };
   const [busy, setBusy] = useState<'start' | 'back' | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -53,9 +58,10 @@ export function AboutCard() {
       const patch = profilePatch(settings.value?.profile, name, company);
       const library = libraryPatch(settings.value?.library, share);
       const security = firstRunSecurity(settings.value?.security, mode);
-      if (patch || library || security) await updateSettings({ ...(patch ? { profile: patch } : {}), ...(library ? { library } : {}), ...(security ? { security } : {}) });
+      const count = usagePatch(settings.value?.usage, usage);
+      if (patch || library || security || count) await updateSettings({ ...(patch ? { profile: patch } : {}), ...(library ? { library } : {}), ...(security ? { security } : {}), ...(count ? { usage: count } : {}) });
       await finishFirstRun();
-      delete draft.name; delete draft.company; delete draft.mode; delete draft.share; // saved: a later "Set up again" starts from the settings
+      delete draft.name; delete draft.company; delete draft.mode; delete draft.share; delete draft.usage; // saved: a later "Set up again" starts from the settings
       startSpotlight(); // B-085: the short tour over the Manager's chat the first run just opened
     } catch (failure) { toastError(failure, 'Could not start'); setError('Could not start – try again.'); } finally { setBusy(null); }
   };
@@ -93,6 +99,10 @@ export function AboutCard() {
       <label class={`first-run-access-row first-run-share${share ? ' chosen' : ''}`}>
         <input type="checkbox" checked={share} onChange={(event) => setShare(event.currentTarget.checked)} />
         <span class="first-run-access-text"><span class="first-run-access-title">{SHARE_TITLE}</span> – {SHARE_TEXT}</span>
+      </label>
+      <label class={`first-run-access-row first-run-share${usage ? ' chosen' : ''}`}>
+        <input type="checkbox" checked={usage} onChange={(event) => setUsage(event.currentTarget.checked)} />
+        <span class="first-run-access-text"><span class="first-run-access-title">{USAGE_TITLE}</span> – {USAGE_TEXT}</span>
       </label>
       <StatusLine text={error} tone="error" />
     </Card>

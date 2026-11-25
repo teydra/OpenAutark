@@ -65,7 +65,7 @@ import { isPersonId } from '../../shared/model/people.ts';
 import '../contracts/people.ts';
 
 /** The lifecycle's deps plus settings (the human's profile name as an @mention alias, chat/mentions.ts). */
-export type ChatDeps = CoreDeps & Partial<Pick<RuntimeServices, 'settings' | 'people'>>;
+export type ChatDeps = CoreDeps & Partial<Pick<RuntimeServices, 'settings' | 'people' | 'usage'>>;
 
 type SendInput = Parameters<ChatService['send']>[0];
 
@@ -238,6 +238,7 @@ export class ChatServiceImpl implements ChatService {
       }
     });
     publish(this.core(), message, 'message.created', { deliver: input.deliver !== false });
+    if (authorKind === 'human' && message.meta.via !== 'schedule') this.s.usage?.touch(); // 25.11.2026: a line of the person is "in use" for the hourly count (runtime/usage)
     return message;
   }
 

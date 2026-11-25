@@ -157,6 +157,7 @@ export class TurnExecutor {
       trigger: request.reason, deviceId: plan.agent.deviceId, ...(plan.origin ? { origin: plan.origin } : {}),
       ...(plan.split ? { splitId: plan.split.splitId } : {}), // B-057: the run of a split (runs.split_id)
     });
+    services.usage?.touch(); // 25.11.2026: an agent's turn here is "in use" for the hourly count (runtime/usage)
     const repairNotes = plan.fold ? [] : takeRepairNotes(services, plan.agent.id, plan.thread); // a fold's turn reads one note; the others wait for my next turn
 
     let turn: RoutedTurn;
