@@ -16,16 +16,6 @@ namespace AutarkBroker
         internal static int Run(string[] args)
         {
             if (args.Length < 2 || !Path.IsPathRooted(args[1])) return 2;
-            // Only the runtime holds the write end. The child gets NUL, not the control pipe.
-            var parent = Console.OpenStandardInput();
-            var watch = new Thread(() =>
-            {
-                try { while (parent.ReadByte() != -1) { } }
-                catch (IOException) { }
-                Environment.Exit(1); // OS closes our only job handle if the runtime disappears
-            });
-            watch.IsBackground = true;
-            watch.Start();
             try { return Launch(args); }
             catch (Win32Exception e)
             {
@@ -38,6 +28,7 @@ namespace AutarkBroker
         {
             IntPtr job = CreateJobObject(IntPtr.Zero, null);
             if (job == IntPtr.Zero) throw LastError();
+            var jobGate = new object();
             var child = new ProcessInfo();
             IntPtr attributes = IntPtr.Zero, jobs = IntPtr.Zero, handles = IntPtr.Zero;
             bool initialized = false;
@@ -47,6 +38,22 @@ namespace AutarkBroker
                 var limits = new ExtendedLimits();
                 limits.Basic.Flags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, no breakaway
                 if (!SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf(limits))) throw LastError();
+
+                // The shell receives NUL, never this lifetime pipe. EOF means our runtime disappeared.
+                var parent = Console.OpenStandardInput();
+                var watch = new Thread(() =>
+                {
+                    try { while (parent.ReadByte() != -1) { } }
+                    catch (IOException) { }
+                    lock (jobGate)
+                    {
+                        if (job == IntPtr.Zero) return; // the root already finished and the job is closed
+                        TerminateJobObject(job, 1);
+                        Environment.Exit(1); // KILL_ON_JOB_CLOSE also covers failure to terminate explicitly
+                    }
+                });
+                watch.IsBackground = true;
+                watch.Start();
 
                 var security = new SecurityAttributes {
                     Length = Marshal.SizeOf(typeof(SecurityAttributes)), InheritHandle = 1
@@ -92,11 +99,24 @@ namespace AutarkBroker
                 if (WaitForSingleObject(child.Process, 0xffffffff) != 0) throw LastError();
                 uint code;
                 if (!GetExitCodeProcess(child.Process, out code)) throw LastError();
+                // Normal completion releases intentionally backgrounded children. Until this point
+                // an abrupt broker death (cancel/timeout) closes the job and kills everything.
+                lock (jobGate)
+                {
+                    limits.Basic.Flags = 0;
+                    if (!SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf(limits))) throw LastError();
+                    CloseHandle(job);
+                    job = IntPtr.Zero;
+                }
                 return unchecked((int)code);
             }
             finally
             {
-                CloseHandle(job);
+                lock (jobGate)
+                {
+                    if (job != IntPtr.Zero) CloseHandle(job);
+                    job = IntPtr.Zero;
+                }
                 if (child.Thread != IntPtr.Zero) CloseHandle(child.Thread);
                 if (child.Process != IntPtr.Zero) CloseHandle(child.Process);
                 if (initialized) DeleteProcThreadAttributeList(attributes);
@@ -176,6 +196,8 @@ namespace AutarkBroker
         static extern IntPtr CreateJobObject(IntPtr security, string name);
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern bool SetInformationJobObject(IntPtr job, int kind, ref ExtendedLimits info, uint length);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool TerminateJobObject(IntPtr job, uint code);
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
         [DllImport("kernel32.dll", SetLastError = true)]

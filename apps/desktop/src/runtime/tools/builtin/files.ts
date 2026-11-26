@@ -177,7 +177,7 @@ export const defaultShell = (command: string, options: Parameters<ShellSpawn>[1]
     : nodeSpawn(command, { ...spawnOptions, shell: true });
   const kill = () => {
     if (broker) {
-      // Kill only the handle-owning process. The kernel kills the whole Job, even if the root already exited.
+      // Kill only the handle-owning process. On timeout/cancel the kernel takes down its job.
       child.kill();
     } else if (win && child.pid) {
       // Compatibility for source runs and old/missing broker resources: don't target a PID after its exit.

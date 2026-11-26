@@ -37,7 +37,7 @@ async function until<T>(check: () => T | undefined, problem: string): Promise<T>
   }
 }
 
-for (const end of ['exit', 'timeout', 'cancel', 'control EOF'] as const) {
+for (const end of ['timeout', 'cancel', 'control EOF'] as const) {
   test(`a Windows Job reaps root, child and grandchild on ${end}`, WIN, async (t) => {
     assert.ok(shellJobBroker(), 'CI must exercise the compiled job wrapper, not the compatibility fallback');
     const dir = mkdtempSync(path.join(os.tmpdir(), 'autark-shell job-'));
@@ -47,15 +47,12 @@ for (const end of ['exit', 'timeout', 'cancel', 'control EOF'] as const) {
     writeFileSync(script, `
       const { spawn } = require('node:child_process');
       const fs = require('node:fs');
-      const [role, ready, parent, root, mode] = process.argv.slice(2);
-      const start = (role, parent) => spawn(process.execPath, [__filename, role, ready, parent, root, mode],
+      const [role, ready, parent, root] = process.argv.slice(2);
+      const start = (role, parent) => spawn(process.execPath, [__filename, role, ready, parent, root],
         { stdio: 'inherit', windowsHide: true, detached: true });
       if (role === 'root') {
         start('child', 0).unref();
-        const timer = setInterval(() => {
-          if (mode === 'exit' && fs.existsSync(ready)) clearInterval(timer);
-        }, 30);
-        setTimeout(() => process.exit(12), 25_000).unref();
+        setTimeout(() => {}, 25_000);
       } else if (role === 'child') {
         start('leaf', process.pid);
         setTimeout(() => {}, 25_000);
@@ -65,7 +62,7 @@ for (const end of ['exit', 'timeout', 'cancel', 'control EOF'] as const) {
         setTimeout(() => {}, 25_000);
       }
     `);
-    const command = `& ${quote(process.execPath)} ${quote(script)} root ${quote(ready)} 0 $PID ${quote(end)}; exit 17`;
+    const command = `& ${quote(process.execPath)} ${quote(script)} root ${quote(ready)} 0 $PID; exit 17`;
     const readTree = (): number[] | undefined => {
       try {
         const pids: number[] = JSON.parse(readFileSync(ready, 'utf8'));
@@ -117,11 +114,10 @@ for (const end of ['exit', 'timeout', 'cancel', 'control EOF'] as const) {
       child.stdout?.resume();
       child.stderr?.resume();
       const pids = await until(readTree, 'fixture did not start');
-      if (end !== 'exit') assert.ok(pids.every(alive), 'tree existed before cleanup');
+      assert.ok(pids.every(alive), 'tree existed before cleanup');
       if (end === 'cancel') stop.abort();
       if (end === 'control EOF') child.stdin!.end(); // same EOF as abrupt runtime exit
       const [code] = await close;
-      if (end === 'exit') assert.equal(code, 17);
       if (end === 'control EOF') assert.equal(code, 1);
     }
 
@@ -134,3 +130,45 @@ for (const end of ['exit', 'timeout', 'cancel', 'control EOF'] as const) {
     await neighborClose;
   });
 }
+
+test('a redirected Start-Process child survives a successful shell exit', WIN, async (t) => {
+  assert.ok(shellJobBroker(), 'CI must use the real job wrapper');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'autark-shell detached-'));
+  const ready = path.join(dir, 'ready'), stopFile = path.join(dir, 'stop');
+  const script = path.join(dir, 'job.cjs');
+  let pid: number | undefined;
+  t.after(async () => {
+    writeFileSync(stopFile, 'stop');
+    if (pid !== undefined) await until(() => !alive(pid!) || undefined, 'detached fixture did not stop');
+    rmSync(dir, { recursive: true, force: true });
+  });
+  writeFileSync(script, [
+    "const fs = require('node:fs');",
+    "const [ready, stop] = process.argv.slice(2);",
+    "fs.writeFileSync(ready, String(process.pid));",
+    "const timer = setInterval(() => { if (fs.existsSync(stop)) clearInterval(timer); }, 50);",
+    "setTimeout(() => clearInterval(timer), 20_000).unref();",
+  ].join('\n'));
+  const quotedArgs = [script, ready, stopFile].map((arg) => '"' + arg + '"').join(' ');
+  const command = [
+    `$p = Start-Process -FilePath ${quote(process.execPath)} -ArgumentList ${quote(quotedArgs)} -WindowStyle Hidden -PassThru`,
+    `-RedirectStandardOutput ${quote(path.join(dir, 'stdout.log'))} -RedirectStandardError ${quote(path.join(dir, 'stderr.log'))};`,
+    '$p.Id; exit 17',
+  ].join(' ');
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const child = defaultShell(command, { cwd: dir, signal: controller.signal });
+  const stdout: Buffer[] = [], stderr: Buffer[] = [];
+  child.stdout?.on('data', (data: Buffer) => stdout.push(data));
+  child.stderr?.on('data', (data: Buffer) => stderr.push(data));
+  const [code] = await once(child, 'close');
+  assert.equal(code, 17, Buffer.concat(stderr).toString('utf8'));
+  pid = Number(Buffer.concat(stdout).toString('utf8').trim());
+  assert.ok(Number.isSafeInteger(pid) && pid > 0, 'Start-Process returned its child PID');
+  const running = await until(() => {
+    try { return Number(readFileSync(ready, 'utf8')) || undefined; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+  }, 'normal exit reaped the detached child');
+  assert.equal(running, pid);
+  assert.ok(alive(pid), 'a normal shell return keeps Start-Process alive');
+});
