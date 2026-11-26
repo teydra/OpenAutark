@@ -193,7 +193,7 @@ export function register(table: HandlerTable): void {
     });
     const first = optText(o, 'firstMessage', { max: MAX_BODY, allowEmpty: true, multiline: true });
     if (first?.trim()) chats.send({ conversationId: conversation.id, body: first, authorId: HUMAN_ID, authorKind: 'human' });
-    rememberConversation(ctx.services, conversation.id);
+    rememberConversation(ctx, conversation.id);
     return chats.get(conversation.id) ?? conversation;
   }, CHAT);
   table.add('chats.update', (params, ctx) => {
@@ -241,7 +241,7 @@ export function register(table: HandlerTable): void {
     const conversationId = id(o);
     chatOrThrow(ctx.services, conversationId);
     ctx.services.chats.markRead(conversationId, HUMAN_ID, num(o, 'seq', { min: 0 }));
-    rememberConversation(ctx.services, conversationId);
+    rememberConversation(ctx, conversationId);
     return { ok: true };
   }, CHAT);
   table.add('chats.search', (params, ctx) => {
@@ -301,7 +301,7 @@ export function register(table: HandlerTable): void {
     talks?.heard(message);
     // Writing joins the room (chat service); a room an agent hid moves to the main list too (C1).
     if (chat.settings.hiddenFromList && !chat.settings.system) ctx.services.chats.update(conversationId, { settings: { hiddenFromList: undefined } }, HUMAN_ID);
-    rememberConversation(ctx.services, conversationId);
+    rememberConversation(ctx, conversationId);
     return message;
   }, CHAT);
   addKeysSaved(table, 'messages.edit', (params, ctx) => {

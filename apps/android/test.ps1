@@ -52,6 +52,7 @@ $sources = @(Get-ChildItem (Join-Path $root 'app/src/main/java/com/teydralab/aut
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/SpeechLang.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/Resend.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/TodoPost.java') +
+    (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleChat.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/AppNames.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/SpokenAudio.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/PlanHearing.java') +

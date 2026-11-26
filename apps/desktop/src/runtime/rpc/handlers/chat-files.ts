@@ -33,7 +33,7 @@ export function register(table: HandlerTable): void {
     if (memberId === HUMAN_ID) bad('memberId', 'someone other than you');
     const conversationId = findOrCreateDirect(ctx.services, HUMAN_ID, memberId, { createdBy: HUMAN_ID });
     if (ctx.services.chats.get(conversationId)?.archivedAt !== undefined) ctx.services.chats.unarchive(conversationId); // opened on purpose: back in the list
-    rememberConversation(ctx.services, conversationId);
+    rememberConversation(ctx, conversationId);
     return ctx.services.chats.summary(conversationId);
   }, CHAT);
   table.add('chats.export', (params, ctx) => {

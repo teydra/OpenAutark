@@ -5,13 +5,13 @@
 // line goes to the PC as WAV (files.upload) to be heard in the person's language with the chat as context
 // (voice.transcribe) – one after another on my worker, so lines keep their order; while the phone speaks, nothing is
 // taken (its own voice would be heard). The first line (or the typed text, when the panel had some) goes out through the
-// host (TodoButton.route: the draft's shots, tasks.quickCreate – Autark picks the agent – and chats.direct); then I
+// host (TodoButton.route, task_cxs4s3pt: the chat the person used last and its agent, the draft's shots there as a silent line); then I
 // subscribe chat:<id> on the link, open the call (calls.start) and send that line as the call's first spoken line
 // (messages.send with speech {source, live, call}), so the live voice answers at once; every later line goes the same way.
 // The chat's agent rows after my last line are read by PhoneSpeech: the live voice's row of this call (meta.call.voice
 // 'talker') sentence by sentence while it is written, any other agent row when final, and a system row of this call
 // (the same reading rules as the page, shared/voice/conversation.ts). The person's tap on the dot ends it (calls.end,
-// events.unsubscribe). No agent took the task: one line, no call. The link ends or the call row ends: the call is over
+// events.unsubscribe). No such chat: one line, no call. The link ends or the call row ends: the call is over
 // here, with one line; another device took the call over (this phone is neither its holder nor joined): over quietly.
 // Several devices of the person can be in one call (JOIN): only the one that heard the person's newest line reads the
 // reply – a line said on another device makes me quiet until my next line goes out. Nobody speaks – no line heard, no
@@ -50,8 +50,8 @@ import java.util.regex.Pattern;
 final class BubbleCall implements UseLink.Events {
     /** The bubble around the call (TodoButton). */
     interface Host {
-        /** My worker thread: `text` (with the draft's shots) as a task Autark routes; {chatId, agentId} of the 1:1 with the
-         *  agent who took it, or null when no agent did. Throws with a line for the person. */
+        /** My worker thread: {chatId, agentId} of the chat the person used last (the draft's shots already there), or null.
+         *  Throws with a line for the person. */
         String[] route(String text) throws Exception;
         /** Main thread: the dot during the call – the agent's initial (null while unknown) and whether I listen right now. */
         void look(String initial, boolean hearing);
@@ -161,7 +161,7 @@ final class BubbleCall implements UseLink.Events {
         else send(text);
     }
 
-    /** The first line: routed as a task, then the agent's chat subscribed and the call opened (my worker). */
+    /** The first line: the chat found, subscribed and the call opened (my worker). */
     private void open(String text) {
         routing = true;
         work.execute(() -> {
@@ -169,7 +169,7 @@ final class BubbleCall implements UseLink.Events {
             try {
                 String[] chat = host.route(text);
                 if (chat == null) {
-                    post(() -> finish(german ? "Die Aufgabe ist drin – kein Agent hat sie genommen, darum kein Anruf." : "The task is in – no agent took it, so no call."));
+                    post(() -> finish(german ? "Kein offener Chat mit einem Agenten – darum kein Anruf." : "No open chat with an agent – so no call."));
                     return;
                 }
                 String id = chat[0];

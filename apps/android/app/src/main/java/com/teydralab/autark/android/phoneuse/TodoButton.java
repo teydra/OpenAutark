@@ -9,10 +9,13 @@
 // Dictation (owner 20.11.2026: as good as the app's own – the phone's recognizer heard "We got to steer" for "Wie geht es
 // dir?") records the voice and the PC hears it, the same path as the app's composer (Dictation: WAV pieces,
 // files.upload, voice.transcribe in the profile's language); the words land at the end of the field once the PC has
-// heard them; without the microphone right the mic opens the app instead. Send: every shot goes up (files.upload), then tasks.quickCreate with the text, the shots and
-// the post's client id (TodoPost) – Autark picks the owner; ✓, then empty and back to the dot. Call (owner 19.11.2026:
-// without the app coming up): the panel folds to the dot and the call runs in the bubble (BubbleCall) – the first line
-// spoken (or the typed text) goes out as above, the agent who took it gets the call in its 1:1 (chats.direct), the dot
+// heard them; without the microphone right the mic opens the app instead. Send (owner 26.11.2026, task_cxs4s3pt: asking
+// the bubble is asking the agent, not a to-do): every shot goes up (files.upload) and one line with the text, the shots
+// and the post's client id goes into the chat the person used last (BubbleChat: ui.state's lastConversationId, never a
+// guessed one – without it nothing goes out and the panel says why); ✓, a toast names the agent it went to, then empty
+// and back to the dot. The answer comes in that chat. Call (owner 19.11.2026:
+// without the app coming up): the panel folds to the dot and the call runs in the bubble (BubbleCall) – in that same
+// chat with its agent (the draft's shots go there first as a silent line), the dot
 // shows the agent's initial in a live ring, and one tap on it ends the call. A failure keeps everything and says one
 // line; Send again reuses the client id. Hide (owner 19.11.2026): dragging the dot shows a ✕ at the bottom centre;
 // dropped there, the button is hidden ("hidden" in SharedPreferences "todo_button") – hidden is hidden, no tab – until
@@ -661,9 +664,8 @@ final class TodoButton {
         run(() -> {
             String note;
             try {
-                String[] task = deliver(link, text, quick, requiredPicture(picture));
-                if (task == null) throw new Failed(german ? "Der PC hat keine Aufgabe zurückgegeben." : "The PC gave no task back.");
-                main.post(this::holdSent);
+                String[] chat = deliver(link, text, quick, requiredPicture(picture));
+                main.post(() -> { holdSent(); sentTo(chat); });
                 return;
             } catch (Unreachable error) {
                 note = unreachableLine();
@@ -720,13 +722,13 @@ final class TodoButton {
         row.addView(mic);
         row.addView(new View(service), new LinearLayout.LayoutParams(0, 1, 1));
         row.addView(icon(R.drawable.ic_todo_call, german ? "Anrufen" : "Call", this::call));
-        row.addView(icon(R.drawable.ic_todo_send, german ? "Als Aufgabe senden" : "Send as a task", this::submit));
+        row.addView(icon(R.drawable.ic_todo_send, german ? "In den Chat senden" : "Send to the chat", this::submit));
         row.addView(icon(R.drawable.ic_todo_close, german ? "Zuklappen" : "Collapse", this::collapse));
         view.addView(row, new LinearLayout.LayoutParams(-1, -2));
         field = new EditText(service);
         field.setTextColor(Color.WHITE);
         field.setHintTextColor(Color.argb(150, 255, 255, 255));
-        field.setHint(german ? "Was ist zu tun?" : "What needs doing?");
+        field.setHint(german ? "Frag oder schreib etwas" : "Ask or write something");
         field.setTextSize(14);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         field.setMinLines(1);
@@ -997,7 +999,7 @@ final class TodoButton {
         if (busy || calling != null) return;
         String text = field.getText().toString().trim();
         if (dictation == null && text.isEmpty() && post.shots().isEmpty()) {
-            say(german ? "Schreib oder sag, was zu tun ist." : "Type or say what needs doing.");
+            say(german ? "Schreib oder sag etwas." : "Type or say something.");
             return;
         }
         UseLink link = UseLink.linked();
@@ -1018,9 +1020,8 @@ final class TodoButton {
         say(german ? "Wird gesendet …" : "Sending …");
         run(() -> {
             try {
-                String[] task = deliver(link, text, post, requiredPicture(picture));
-                if (task == null) throw new Failed(german ? "Der PC hat keine Aufgabe zurückgegeben." : "The PC gave no task back.");
-                main.post(this::sent);
+                String[] chat = deliver(link, text, post, requiredPicture(picture));
+                main.post(() -> { sent(); sentTo(chat); });
             } catch (Unreachable error) {
                 main.post(() -> { setBusy(false); waitForPc(text, link); });
             } catch (Failed error) {
@@ -1032,14 +1033,33 @@ final class TodoButton {
         });
     }
 
-    /** The worker thread: every shot of `from` up (each once), then tasks.quickCreate with its client id; the task read
-     *  from the answer, or null. */
+    /** The worker thread (task_cxs4s3pt): the chat the person used last (BubbleChat), every shot of `from` up (each once),
+     *  then one line there with the words, the shots and the post's client id – never a to-do. {chatId, agentId, agent's
+     *  name or null}; Failed with a line for the person when there is no such chat (nothing goes out then). */
     private String[] deliver(UseLink link, String text, TodoPost from, TodoPost.Shot currentPage) throws Failed, InterruptedException {
+        String[] target = chatTarget(link);
+        List<String[]> attachments = upload(link, from.shotsWith(currentPage));
+        Object sent = answer(link, "messages.send", BubbleChat.send(target[0], text, attachments, from.clientId(), false));
+        if (BubbleChat.messageId(sent) == null) throw new Failed(german ? "Der PC hat die Nachricht nicht angenommen." : "The PC did not take the message.");
+        return new String[] { target[0], target[1], agentName(link, target[1]) };
+    }
+
+    /** The chat the person used last and its agent {chatId, agentId}; no such chat: Failed, nothing sent (no other chat is guessed). */
+    private String[] chatTarget(UseLink link) throws Failed, InterruptedException {
         if (link == null) throw new Unreachable(german ? "Gerade nicht mit deinem PC verbunden." : UseLink.UNLINKED);
         if (!reachable(link)) throw new Unreachable(german ? "Der PC hat nicht geantwortet." : "The PC did not answer.");
+        String chatId = BubbleChat.lastChatId(answer(link, "ui.state", Json.map()));
+        String[] target = chatId == null ? null : BubbleChat.target(chatId, answer(link, "chats.get", Json.map("id", chatId)));
+        if (target == null) throw new Failed(german ? "Nicht gesendet – kein offener Chat mit einem Agenten. Öffne in Autark den Chat, in den das soll, und sende noch mal."
+                : "Not sent – no open chat with an agent. Open the chat it is for in Autark and send again.");
+        return target;
+    }
+
+    /** Every shot up once (named for the agent: BubbleChat.shotName); {fileId, name} in order. */
+    private List<String[]> upload(UseLink link, List<TodoPost.Shot> shots) throws Failed, InterruptedException {
         List<String[]> attachments = new ArrayList<>();
-        for (TodoPost.Shot shot : from.shotsWith(currentPage)) {
-            String name = "screen-" + (attachments.size() + 1) + ".jpg";
+        for (TodoPost.Shot shot : shots) {
+            String name = BubbleChat.shotName(attachments.size() + 1);
             if (shot.fileId == null) {
                 String id = TodoPost.fileId(answer(link, "files.upload", TodoPost.upload(name, shot.jpeg)));
                 if (id == null) throw new Failed(german ? "Der PC hat den Screenshot nicht angenommen." : "The PC did not take the screenshot.");
@@ -1047,7 +1067,20 @@ final class TodoButton {
             }
             attachments.add(new String[] { shot.fileId, name });
         }
-        return TodoPost.task(answer(link, "tasks.quickCreate", TodoPost.create(text, attachments, from.clientId())));
+        return attachments;
+    }
+
+    /** The agent's name for the line that says where it went; null when the PC does not say. */
+    private String agentName(UseLink link, String agentId) throws InterruptedException {
+        try { return BubbleChat.agentName(link.request("agents.get", Json.map("id", agentId), CALL_MS)); }
+        catch (UseLink.Refused unnamed) { return null; }
+    }
+
+    /** Where the line went, in one short line (a toast over the app the person is in). */
+    private void sentTo(String[] chat) {
+        String name = chat == null ? null : chat[2];
+        String line = name == null ? (german ? "Im Chat gesendet" : "Sent to the chat") : (german ? "An " + name + " gesendet" : "Sent to " + name);
+        Toast.makeText(service, line, Toast.LENGTH_SHORT).show();
     }
 
     /** One call to the PC, waited for on this worker thread (at most CALL_MS). */
@@ -1125,29 +1158,23 @@ final class TodoButton {
         calling.start(typed);
     }
 
-    /** BubbleCall's worker: the line and the draft's shots as a task (the draft empties once it is in); the agent's 1:1
-     *  {chatId, agentId}, or null when no agent took the task. */
+    /** BubbleCall's worker (task_cxs4s3pt): the call runs in the chat the person used last, with its agent – never a to-do.
+     *  The draft's shots go there first as one silent line (the agent sees them with the call's first spoken line, which
+     *  BubbleCall sends); the draft empties once they are in. {chatId, agentId}; no such chat: Failed, nothing sent. */
     private String[] route(UseLink link, String text) throws Failed, InterruptedException {
-        String[] task;
+        String[] target;
         try {
-            task = deliver(link, text, post, null);
+            target = chatTarget(link);
+            List<String[]> shots = upload(link, post.shots());
+            if (!shots.isEmpty() && BubbleChat.messageId(answer(link, "messages.send", BubbleChat.send(target[0], "", shots, post.clientId(), true))) == null) {
+                throw new Failed(german ? "Der PC hat die Screenshots nicht angenommen." : "The PC did not take the screenshots.");
+            }
         } catch (Failed | RuntimeException error) {
             main.post(() -> keepSaid(text)); // nothing said is lost
             throw error instanceof Failed ? (Failed) error : new Failed(german ? "Senden ging nicht." : "Sending failed.");
         }
-        if (task == null) {
-            main.post(() -> keepSaid(text));
-            throw new Failed(german ? "Der PC hat keine Aufgabe zurückgegeben." : "The PC gave no task back.");
-        }
         main.post(this::draftSent);
-        String agent = TodoPost.callee(task);
-        if (agent == null) return null;
-        Object chat;
-        try { chat = answer(link, "chats.direct", Json.map("memberId", agent)); }
-        catch (Failed refused) { throw new Failed((german ? "Die Aufgabe ist drin, der Anruf ging nicht: " : "The task is in, the call did not start: ") + refused.getMessage()); }
-        @SuppressWarnings("unchecked") String chatId = chat instanceof Map ? Json.str((Map<String, Object>) chat, "id") : null;
-        if (chatId == null) throw new Failed(german ? "Die Aufgabe ist drin, der Anruf ging nicht." : "The task is in, the call did not start.");
-        return new String[] { chatId, agent };
+        return new String[] { target[0], target[1] };
     }
 
     /** A first line that did not go out lands in the draft's text (typed text that went with it is there already). */

@@ -1,7 +1,7 @@
 // Owns: executable checks of the to-do button's pure parts without a device – where it sits (TodoPlace: drag or tap,
 // whole on the screen, the tab's side, the panel beside the dot and above the keyboard, the screenshot's size), what one
-// post sends (TodoPost: at most six shots, one client id per post until it went through, the files.upload and
-// tasks.quickCreate frames, the answers read) and the overlay's wiring read from its source (the AI's screenshot leaves
+// post sends (TodoPost: at most six shots, one client id per post until it went through, the files.upload frame;
+// BubbleChat: the chat line with the picture in the chat the person used last, never a to-do – task_cxs4s3pt) and the overlay's wiring read from its source (the AI's screenshot leaves
 // the button out, the window never takes key focus – typing goes through BubbleTyping –, dictation is heard by the PC).
 // Never: claims the overlay shows or a task arrives – that
 // needs a phone and a PC.
@@ -25,6 +25,7 @@ public final class TodoTest {
         holdAndSend();
         place();
         post();
+        chatLine();
         speech();
         resend();
         wiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/TodoButton.java"),
@@ -145,19 +146,47 @@ public final class TodoTest {
         check("abc".equals(TodoPost.fileId(map("id", "abc", "name", "x"))) && "f1".equals(TodoPost.fileId(map("fileId", "f1"))));
         check(TodoPost.fileId(null) == null && TodoPost.fileId(map("id", "")) == null && TodoPost.fileId("x") == null);
 
-        List<String[]> files = new ArrayList<>();
-        files.add(new String[] {"abc", "screen-1.jpg"});
-        Map<String, Object> create = TodoPost.create("Fix the login", files, "cid");
-        check(create.keySet().equals(new java.util.LinkedHashSet<>(Arrays.asList("text", "attachments", "clientId")))); // no target: Autark picks
-        check("Fix the login".equals(create.get("text")) && "cid".equals(create.get("clientId")));
-        check(create.get("attachments").equals(Arrays.asList(map("fileId", "abc", "name", "screen-1.jpg"))));
-        check(!TodoPost.create("Only text", new ArrayList<>(), "c").containsKey("attachments"));
+    }
 
-        String[] task = TodoPost.task(map("task", map("id", "t1", "assigneeKind", "agent", "assigneeId", "ag_7", "title", "x")));
-        check(task != null && "t1".equals(task[0]) && "ag_7".equals(TodoPost.callee(task)));
-        check(TodoPost.callee(TodoPost.task(map("task", map("id", "t2", "assigneeKind", "team")))) == null);
-        check(TodoPost.callee(TodoPost.task(map("task", map("id", "t3", "assigneeKind", "human", "assigneeId", "per_1")))) == null);
-        check(TodoPost.task(map("task", map("assigneeKind", "agent"))) == null && TodoPost.task(null) == null && TodoPost.callee(null) == null);
+    /**
+     * task_cxs4s3pt (owner 26.11.2026): a bubble line with a picture is one line with the image in the chat the person used
+     * last – never a to-do, never a guessed chat. The frames and the choice of the chat, without a device.
+     */
+    private static void chatLine() {
+        // the image is named for the agent: it reads "[Image: <name>]" with the picture
+        check(BubbleChat.shotName(1).equals("Screenshot of the page the person was on when asking.jpg"));
+        check(BubbleChat.shotName(2).equals("Screenshot of the page the person was on when asking (2).jpg"));
+        check(!BubbleChat.shotName(1).contains("Tasks"));
+
+        List<String[]> files = new ArrayList<>();
+        files.add(new String[] {"abc", BubbleChat.shotName(1)});
+        Map<String, Object> line = BubbleChat.send("ch_1", "Was steht auf dieser Seite?", files, "cid", false);
+        check(line.keySet().equals(new java.util.LinkedHashSet<>(Arrays.asList("conversationId", "body", "attachments", "clientId"))));
+        check("ch_1".equals(line.get("conversationId")) && "Was steht auf dieser Seite?".equals(line.get("body")) && "bubble:cid".equals(line.get("clientId")));
+        check(line.get("attachments").equals(Arrays.asList(map("fileId", "abc", "name", BubbleChat.shotName(1)))));
+        check(!line.containsKey("silent") && !line.containsKey("text") && !line.containsKey("target")); // a chat line, not tasks.quickCreate's frame
+        check(!BubbleChat.send("ch_1", "Nur Text", new ArrayList<>(), "c", false).containsKey("attachments"));
+        Map<String, Object> callShots = BubbleChat.send("ch_1", "", files, "cid", true);
+        check(Boolean.TRUE.equals(callShots.get("silent")) && "".equals(callShots.get("body"))); // a call's shots: one silent line before it
+        check("m1".equals(BubbleChat.messageId(map("id", "m1", "body", "x"))) && BubbleChat.messageId(map("task", map("id", "t1"))) == null && BubbleChat.messageId(null) == null);
+
+        // which chat: the one ui.state names, with its lead agent, else its first agent that has not left
+        check("ch_1".equals(BubbleChat.lastChatId(map("drafts", map(), "lastConversationId", "ch_1"))));
+        check(BubbleChat.lastChatId(map("drafts", map())) == null && BubbleChat.lastChatId(map("lastConversationId", "")) == null && BubbleChat.lastChatId(null) == null);
+        Object oneToOne = map("id", "ch_1", "members", Arrays.asList(
+                map("memberId", "human", "kind", "human", "role", "owner"),
+                map("memberId", "ag_lukas", "kind", "agent", "role", "member")));
+        check(Arrays.equals(BubbleChat.target("ch_1", oneToOne), new String[] {"ch_1", "ag_lukas"}));
+        Object group = map("id", "ch_2", "members", Arrays.asList(
+                map("memberId", "ag_left", "kind", "agent", "role", "member", "leftAt", 5),
+                map("memberId", "ag_mika", "kind", "agent", "role", "member"),
+                map("memberId", "ag_konrad", "kind", "agent", "role", "lead")));
+        check(Arrays.equals(BubbleChat.target("ch_2", group), new String[] {"ch_2", "ag_konrad"}));
+        // no guess: no chat, another chat's summary, an archived chat or one without an agent – nothing goes out
+        check(BubbleChat.target(null, oneToOne) == null && BubbleChat.target("ch_9", oneToOne) == null);
+        check(BubbleChat.target("ch_1", map("id", "ch_1", "archivedAt", 7, "members", Arrays.asList(map("memberId", "ag_lukas", "kind", "agent", "role", "member")))) == null);
+        check(BubbleChat.target("ch_3", map("id", "ch_3", "members", Arrays.asList(map("memberId", "per_ana", "kind", "human", "role", "member")))) == null);
+        check("Lukas".equals(BubbleChat.agentName(map("id", "ag_lukas", "name", " Lukas "))) && BubbleChat.agentName(map("name", " ")) == null);
     }
 
     private static void wiring(String button, String service, String link) {
@@ -190,7 +219,14 @@ public final class TodoTest {
         check(button.contains("TYPE_ACCESSIBILITY_OVERLAY"));
         // JPEG 85, the post's client id reused, the text only in the RPC (no log of it, no preference of it).
         check(button.contains("CompressFormat.JPEG, 85"));
-        check(button.contains("String[] task = deliver(link, text, post, requiredPicture(picture));") && button.contains("TodoPost.create(text, attachments, from.clientId())"));
+        check(button.contains("String[] chat = deliver(link, text, post, requiredPicture(picture));") && button.contains("BubbleChat.send(target[0], text, attachments, from.clientId(), false)"));
+        // task_cxs4s3pt: the bubble never makes a to-do – no tasks.quickCreate, the line goes to the chat ui.state names, no other is guessed
+        check(!button.contains("tasks.quickCreate\"") && !button.contains("\"chats.direct\"") && !button.contains("chats.list"));
+        String target = button.substring(button.indexOf("private String[] chatTarget("), button.indexOf("private List<String[]> upload("));
+        check(target.contains("answer(link, \"ui.state\"") && target.contains("answer(link, \"chats.get\"") && target.contains("throw new Failed(") && target.contains("Nicht gesendet – kein offener Chat"));
+        String route = button.substring(button.indexOf("private String[] route("), button.indexOf("private void keepSaid("));
+        check(route.contains("chatTarget(link)") && route.contains("BubbleChat.send(target[0], \"\", shots, post.clientId(), true)") && !route.contains("deliver("));
+        check(button.contains("sentTo(chat)") && button.contains("BubbleChat.shotName(attachments.size() + 1)"));
         check(button.contains("HOLD_MS = 350") && button.contains("if (held) { holdRelease(); return true; }")); // the hold is the quick task
         // the only strings kept: the profile's language tag and the PC it came from (a value read from the PC belongs to that PC)
         check(!button.replace("putString(\"speech_lang\", found).putString(\"speech_lang_origin\", origin)", "").contains("putString(")
@@ -233,9 +269,9 @@ public final class TodoTest {
         adopted.adopt("quick-9");
         check("quick-9".equals(adopted.clientIdFor("Hallo"))); // an adopted id survives its first Send
         TodoPost twice = new TodoPost();
-        String first = (String) TodoPost.create("Rufe Anna an", new java.util.ArrayList<>(), twice.clientId()).get("clientId");
-        String again = (String) TodoPost.create("Rufe Anna an", new java.util.ArrayList<>(), twice.clientId()).get("clientId");
-        check(first.equals(again) && first.length() == 36);
+        String first = (String) BubbleChat.send("ch_1", "Rufe Anna an", new java.util.ArrayList<>(), twice.clientId(), false).get("clientId");
+        String again = (String) BubbleChat.send("ch_1", "Rufe Anna an", new java.util.ArrayList<>(), twice.clientId(), false).get("clientId");
+        check(first.equals(again) && first.length() == "bubble:".length() + 36);
         // the id is dropped only when the task came back (draftSent), never in the failure branches of submit()
         int fail = button.indexOf("catch (Unreachable error) {");
         String failures = button.substring(fail, button.indexOf("private String[] deliver(") > fail ? button.indexOf("private String[] deliver(") : fail + 600);
