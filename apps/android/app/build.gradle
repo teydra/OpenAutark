@@ -37,8 +37,8 @@ android {
         // 21.11.: 0.3.18 – the phone hears dictation itself at the person's ChatGPT plan (page and bubble; the PC's way
         // when that gives nothing).
         // 24.11.: 0.3.19 – the Tasks page's day line, month and Tasks/Calendar switch (page), sign-in work to an agent.
-        versionCode = 21
-        versionName = '0.3.20'
+        versionCode = 22
+        versionName = '0.3.21'
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' } // F25: libwebrtc for phones only (x86 would add ~20 MB)
     }
     sourceSets { main { assets.srcDir('build/generated/tour'); assets.srcDir('build/generated/usage') } } // the feedback video page (build.ps1); the usage counter's address

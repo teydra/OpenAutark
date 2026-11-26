@@ -5,6 +5,29 @@ PC, how it shows, how I check for it and how I fix it. With every new version th
 since the version its PC ran before, looks through its company and puts right what it finds. A release adds its section
 here before it ships (the release check looks for it).
 
+## 0.3.21
+
+Tasks show when they were created and when they stopped moving. A task can carry a checklist, and creating a
+similar task shows a suggestion without blocking it. Calendar and the regular Tasks view both stay. Old Android
+shortcuts and notices for My Day open Tasks. The Android QR scanner opens the system image chooser instead of
+requesting access to recent photos.
+
+The chat composer shows Auto without guessing a model name. A manual pick is a hint for one outgoing message;
+the next starts on Auto. Change an agent's standing model on its own page. On Android, with the matching PC
+update, the Bubble sends to the last chat you opened, with the screen capture when available, instead of creating
+a task. The reply appears in the chat. Earlier Bubble to-dos are not moved automatically; leave them unless you can
+confirm they are finished or duplicates.
+
+On Windows, the updater can recover once a drained app hangs on quit. The move *from* 0.3.20 can still hit the old
+quit behavior. If an update seemed to finish but the app still reports 0.3.20, check its version again before
+reporting success. After saving work, use the signed installer if retrying from the app does not work. Confirm the
+installed version and run the bundled broker's install.ps1 with -Check; do not reinstall or restart while a turn is
+using that same runtime.
+
+A company already in Secure mode with its web switch set to all sites moves once to chosen sites. An agent may now
+ask the person for a site it previously opened without asking. This is expected. Check Settings > Security > Web;
+keep that setting unless the person wants a different scope. Trust AI is not changed by this migration.
+
 ## 0.3.20
 
 What changed: the left rail's destinations follow an order the person sets (drag, Alt+Arrow or the right-click menu;
