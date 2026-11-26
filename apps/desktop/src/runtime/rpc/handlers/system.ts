@@ -55,8 +55,14 @@ export const PREPARE_RESTART_MAIN_ONLY = "system.prepareRestart is the desktop u
   + 'To install a build I call system.install: it pauses the work, installs and restarts the app the way an update does, and the next start tells me whether it landed.';
 const UI_KV = { ns: 'ui', key: 'lastConversationId' };
 
-/** Remembers the chat the human used last (ui.state → reopen it after a restart). */
-export function rememberConversation(services: RuntimeServices, conversationId: string): void {
+/**
+ * Remembers the chat the human used last (ui.state → reopen it after a restart; the phone's bubble sends its line there,
+ * task_cxs4s3pt 26.11.2026). Only the person moves it – their window (owner scope with `person`) or their phone or
+ * browser; an agent's own wf and a plain launch token (any shell on this PC) read chats without moving it.
+ */
+export function rememberConversation(ctx: Pick<HandlerContext, 'services' | 'scope'>, conversationId: string): void {
+  const { services, scope } = ctx;
+  if (scope.kind !== 'device' && !(scope.kind === 'owner' && scope.person === true && !scope.agentId)) return;
   try {
     const kv = new KvRepo(services.db);
     if (kv.get<string>(UI_KV.ns, UI_KV.key) !== conversationId) kv.set(UI_KV.ns, UI_KV.key, conversationId, services.clock.now());
@@ -204,7 +210,7 @@ export function register(table: HandlerTable): void {
     const conversationId = id(o, 'conversationId');
     const draft = text(o, 'text', { max: MAX_DRAFT, allowEmpty: true, multiline: true });
     ctx.services.chats.saveDraft(conversationId, draft, draftAttachments(o.attachments), attachedSecrets(ctx.services, conversationId, o.secrets));
-    rememberConversation(ctx.services, conversationId);
+    rememberConversation(ctx, conversationId);
     return { ok: true };
   }, CHAT);
 

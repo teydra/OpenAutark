@@ -212,6 +212,58 @@ test('ui.saveDraft + ui.state return drafts of all chats', async (t) => {
   assert.equal(state.lastConversationId, b.id);
 });
 
+// task_cxs4s3pt (26.11.2026): the phone's bubble sends its line into ui.state's lastConversationId, so only the person
+// moves it – an agent's own wf or a plain launch token reading another chat leaves it where the person was.
+test('lastConversationId: the person opening a chat sets it, an agent or a shell reading another chat does not', async (t) => {
+  const f = setup();
+  t.after(f.cleanup);
+  const mine = f.chats.create({ agentIds: ['ag_ava'], createdBy: 'human' });
+  const other = f.chats.create({ agentIds: ['ag_ben'], createdBy: 'human' });
+  await f.owner.call('chats.markRead', { id: mine.id, seq: 0 });
+  const last = async () => (await f.owner.call<{ lastConversationId?: string }>('ui.state')).lastConversationId;
+  assert.equal(await last(), mine.id, 'the person opened it in their window');
+  const agentWf = new TestClient(f.server, { kind: 'owner', agentId: 'ag_ben' });
+  await agentWf.request('messages.list', { conversationId: other.id });
+  await agentWf.request('chats.markRead', { id: other.id, seq: 0 });
+  await agentWf.request('ui.saveDraft', { conversationId: other.id, text: '' });
+  await agentWf.request('chats.direct', { memberId: 'ag_ben' });
+  await agentWf.request('messages.send', { conversationId: other.id, body: 'read it' });
+  assert.equal(await last(), mine.id, "an agent's own wf reading or writing another chat leaves it");
+  const shell = new TestClient(f.server, { kind: 'owner' });
+  await shell.request('chats.markRead', { id: other.id, seq: 0 });
+  await shell.request('chats.direct', { memberId: 'ag_ben' });
+  assert.equal(await last(), mine.id, 'a plain launch token (any shell) leaves it');
+  await f.phone.call('chats.markRead', { id: other.id, seq: 0 });
+  assert.equal(await last(), other.id, "the person's phone opening a chat moves it");
+});
+
+// task_cxs4s3pt (26.11.2026): the bubble's path on the PC – the phone uploads the screenshot, asks ui.state and chats.get
+// for the chat the person used last and sends one line there: a chat line with the picture, no to-do on the Tasks page.
+test('bubble line: a screenshot and a question from the phone become one chat line with the image, never a to-do', async (t) => {
+  const f = setup();
+  t.after(f.cleanup);
+  const chat = f.chats.create({ agentIds: ['ag_ava'], createdBy: 'human' });
+  await f.owner.call('chats.markRead', { id: chat.id, seq: 0 });
+  const tasksBefore = f.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tasks')?.n ?? 0;
+  const last = (await f.phone.call<{ lastConversationId?: string }>('ui.state')).lastConversationId;
+  assert.equal(last, chat.id);
+  const summary = await f.phone.call<{ id: string; members: Array<{ memberId: string; kind: string }> }>('chats.get', { id: last });
+  assert.ok(summary.members.some((member) => member.kind === 'agent' && member.memberId === 'ag_ava'), 'the bubble finds the agent in that chat');
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+  const name = 'Screenshot of the page the person was on when asking.jpg';
+  const ref = await f.phone.call<{ id: string }>('files.upload', { name, mime: 'image/jpeg', dataBase64: jpeg.toString('base64') });
+  const sent = await f.phone.call<Message>('messages.send', { conversationId: chat.id, body: 'Was steht auf dieser Seite?', attachments: [{ fileId: ref.id, name }], clientId: 'bubble:c1' });
+  const again = await f.phone.call<Message>('messages.send', { conversationId: chat.id, body: 'Was steht auf dieser Seite?', attachments: [{ fileId: ref.id, name }], clientId: 'bubble:c1' });
+  assert.equal(again.id, sent.id, 'a retry with the same client id answers the first line');
+  const lines = await f.owner.call<Message[]>('messages.list', { conversationId: chat.id });
+  const line = lines.find((message) => message.id === sent.id);
+  assert.ok(line && line.authorId === 'human' && line.kind === 'text' && line.body === 'Was steht auf dieser Seite?');
+  assert.deepEqual(line.attachments?.map((file) => [file.fileId, file.name, file.mime]), [[ref.id, name, 'image/jpeg']], 'the picture stands in the line');
+  assert.equal(lines.filter((message) => message.authorId === 'human').length, 1, 'one line, not two');
+  assert.equal(f.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tasks')?.n ?? 0, tasksBefore, 'no to-do was made');
+  assert.ok(f.wakeRows().some((wake) => wake.agent_id === 'ag_ava' && wake.reason === 'message'), 'the agent of that chat is woken by the line');
+});
+
 test('chat events reach a phone subscribed to the chat topic', async (t) => {
   const f = setup();
   t.after(f.cleanup);

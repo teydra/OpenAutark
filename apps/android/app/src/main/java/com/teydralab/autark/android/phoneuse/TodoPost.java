@@ -1,8 +1,8 @@
-// Owns: one to-do the person is putting together in the to-do button (TodoButton) – its screenshots (JPEG bytes, at most
-// MAX, each with the file id once files.upload took it, so a second Send uploads nothing twice), the client id of this
-// post (made once, the same on every retry until it went through: tasks.quickCreate then answers the first task, never a
-// second one) and the frames the PC gets (files.upload, tasks.quickCreate). Pure, so a host test pins it.
-// Never: Android classes, or the person's text anywhere but the tasks.quickCreate frame.
+// Owns: one line the person is putting together in the bubble (TodoButton) – its screenshots (JPEG bytes, at most MAX,
+// each with the file id once files.upload took it, so a second Send uploads nothing twice), the client id of this post
+// (made once, the same on every retry until it went through: messages.send then answers the first line in that chat,
+// never a second one – BubbleChat) and the upload frame. Pure, so a host test pins it.
+// Never: Android classes, or the person's text (that goes only in BubbleChat's messages.send frame).
 package com.teydralab.autark.android.phoneuse;
 
 import java.util.ArrayList;
@@ -90,37 +90,5 @@ final class TodoPost {
         Object id = ((Map<?, ?>) result).get("id");
         if (!(id instanceof String)) id = ((Map<?, ?>) result).get("fileId");
         return id instanceof String && !((String) id).isEmpty() ? (String) id : null;
-    }
-
-    /** tasks.quickCreate's params: the text, the uploaded shots as attachments, this post's client id – no target (Autark picks the owner). */
-    static Map<String, Object> create(String text, List<String[]> attachments, String clientId) {
-        List<Map<String, Object>> files = new ArrayList<>();
-        for (String[] file : attachments) {
-            Map<String, Object> one = new LinkedHashMap<>();
-            one.put("fileId", file[0]);
-            one.put("name", file[1]);
-            files.add(one);
-        }
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("text", text);
-        if (!files.isEmpty()) params.put("attachments", files);
-        params.put("clientId", clientId);
-        return params;
-    }
-
-    /** The task in tasks.quickCreate's answer {task:{id, assigneeKind, assigneeId}}: {id, kind, assignee}, or null. */
-    static String[] task(Object result) {
-        if (!(result instanceof Map)) return null;
-        Object task = ((Map<?, ?>) result).get("task");
-        if (!(task instanceof Map)) return null;
-        Map<?, ?> t = (Map<?, ?>) task;
-        if (!(t.get("id") instanceof String)) return null;
-        return new String[] { (String) t.get("id"), t.get("assigneeKind") instanceof String ? (String) t.get("assigneeKind") : null,
-                t.get("assigneeId") instanceof String ? (String) t.get("assigneeId") : null };
-    }
-
-    /** The agent a call goes to: the task's assignee when it is an agent, else null (the task opens instead). */
-    static String callee(String[] task) {
-        return task != null && "agent".equals(task[1]) && task[2] != null && !task[2].isEmpty() ? task[2] : null;
     }
 }

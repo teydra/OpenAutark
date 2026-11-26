@@ -9,7 +9,7 @@
 // When phone use is off it answers 'off' and shows the enable notification; a build without phone use offers its
 // phone-use build instead (PhoneUseUpgrade).
 // The PC's 'notify' events on the same subscription become the app's own notifications (AppNotices, B-084).
-// It also carries the to-do button's own calls (TodoButton: files.upload, tasks.quickCreate, chats.direct) – call()
+// It also carries the to-do button's own calls (TodoButton: files.upload, ui.state, chats.get, messages.send) – call()
 // sends one request and hands its {id, result} / {id, error:{message}} to the caller's Answer; a socket that ends fails
 // every call still waiting; request() is the same, waited for on the caller's thread. The link that runs is linked() (one
 // per paired company; the to-do button shows while one does). The bubble's call (BubbleCall) listens to the events of
