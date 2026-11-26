@@ -23,10 +23,21 @@ export const MAX_MEMORY_WAIT_MS = 30_000;
  */
 export function availableMemory(): number {
   if (process.platform !== 'darwin') return freemem();
-  try {
-    return parseVmStat(execFileSync('/usr/bin/vm_stat', { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] })) ?? freemem();
-  } catch { return freemem(); }
+  return cachedMac(performance.now(), () => {
+    try {
+      return parseVmStat(execFileSync('/usr/bin/vm_stat', { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] })) ?? freemem();
+    } catch { return freemem(); }
+  });
 }
+
+/** vm_stat is a subprocess: a burst of turns and the 1 s retries of a waiting one share one reading for a few seconds. */
+const MAC_READING_MS = 3000;
+let macReading: { at: number; bytes: number } | undefined;
+export function cachedMac(now: number, read: () => number): number {
+  if (!macReading || now - macReading.at >= MAC_READING_MS || now < macReading.at) macReading = { at: now, bytes: read() };
+  return macReading.bytes;
+}
+export function forgetMacReading(): void { macReading = undefined; }
 
 /** Bytes that are free, inactive or speculative in `vm_stat` output; undefined when the output is not in that format. */
 export function parseVmStat(text: string): number | undefined {

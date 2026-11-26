@@ -4,7 +4,7 @@ import { agent } from '../chat/harness.ts';
 import { flush, setup } from '../dispatcher/fakes.ts';
 import { DispatcherImpl } from '../../../src/runtime/agents/dispatcher.ts';
 import type { SplitService } from '../../../src/runtime/contracts.ts';
-import { MAX_MEMORY_WAIT_MS, START_HEADROOM, TurnMemoryGate, availableMemory, parseVmStat } from '../../../src/runtime/agents/dispatch-memory.ts';
+import { MAX_MEMORY_WAIT_MS, START_HEADROOM, TurnMemoryGate, availableMemory, cachedMac, forgetMacReading, parseVmStat } from '../../../src/runtime/agents/dispatch-memory.ts';
 
 function fixture(free = START_HEADROOM) {
   let now = 0;
@@ -125,4 +125,16 @@ test('vm_stat output in another format is not trusted', () => {
 
 test('the default memory reading is a positive number on this host', () => {
   assert.ok(availableMemory() > 0);
+});
+
+test('the vm_stat reading is shared for three seconds, then taken again', () => {
+  forgetMacReading();
+  let reads = 0;
+  const read = () => { reads++; return reads * 1000; };
+  assert.equal(cachedMac(10_000, read), 1000);
+  assert.equal(cachedMac(11_000, read), 1000);
+  assert.equal(cachedMac(12_999, read), 1000);
+  assert.equal(cachedMac(13_000, read), 2000);
+  assert.equal(reads, 2);
+  forgetMacReading();
 });
