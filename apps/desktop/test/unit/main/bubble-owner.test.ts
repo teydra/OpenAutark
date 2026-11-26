@@ -6,14 +6,14 @@
 // lets the lock go to a waiting company. Real locks on a test-only address (a named pipe on Windows, an abstract socket
 // on Linux, an flock on a file in a fresh temp folder on macOS) and real child processes for the abrupt end – nothing
 // touches the address of a running company or the person's own Library. macOS alone: the flock is one another program
-// sees (Python's fcntl.flock), no child process inherits it, the file stays and is private, a file system without locks
-// falls back to the first-company rule.
+// sees (Python's fcntl.flock), no child process inherits it, the file stays and is private. (The EOPNOTSUPP fallback is not
+// reachable on a runner: APFS and even devfs take the lock.)
 // Owns: these assertions only. Never: opens a bubble or reads a company's data.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { constants, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -213,9 +213,10 @@ test('macOS: no child process inherits it – a killed holder\'s long-lived chil
   const holder = company(address, true);
   let grandchild: number | null = null;
   let mine = 0;
-  const here = lock(address, () => mine++);
+  let here: BubbleLock | null = null;
   try {
     await until(holder.owned, 10_000, 'the child company to hold it');
+    here = lock(address, () => mine++); // only now: the child company must be the holder
     grandchild = holder.grandchild();
     assert.ok(grandchild && alive(grandchild), 'the holder started a child that outlives it');
     await pause(400);
@@ -225,7 +226,7 @@ test('macOS: no child process inherits it – a killed holder\'s long-lived chil
     assert.equal(alive(grandchild!), true, 'the child still runs');
     await until(() => mine === 1, 5000, 'the takeover while the holder\'s child still runs (O_CLOEXEC)');
   } finally {
-    here.dispose();
+    here?.dispose();
     holder.child.kill('SIGKILL');
     if (grandchild && alive(grandchild)) process.kill(grandchild, 'SIGKILL');
   }
@@ -250,23 +251,3 @@ test('macOS: the path is made private in a fresh home, and a file left by a cras
   try { await until(() => second.owned, 5000, 'the stale file\'s lock'); } finally { second.dispose(); }
 });
 
-test('macOS: a file system without locks falls back to the first-company rule (onUnsupported), once', { skip: notMac }, async (t) => {
-  // devfs takes no flock: the raw open says whether this kernel answers EOPNOTSUPP there, and the lock must follow it
-  let raw = '';
-  try { closeSync(openSync('/dev/null', constants.O_RDWR | constants.O_NONBLOCK | O_EXLOCK)); raw = 'locked'; } catch (error) { raw = String((error as NodeJS.ErrnoException).errno); }
-  let unsupported = 0, owned = 0;
-  const lines: string[] = [];
-  const devnull = holdBubbleLock({ address: '/dev/null', onOwn: () => owned++, onUnsupported: () => unsupported++, log: (line) => lines.push(line), retryMs: 100, pollMs: 100 });
-  try {
-    await pause(400);
-    if (raw === '-102' || raw === '-45') {
-      assert.equal(unsupported, 1, `fell back (${lines.join(' | ')})`);
-      assert.equal(owned, 0);
-      assert.equal(devnull.owned, false);
-    } else {
-      t.skip(`this kernel answers ${raw} for an flock on /dev/null; the fallback is not reachable here`);
-    }
-  } finally {
-    devnull.dispose();
-  }
-});
