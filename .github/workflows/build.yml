@@ -61,6 +61,8 @@ jobs:
         run: node --test test/unit/computer/signin.test.ts
       - name: Secure mode Windows desktop gate (no real lock screen)
         run: node --test test/isolated/windows-secure-desktop.test.mjs
+      - name: One bubble per person on a real named pipe (several companies, quit and crash takeover)
+        run: node --test test/unit/main/bubble-owner.test.ts
       - name: Windows installer-helper and Markdown path fixtures
         run: node --test test/unit/main/install-helper.test.ts test/unit/media/absolute-paths.test.ts
       - name: Real Windows shell jobs (background child on exit; reap on timeout, cancel, EOF)

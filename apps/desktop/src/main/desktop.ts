@@ -13,7 +13,7 @@
 // the recycle bin once it has ended (company-remove.ts, 16.11.2026).
 // B-080: the host op app.install reaches the updater wiring (installFile), and a start with a window sets up the desktop
 // broker where it is missing (broker-setup.ts). B-081: the side tabs' Pin picker and the AI cursor over the screen (screen-cursor.ts).
-// 18.11.2026: the floating to-do button (float-bar*.ts; the first company; 19.11.: tray Show/Hide, its call in the hidden page).
+// 18.11.2026: the floating to-do button (float-bar*.ts; 19.11.: tray Show/Hide, its call in the hidden page; 26.11.: the company holding bubble-owner.ts's lock).
 // Owns: constructing and connecting the main-side modules. Never: business logic (runtime),
 // UI decisions (renderer), long work on the main thread.
 
@@ -68,6 +68,7 @@ import { WorkStopControl, type WorkStopRpc } from './work-stop.ts';
 import { ScreenCursor, electronCursorOverlays } from './screen-cursor.ts'; // B-081
 import { loadWindowState, saveWindowState } from './window-state.ts';
 import { startFloatBar } from './float-bar-window.ts'; // owner 18.11.2026: the floating to-do button
+import { bubbleLockAddress, holdBubbleLock, type BubbleLock } from './bubble-owner.ts'; // 26.11.2026: one bubble per person, the company with the lock
 
 export interface DesktopOptions {
   background: boolean; // started at sign-in or by the launcher: tray + runtime, no window
@@ -406,7 +407,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   app.on('before-quit', beforeDesktopQuit({
     blockFailedUpdateQuit: () => desktopUpdates.blockFailedUpdateQuit(),
     begin: () => { mainWindow.letGo(); runMarks.quit(desktopUpdates.draining ? 'update' : 'person'); },
-    cleanup: [() => workStop.dispose(), () => screenCursor.dispose(), () => floatBar?.close(), () => hidden.dispose(), () => workspaceBrowser?.dispose()],
+    cleanup: [() => workStop.dispose(), () => screenCursor.dispose(), () => { floatBar?.close(); bubbleLock?.dispose(); }, () => hidden.dispose(), () => workspaceBrowser?.dispose()], // the bubble goes before its lock
     commitDrainedQuit: () => desktopUpdates.commitDrainedQuit(),
     quitReadyLine: () => updateQuitLine,
     actions: () => ({
@@ -422,8 +423,9 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
 
   nativeUpdater.on('before-quit-for-update', () => { desktopUpdates.markUpdateQuit(); mainWindow.letGo(); }); // an update closes windows first
 
-  let floatBar: ReturnType<typeof startFloatBar> | null = null; // one per PC: the first company's (not in a test profile: its global shortcut, one window); after the main page (background: at once)
-  function startFloat(): void { if (!company && !testMode && !floatBar) floatBar = startFloatBar({ BrowserWindow, session, screen, globalShortcut, nativeImage, Menu }, { rpc: link.rpc, capture, file: path.join(paths.data, 'float-bar.json'), window: mainWindow, renderer, tray, log: line => log.line(line) }); } if (options.background) startFloat();
+  let floatBar: ReturnType<typeof startFloatBar> | null = null; let bubbleLock: BubbleLock | null = null; // one per person on this PC: the first ready company that gets the lock (bubble-owner.ts; never a test profile: its global shortcut, one window); after the main page (background: at once); a later owner's page hears it through IPC.bubbleState
+  function startFloat(): void { if (!testMode && !bubbleLock) bubbleLock = holdBubbleLock({ address: bubbleLockAddress({ platform, home: os.homedir(), tmp: os.tmpdir(), product: productName, packaged: app.isPackaged }), platform, onOwn: openFloat, log: line => log.line(line) }); }
+  function openFloat(): void { if (!floatBar) floatBar = startFloatBar({ BrowserWindow, session, screen, globalShortcut, nativeImage, Menu }, { rpc: link.rpc, capture, file: path.join(paths.data, 'float-bar.json'), window: mainWindow, renderer, tray, log: line => log.line(line) }); } if (options.background) startFloat();
   // ---------------------------------------------------------------- go
   runtimeHost.start();
   tray.create();
