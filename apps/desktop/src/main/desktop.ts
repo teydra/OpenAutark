@@ -424,7 +424,12 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   nativeUpdater.on('before-quit-for-update', () => { desktopUpdates.markUpdateQuit(); mainWindow.letGo(); }); // an update closes windows first
 
   let floatBar: ReturnType<typeof startFloatBar> | null = null; let bubbleLock: BubbleLock | null = null; // one per person on this PC: the first ready company that gets the lock (bubble-owner.ts; never a test profile: its global shortcut, one window); after the main page (background: at once); a later owner's page hears it through IPC.bubbleState
-  function startFloat(): void { if (!testMode && !bubbleLock) bubbleLock = holdBubbleLock({ address: bubbleLockAddress({ platform, home: os.homedir(), tmp: os.tmpdir(), product: productName, packaged: app.isPackaged }), platform, onOwn: openFloat, log: line => log.line(line) }); }
+  function startFloat(): void { // macOS and others: no lock address, the first company alone as before (bubble-owner.ts)
+    if (testMode || bubbleLock) return;
+    const address = bubbleLockAddress({ platform, home: os.homedir(), product: productName, packaged: app.isPackaged });
+    if (!address) { if (!company) openFloat(); return; }
+    bubbleLock = holdBubbleLock({ address, onOwn: openFloat, log: line => log.line(line) });
+  }
   function openFloat(): void { if (!floatBar) floatBar = startFloatBar({ BrowserWindow, session, screen, globalShortcut, nativeImage, Menu }, { rpc: link.rpc, capture, file: path.join(paths.data, 'float-bar.json'), window: mainWindow, renderer, tray, log: line => log.line(line) }); } if (options.background) startFloat();
   // ---------------------------------------------------------------- go
   runtimeHost.start();

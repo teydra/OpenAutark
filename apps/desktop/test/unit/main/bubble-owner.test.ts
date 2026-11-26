@@ -1,29 +1,30 @@
 // One bubble per person on this PC (src/main/bubble-owner.ts, task_zbnv2b3h): the lock's address is the same for every
-// company of one person and product and different for another person or a development run; of several companies
-// starting at once exactly one holds it; when the holder lets go (a normal quit) or its process is killed (a crash) the
-// next one waiting takes it over, one at a time; a waiter that quits never takes it; on macOS a socket file a crash left
-// behind is removed and taken. Real sockets on a test-only address (a named pipe on Windows, an abstract socket on
-// Linux), and real child processes for the abrupt end – nothing touches the address of a running company.
+// company of one person and product and different for another person or a development run; macOS and other platforms
+// get no address (the first company alone shows the bubble, as before – no socket file, nothing removed); of several
+// companies starting at once exactly one holds it; when the holder lets go (a normal quit) or its process is killed (a
+// crash) the next one waiting takes it over, one at a time; a waiter that quits never takes it; a holder whose bubble
+// fails to open lets the lock go to a waiting company. Real sockets on a test-only address (a named pipe on Windows, an
+// abstract socket on Linux), and real child processes for the abrupt end – nothing touches the address of a running
+// company. Where there is no lock (macOS), the socket tests are skipped.
 // Owns: these assertions only. Never: opens a bubble or reads a company's data.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import os from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { bubbleLockAddress, holdBubbleLock, type BubbleLock } from '../../../src/main/bubble-owner.ts';
 
-const MODULE = pathToFileURL(path.join(import.meta.dirname, '../../../src/main/bubble-owner.ts')).href;
+const SOURCE = path.join(import.meta.dirname, '../../../src/main/bubble-owner.ts');
+const MODULE = pathToFileURL(SOURCE).href;
 const platform = process.platform;
+const noLock = platform !== 'win32' && platform !== 'linux' ? 'no bubble lock on this platform (the first company alone)' : false;
 let count = 0;
 /** A fresh address only this test uses. */
 function testAddress(): string {
   const name = `autark-bubble-test-${process.pid}-${++count}-${Math.random().toString(36).slice(2, 8)}`;
-  if (platform === 'win32') return `\\\\.\\pipe\\${name}`;
-  if (platform === 'linux') return `\0${name}`;
-  return path.join(os.tmpdir(), `${name}.sock`);
+  return platform === 'win32' ? `\\\\.\\pipe\\${name}` : `\0${name}`;
 }
 
 async function until(check: () => boolean, ms = 5000, what = 'condition'): Promise<void> {
@@ -36,13 +37,13 @@ async function until(check: () => boolean, ms = 5000, what = 'condition'): Promi
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function lock(address: string, onOwn: () => void = () => undefined, retryMs = 60_000): BubbleLock {
-  return holdBubbleLock({ address, platform, onOwn, log: () => undefined, retryMs });
+  return holdBubbleLock({ address, onOwn, log: () => undefined, retryMs });
 }
 
 /** A company in a process of its own: says "owned" when it holds the lock. */
 function company(address: string): { child: ChildProcess; owned: () => boolean; exited: Promise<void> } {
   const code = `import { holdBubbleLock } from ${JSON.stringify(MODULE)};
-    holdBubbleLock({ address: ${JSON.stringify(address)}, platform: ${JSON.stringify(platform)}, retryMs: 60000, log: () => {}, onOwn: () => process.stdout.write('owned\\n') });
+    holdBubbleLock({ address: ${JSON.stringify(address)}, retryMs: 60000, log: () => {}, onOwn: () => process.stdout.write('owned\\n') });
     setInterval(() => {}, 1000);`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'inherit'] });
   let out = '';
@@ -51,22 +52,25 @@ function company(address: string): { child: ChildProcess; owned: () => boolean; 
   return { child, owned: () => out.includes('owned'), exited };
 }
 
-test('the address: one per person and product, a development run apart, the platform\'s own kind', () => {
-  const scope = { platform: 'win32' as const, home: 'C:\\Users\\Heess', tmp: 'C:\\Temp', product: 'Autark', packaged: true };
+test('the address: one per person and product, a development run apart, the platform\'s own kind; none on macOS', () => {
+  const scope = { platform: 'win32' as NodeJS.Platform, home: 'C:\\Users\\Heess', product: 'Autark', packaged: true };
   const win = bubbleLockAddress(scope);
-  assert.match(win, /^\\\\\.\\pipe\\autark-bubble-[0-9a-f]{20}$/);
+  assert.match(win ?? '', /^\\\\\.\\pipe\\autark-bubble-[0-9a-f]{20}$/);
   assert.equal(bubbleLockAddress({ ...scope, home: 'c:\\users\\HEESS' }), win, 'Windows paths ignore case');
-  assert.equal(bubbleLockAddress({ ...scope, tmp: 'D:\\other' }), win, 'the temp folder plays no part on Windows');
   assert.notEqual(bubbleLockAddress({ ...scope, home: 'C:\\Users\\Other' }), win, 'another person');
   assert.notEqual(bubbleLockAddress({ ...scope, packaged: false }), win, 'a development run');
   assert.notEqual(bubbleLockAddress({ ...scope, product: 'Other' }), win, 'another product');
-  assert.match(bubbleLockAddress({ ...scope, platform: 'linux', home: '/home/s' }), /^\0autark-bubble-[0-9a-f]{20}$/);
-  const mac = bubbleLockAddress({ ...scope, platform: 'darwin', home: '/Users/s', tmp: '/var/folders/ab/cd/T' });
-  assert.match(mac, /^\/var\/folders\/ab\/cd\/T\/autark-bubble-[0-9a-f]{20}\.sock$/);
-  assert.ok(mac.length < 104, 'fits a macOS socket path');
+  assert.match(bubbleLockAddress({ ...scope, platform: 'linux', home: '/home/s' }) ?? '', /^\0autark-bubble-[0-9a-f]{20}$/);
+  // macOS: a socket file would survive a crash, and removing a stale one races (two owners); the first company alone
+  assert.equal(bubbleLockAddress({ ...scope, platform: 'darwin', home: '/Users/s' }), null);
+  assert.equal(bubbleLockAddress({ ...scope, platform: 'freebsd', home: '/home/s' }), null);
 });
 
-test('several companies at once: exactly one holds it; each normal quit hands it to exactly one more', async () => {
+test('the lock code never removes a file (the macOS stale-socket race stays out)', () => {
+  assert.doesNotMatch(readFileSync(SOURCE, 'utf8'), /\bunlink|\brmSync|from 'node:fs'/);
+});
+
+test('several companies at once: exactly one holds it; each normal quit hands it to exactly one more', { skip: noLock }, async () => {
   const address = testAddress();
   const owners: number[] = [];
   const locks = Array.from({ length: 5 }, (_, index) => lock(address, () => owners.push(index)));
@@ -88,7 +92,7 @@ test('several companies at once: exactly one holds it; each normal quit hands it
   }
 });
 
-test('a waiting company that quits never takes it over', async () => {
+test('a waiting company that quits never takes it over', { skip: noLock }, async () => {
   const address = testAddress();
   let firstOwned = 0, secondOwned = 0;
   const first = lock(address, () => firstOwned++);
@@ -104,7 +108,29 @@ test('a waiting company that quits never takes it over', async () => {
   try { await until(() => third.owned, 5000, 'the free lock'); } finally { third.dispose(); }
 });
 
-test('the holder\'s process is killed: a running company takes over at once, the others keep waiting', async () => {
+test('the bubble fails to open: the lock goes to a waiting company, and the failed one tries again later', { skip: noLock }, async () => {
+  const address = testAddress();
+  let failedTries = 0, waiterOwned = 0;
+  const failing = lock(address, () => { failedTries++; throw new Error('no window'); }, 400);
+  await until(() => failedTries === 1, 5000, 'the first, failing owner');
+  assert.equal(failing.owned, false, 'no lock without a bubble');
+  const waiter = lock(address, () => waiterOwned++);
+  try {
+    await until(() => waiterOwned === 1, 5000, 'the working company taking it');
+    assert.equal(waiter.owned, true);
+    const triesBefore = failedTries;
+    await pause(1200); // the failing one retries every 400 ms but finds it held
+    assert.equal(failedTries, triesBefore, 'held elsewhere: no second bubble attempt');
+    assert.equal(failing.owned, false);
+    waiter.dispose();
+    await until(() => failedTries > triesBefore, 5000, 'the failed company trying again once it is free');
+  } finally {
+    waiter.dispose();
+    failing.dispose();
+  }
+});
+
+test('the holder\'s process is killed: a running company takes over at once, the others keep waiting', { skip: noLock }, async () => {
   const address = testAddress();
   const holder = company(address);
   try {
@@ -132,24 +158,5 @@ test('the holder\'s process is killed: a running company takes over at once, the
     }
   } finally {
     holder.child.kill('SIGKILL');
-  }
-});
-
-test('macOS: a socket file a crashed holder left behind is removed and taken', { skip: platform === 'win32' && 'Windows has no socket files (named pipes)' }, async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'bubble-'));
-  const address = path.join(dir, 'b.sock');
-  try {
-    const code = `import net from 'node:net'; net.createServer().listen(${JSON.stringify(address)}, () => process.stdout.write('up\\n')); setInterval(() => {}, 1000);`;
-    const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'inherit'] });
-    let up = false;
-    child.stdout!.on('data', () => { up = true; });
-    await until(() => up, 10_000, 'the stale holder');
-    child.kill('SIGKILL');
-    await new Promise((resolve) => child.once('exit', resolve));
-    assert.ok(existsSync(address), 'the crash left the file');
-    const here = holdBubbleLock({ address, platform: 'darwin', onOwn: () => undefined, log: () => undefined, retryMs: 60_000 });
-    try { await until(() => here.owned, 5000, 'the stale file taken over'); } finally { here.dispose(); }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 });
