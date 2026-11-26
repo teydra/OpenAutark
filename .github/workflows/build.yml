@@ -63,5 +63,12 @@ jobs:
         run: node --test test/isolated/windows-secure-desktop.test.mjs
       - name: Windows installer-helper and Markdown path fixtures
         run: node --test test/unit/main/install-helper.test.ts test/unit/media/absolute-paths.test.ts
+      - name: Real Windows shell jobs (exit, timeout, cancel, runtime pipe EOF)
+        env:
+          AUTARK_SHELL_JOB_TEST: '1'
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File resources/broker/build.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test test/unit/tools/shell-job.test.ts test/unit/tools/shell-windows.test.ts
       - name: Real TCP port and company binds
         run: npm run test:native-tcp

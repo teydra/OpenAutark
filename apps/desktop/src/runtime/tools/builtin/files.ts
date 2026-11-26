@@ -26,6 +26,7 @@ import { commandAction, ENV_SCHEMA, runCommand } from './command.ts';
 import { searchTool } from './files-search.ts';
 import { missText } from './file-miss.ts'; // B-080: a miss shows what is there
 import { LINE_READ_BYTES, lineWindow } from './file-window.ts';
+import { shellJobArgs, shellJobBroker } from '../../system/shell-job.ts';
 import { pwshDir } from '../../engines/wf-shim.ts'; // B-080 wave 3: the engines' PowerShell 7
 
 const MAX_READ = 256 * 1024;
@@ -165,13 +166,22 @@ export function windowsShell(command: string, env: NodeJS.ProcessEnv = process.e
   };
 }
 
-export const defaultShell: ShellSpawn = (command, options) => {
+export const defaultShell = (command: string, options: Parameters<ShellSpawn>[1]) => {
   const win = process.platform === 'win32';
   const spawnOptions: SpawnOptions = { cwd: options.cwd, env: options.env, windowsHide: true, detached: !win, stdio: ['ignore', 'pipe', 'pipe'] };
   const powershell = win ? windowsShell(command, options.env) : undefined;
-  const child = powershell ? nodeSpawn(powershell.file, powershell.args, spawnOptions) : nodeSpawn(command, { ...spawnOptions, shell: true });
+  const broker = powershell ? shellJobBroker() : undefined;
+  const child = powershell
+    ? broker ? nodeSpawn(broker, shellJobArgs(powershell.file, powershell.args), { ...spawnOptions, stdio: ['pipe', 'pipe', 'pipe'] })
+      : nodeSpawn(powershell.file, powershell.args, spawnOptions)
+    : nodeSpawn(command, { ...spawnOptions, shell: true });
   const kill = () => {
-    if (process.platform === 'win32' && child.pid) {
+    if (broker) {
+      // Kill only the handle-owning process. The kernel kills the whole Job, even if the root already exited.
+      child.kill();
+    } else if (win && child.pid) {
+      // Compatibility for source runs and old/missing broker resources: don't target a PID after its exit.
+      if (child.exitCode !== null || child.signalCode !== null) return;
       nodeSpawn(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe'), ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => { child.kill(); });
     } else {
       try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch { child.kill('SIGKILL'); }

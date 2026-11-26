@@ -38,6 +38,11 @@ namespace AutarkBroker
         public static int Main(string[] args)
         {
             string role = args.Length > 0 ? args[0] : "";
+            if (role == ShellJob.Role)
+            {
+                if (args.Length == 2 && args[1] == "--capability") { Console.WriteLine(ShellJob.Capability); return 0; }
+                return ShellJob.Run(args);
+            }
             if (role == "service" && args.Length >= 2)
             {
                 ServiceBase.Run(new BrokerService(args[1]));

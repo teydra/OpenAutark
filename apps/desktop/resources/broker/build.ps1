@@ -18,7 +18,7 @@ if ($start -lt 0 -or $end -lt 0) { throw 'The C# block of windows-helper.ps1 was
 $body = $text.Substring($start, $end - $start)
 $body = $body.Substring($body.IndexOf("`n") + 1)
 
-$obj = Join-Path ([IO.Path]::GetTempPath()) 'autark-broker-build'
+$obj = Join-Path ([IO.Path]::GetTempPath()) ('autark-broker-build-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $obj | Out-Null
 $helperCs = Join-Path $obj 'Helper.cs'
 [IO.File]::WriteAllText($helperCs, $body, (New-Object Text.UTF8Encoding($false)))
@@ -30,12 +30,12 @@ $references = @(
   (Join-Path $framework 'System.ServiceProcess.dll'),
   (Join-Path $wpf 'UIAutomationClient.dll'), (Join-Path $wpf 'UIAutomationTypes.dll'), (Join-Path $wpf 'WindowsBase.dll')
 ) | ForEach-Object { "/reference:$_" }
-$sources = @((Join-Path $here 'Broker.cs'), (Join-Path $here 'Worker.cs'), (Join-Path $here 'SignIn.cs'), (Join-Path $here 'Waker.cs'), $helperCs)
+$sources = @((Join-Path $here 'Broker.cs'), (Join-Path $here 'Worker.cs'), (Join-Path $here 'SignIn.cs'), (Join-Path $here 'Waker.cs'), (Join-Path $here 'ShellJob.cs'), $helperCs)
 
 & $csc /nologo /target:exe /platform:anycpu /optimize+ /unsafe /warn:4 "/out:$out" $references $sources
 if ($LASTEXITCODE -ne 0) { throw "csc failed with exit code $LASTEXITCODE" }
 Remove-Item -Recurse -Force $obj
 
-foreach ($file in @($helper, (Join-Path $here 'Broker.cs'), (Join-Path $here 'Worker.cs'), (Join-Path $here 'SignIn.cs'), (Join-Path $here 'Waker.cs'), $out)) {
+foreach ($file in @($helper, (Join-Path $here 'Broker.cs'), (Join-Path $here 'Worker.cs'), (Join-Path $here 'SignIn.cs'), (Join-Path $here 'Waker.cs'), (Join-Path $here 'ShellJob.cs'), $out)) {
   '{0}  {1}' -f (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant(), (Split-Path -Leaf $file)
 }
