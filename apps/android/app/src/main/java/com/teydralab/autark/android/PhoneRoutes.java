@@ -22,6 +22,11 @@ public final class PhoneRoutes {
                 || route.matches("#/settings/[a-z-]{1,40}") ? route : null;
     }
 
+    /** A route an older app version put into a notification or shortcut that is still on screen: "#/day" (gone since 0.3.21) opens Tasks. Only the intent coming in uses this, never valid(). */
+    static String migrate(String route) {
+        return "#/day".equals(route) ? "#/tasks" : route;
+    }
+
     /** The to-do button's call: the chat with `conversationId` whose page starts a call (null for an id the route cannot carry). */
     public static String call(String conversationId) {
         return conversationId == null ? null : valid("#/chat/" + conversationId + "?call=1");

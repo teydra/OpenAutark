@@ -10,6 +10,8 @@ public final class PhoneRoutesTest {
         for (String route : new String[] {null, "", "#/", "#/settings", "#/settings/", "#/settings/Devices", "#/settings/a/b", "#/settings/a'b",
                 "#/settings/" + "x".repeat(41), "#/chat/", "#/chat/a'b", "#/chat/a\"b", "#/chat/a b", "#/chat/a/b",
                 "javascript:alert(1)", "#/chats'", "#/chat/" + "x".repeat(201)}) check(PhoneRoutes.valid(route) == null);
+        check("#/tasks".equals(PhoneRoutes.migrate("#/day")) && PhoneRoutes.valid("#/day") == null);
+        check("#/chats".equals(PhoneRoutes.migrate("#/chats")) && PhoneRoutes.migrate(null) == null);
         check("#/chat/abc".equals(PhoneRoutes.forNotice("reply", null, "abc", null)));
         check("#/chat/abc".equals(PhoneRoutes.forNotice("todo", Boolean.TRUE, "abc", null)));
         check("#/tasks".equals(PhoneRoutes.forNotice("todo", null, null, null)));
