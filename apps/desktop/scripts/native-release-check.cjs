@@ -86,9 +86,10 @@ async function main() {
       const chat = await call('chats.create', { title: 'Native release check', agentIds: [manager.id] });
       await call('events.subscribe', { topics: [`chat:${chat.id}`] });
       const answer = new Promise((resolve, reject) => { const timer = setTimeout(async () => reject(new Error(`Demo chat reply timeout\n${await runtimeDiagnostics().catch(error => String(error))}`)), 30000); final = value => { clearTimeout(timer); resolve(value); }; });
+      const sentAt = performance.now();
       await call('messages.send', { conversationId: chat.id, body: 'native release check' });
       await answer;
-      result.packagedRuntime = { version: true, rpc: true, demoChat: true };
+      result.packagedRuntime = { version: true, rpc: true, demoChat: true, demoChatReplyMs: Math.round(performance.now() - sentAt) }; // 26.11.2026: a turn must not wait for the memory gate (30 s) on a Mac
     } finally { ws.close(); }
   } finally {
     runtime.kill();
