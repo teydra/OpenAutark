@@ -1,0 +1,100 @@
+# Owns: building the ad-hoc signed universal Mac package from this repository's sources and running the packaged-app start check
+# (scripts/native-release-check.cjs, the step that stopped the 0.3.20 Mac release) on a macOS runner – without a release draft.
+# Never: publishes, uploads to or reads a release, or uses a secret; the bundle itself is not uploaded, only text evidence.
+# macOS minutes count tenfold (budget 20 $/month): runs only on branches ci/mac-adhoc-* or by hand, one universal build. If the
+# start check fails, two controls re-sign copies of the same bundle (no hardened runtime; a plain ad-hoc re-sign) and run the check
+# again, so one run says whether the signature or the code is the cause.
+name: Mac ad-hoc verify
+on:
+  push:
+    branches: ['ci/mac-adhoc-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mac-adhoc-verify-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  mac:
+    if: github.repository == 'teydra/OpenAutark'
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/desktop
+        shell: bash
+    env:
+      AUTARK_MAC_SIGNING: adhoc
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      APP: dist/mac-universal/Autark.app
+      EVIDENCE: test-results/mac-adhoc
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.2'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci --no-fund --no-audit
+      - name: Prepare both macOS native architectures
+        run: node scripts/prepare-macos-addons.mjs
+      - name: Package the universal app, signed ad hoc with hardened runtime
+        run: npm run package -- --mac --universal
+      - name: Signature evidence (architectures, flags, entitlements of the app and each helper)
+        run: |
+          mkdir -p "$EVIDENCE"
+          {
+            echo "### lipo"; lipo -archs "$APP/Contents/MacOS/Autark"
+            echo "### codesign --verify --deep --strict"; codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 && echo "VERIFY OK" || echo "VERIFY FAILED"
+            echo "### codesign -dvv (app)"; codesign -dvv "$APP" 2>&1 | grep -E 'Identifier|Format|flags|TeamIdentifier|Signature|Runtime' || true
+            echo "### entitlements of the app"; codesign -d --entitlements :- "$APP" 2>/dev/null | cat
+            for h in "$APP"/Contents/Frameworks/*.app "$APP/Contents/Frameworks/Electron Framework.framework"; do
+              echo "### $(basename "$h")"; codesign -dvv "$h" 2>&1 | grep -E 'flags|TeamIdentifier' || true
+              codesign -d --entitlements :- "$h" 2>/dev/null | grep -o 'disable-library-validation' || echo "no disable-library-validation"
+            done
+            echo "### native addons and libraries: signed and valid?"
+            n=0; bad=0
+            while IFS= read -r f; do n=$((n+1)); codesign --verify --strict "$f" >/dev/null 2>&1 || { echo "BAD $f"; bad=$((bad+1)); }; done < <(find "$APP" \( -name '*.node' -o -name '*.dylib' \) -type f)
+            echo "$n files, $bad invalid"
+            echo "### autark-mac-helper"; find "$APP" -name autark-mac-helper -type f -exec sh -c 'for f; do echo "$f"; lipo -archs "$f"; codesign -dvv "$f" 2>&1 | grep -E "flags|TeamIdentifier"; done' sh {} +
+          } 2>&1 | tee "$EVIDENCE/signature.txt"
+          { echo '### Signature evidence'; echo '```'; cat "$EVIDENCE/signature.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Packaged runtime and window check (the release's "Verify packaged runtime and desktop" step)
+        id: verify
+        continue-on-error: true
+        run: node scripts/native-release-check.cjs 2>&1 | tee "$EVIDENCE/verify.txt"; exit "${PIPESTATUS[0]}"
+      - name: Control A – same bundle re-signed ad hoc WITHOUT hardened runtime
+        if: steps.verify.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          rm -rf "$RUNNER_TEMP/a" && mkdir -p "$RUNNER_TEMP/a" && cp -R "$APP" "$RUNNER_TEMP/a/Autark.app"
+          codesign --force --deep --sign - "$RUNNER_TEMP/a/Autark.app" 2>&1 | tail -2
+          AUTARK_MAC_APP="$RUNNER_TEMP/a/Autark.app" node scripts/native-release-check.cjs 2>&1 | tee "$EVIDENCE/control-a-no-runtime.txt"; exit "${PIPESTATUS[0]}"
+      - name: Control B – same bundle re-signed ad hoc with runtime and the ad-hoc entitlements in one pass
+        if: steps.verify.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          rm -rf "$RUNNER_TEMP/b" && mkdir -p "$RUNNER_TEMP/b" && cp -R "$APP" "$RUNNER_TEMP/b/Autark.app"
+          codesign --force --deep --sign - --options runtime --entitlements assets/entitlements.mac.adhoc.plist "$RUNNER_TEMP/b/Autark.app" 2>&1 | tail -2
+          AUTARK_MAC_APP="$RUNNER_TEMP/b/Autark.app" node scripts/native-release-check.cjs 2>&1 | tee "$EVIDENCE/control-b-runtime-adhoc.txt"; exit "${PIPESTATUS[0]}"
+      - name: Crash reports and runtime logs, if any
+        if: always()
+        run: |
+          ls -la ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i autark || echo "no Autark crash report"
+          for f in ~/Library/Logs/DiagnosticReports/Autark*; do [ -f "$f" ] && { echo "== $f"; head -60 "$f"; }; done 2>/dev/null || true
+      - name: Keep the text evidence for a day (no app bundle)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-adhoc-evidence
+          path: |
+            apps/desktop/test-results/mac-adhoc/*.txt
+            apps/desktop/test-results/native-darwin*.json
+            apps/desktop/test-results/native-darwin*.png
+          retention-days: 1
+          if-no-files-found: warn
+      - name: Result
+        if: steps.verify.outcome == 'failure'
+        run: echo "The start check failed on the universal ad-hoc package; see verify.txt and the controls." && exit 1

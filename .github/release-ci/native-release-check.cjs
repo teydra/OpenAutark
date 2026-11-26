@@ -12,7 +12,8 @@ const version = require(path.join(root, 'package.json')).version;
 // electron-builder 26: productName on Windows and macOS, the package name "autark" lower-cased on Linux.
 const names = {
   win32: 'dist/win-unpacked/Autark.exe',
-  darwin: 'dist/mac-universal/Autark.app/Contents/MacOS/Autark',
+  // AUTARK_MAC_APP: another bundle (the mac-adhoc-verify workflow re-signs copies as controls); the release builds dist/mac-universal.
+  darwin: path.join(process.env.AUTARK_MAC_APP || 'dist/mac-universal/Autark.app', 'Contents/MacOS/Autark'),
   linux: 'dist/linux-unpacked/autark',
 };
 const exe = path.resolve(names[process.platform]);
@@ -49,12 +50,19 @@ async function main() {
     verified++;
   }
   result.verifiedBuildFiles = verified;
+  // 26.11.2026 (Felix): the 0.3.20 Mac run stopped with a bare "Demo chat reply timeout"; now the error carries what the runtime said.
+  let runtimeErrors = ''; const seenEvents = [];
+  const runtimeDiagnostics = async () => {
+    const logs = [];
+    for (const name of await fs.readdir(path.join(profile, 'runtime/logs')).catch(() => [])) logs.push(`${name}:\n${(await fs.readFile(path.join(profile, 'runtime/logs', name), 'utf8').catch(() => '')).split('\n').filter(Boolean).slice(-40).join('\n')}`);
+    return `events after send: ${JSON.stringify(seenEvents.slice(-30))}\nruntime stderr: ${runtimeErrors.slice(-2000)}\nruntime logs:\n${logs.join('\n').slice(-6000)}`;
+  };
   const runtime = spawn(exe, [path.join(info.archive, 'app/runtime-cli.mjs'), '--data', path.join(profile, 'runtime'), '--resources', path.join(info.archive, 'resources'), '--ui', path.join(info.archive, 'app/ui'), '--port', '0', '--fake'], { env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
   try {
     const connection = await new Promise((resolve, reject) => {
       let output = ''; let errors = '';
       const timer = setTimeout(() => reject(new Error(`Runtime startup timeout: ${errors.slice(-2000)}`)), 60000);
-      runtime.stderr.on('data', part => { errors += part; });
+      runtime.stderr.on('data', part => { errors += part; runtimeErrors += part; });
       runtime.stdout.on('data', part => { output += part; const line = output.split('\n').find(line => line.startsWith('{')); if (line) { clearTimeout(timer); resolve(JSON.parse(line)); } });
       runtime.once('exit', code => { clearTimeout(timer); reject(new Error(`Runtime exited ${code}: ${errors.slice(-2000)}`)); });
     });
@@ -64,6 +72,7 @@ async function main() {
     const pending = new Map(); let id = 0; let final;
     ws.on('message', raw => {
       const message = JSON.parse(String(raw));
+      if (message.event) seenEvents.push(`${message.event}:${message.data?.state ?? ''}:${String(message.data?.body ?? '').slice(0, 60)}`);
       if ((message.event === 'message.created' || message.event === 'message.updated') && message.data?.state === 'final' && /Echo:.*native release check/u.test(message.data.body)) final?.(message.data);
       const entry = pending.get(message.id);
       if (entry) { pending.delete(message.id); message.error ? entry.reject(new Error(message.error.message)) : entry.resolve(message.result); }
@@ -76,7 +85,7 @@ async function main() {
       assert.ok(manager);
       const chat = await call('chats.create', { title: 'Native release check', agentIds: [manager.id] });
       await call('events.subscribe', { topics: [`chat:${chat.id}`] });
-      const answer = new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Demo chat reply timeout')), 30000); final = value => { clearTimeout(timer); resolve(value); }; });
+      const answer = new Promise((resolve, reject) => { const timer = setTimeout(async () => reject(new Error(`Demo chat reply timeout\n${await runtimeDiagnostics().catch(error => String(error))}`)), 30000); final = value => { clearTimeout(timer); resolve(value); }; });
       await call('messages.send', { conversationId: chat.id, body: 'native release check' });
       await answer;
       result.packagedRuntime = { version: true, rpc: true, demoChat: true };
