@@ -1,0 +1,46 @@
+# Owns: checking the macOS bubble lock (apps/desktop/src/main/bubble-owner.ts, task_0fkwakw9) on a real macos-15 runner –
+# the unit tests with several companies, kill takeover, a failing bubble, the flock seen by another program and no
+# inherited descriptor, then the same lock inside real Electron main processes (kill and normal quit).
+# Never: builds, signs or publishes a package, uses a secret, or touches a release.
+# macOS minutes count tenfold (budget 20 $/month): one runner, no package build, only when the lock's files change or by hand.
+name: Mac bubble lock
+on:
+  push:
+    paths:
+      - apps/desktop/src/main/bubble-owner.ts
+      - apps/desktop/test/unit/main/bubble-owner.test.ts
+      - apps/desktop/test/isolated/bubble-lock-electron.test.mjs
+      - .github/workflows/mac-bubble-lock.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mac-bubble-lock-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  mac:
+    if: github.repository == 'teydra/OpenAutark'
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.2'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci --no-fund --no-audit
+      - name: System facts (the flags from the SDK headers, the runner)
+        run: |
+          sw_vers
+          grep -nE 'define O_(EXLOCK|NONBLOCK|CLOEXEC)[[:space:]]' "$(xcrun --show-sdk-path)/usr/include/sys/fcntl.h"
+      - name: Bubble lock unit tests (Node, real flock on a temp file, real child processes)
+        run: node --test --test-reporter=spec test/unit/main/bubble-owner.test.ts
+      - name: Bubble lock in real Electron main processes (kill and quit takeover)
+        run: node --test --test-reporter=spec test/isolated/bubble-lock-electron.test.mjs
