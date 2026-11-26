@@ -1,7 +1,7 @@
 // Settings sections `day` and `calendar` (B-041; Quests round 20.11.2026: what still has a reader): working hours, the
 // free minutes kept around appointments when a free time is looked for, the end of the night (planAt), the Tasks line's
 // "AI helps" (each line is the person's to-do at once, sorted by their assistant; off: every line is "Only me" – sorted
-// too, never handed to an agent; tasks/quick.ts), keeping the PC awake for queued agent work after hours;
+// too, never handed to an agent; tasks/quick.ts);
 // plus the Google OAuth client the person connects
 // (the client secret lives in the vault – settings hold only its id). They join Settings by module
 // augmentation. All day math uses settings.profile.timezone; DAY_BOUNDARY_HOUR says until when a night still belongs
@@ -23,14 +23,7 @@ export interface DaySettings {
   bufferMin: number; // 0–60, default 10: kept free around appointments when a free time is looked for (calendar/rules.ts)
   planAt: string; // default '06:00': the night window for queued agent work ends then (day/keep-awake.ts)
   aiHelps: boolean; // the Tasks line: each line stands at once as the person's to-do and their assistant sorts it (false: each is "Only me" – sorted too, never handed to an agent), default true
-  keepAwake: boolean; // B-078: the screen stays on while agents work; also keeps the PC awake while queued agent work exists after workEnd, default true
 }
-
-/**
- * B-078 (D17): the keep-awake reason of running agent turns with day.keepAwake on – the host then keeps the screen on
- * ('prevent-display-sleep', main/host-services.ts); any other reason only keeps the app from being suspended.
- */
-export const SCREEN_ON_REASON = 'Agents are working – the screen stays on';
 
 /** Before 04:00 "tomorrow" means the coming day; one constant for parser, planner, Timer. */
 export const DAY_BOUNDARY_HOUR = 4;
@@ -38,7 +31,7 @@ export const DAY_BOUNDARY_HOUR = 4;
 export const MAX_BUFFER_MIN = 60;
 
 export const DEFAULT_DAY_SETTINGS: Readonly<DaySettings> = Object.freeze({
-  workStart: '08:00', workEnd: '20:00', bufferMin: 10, planAt: '06:00', aiHelps: true, keepAwake: true,
+  workStart: '08:00', workEnd: '20:00', bufferMin: 10, planAt: '06:00', aiHelps: true,
 });
 
 /** Settings › calendar: the person's own Google OAuth client (Desktop app type). */

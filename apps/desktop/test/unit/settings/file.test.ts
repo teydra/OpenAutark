@@ -137,20 +137,44 @@ test('an edit with comments, a trailing comma, a missing key and null applies; t
   const edited = h.text()
     .replace('"theme": "system",', '"theme": "light", // my choice\n    /* a block\n       comment */')
     .replace(/\n\s*\/\/[^\n]*\n\s*"workspaceWidth": 420,/, '')
-    .replace('"keepAwake": true', '"keepAwake": false,')
+    .replace('"aiHelps": true', '"aiHelps": false,')
     .replace('"bufferMin": 10', '"bufferMin": null');
-  assert.ok(edited.includes('"keepAwake": false,\n'), 'a trailing comma before }');
+  assert.ok(edited.includes('"aiHelps": false,\n'), 'a trailing comma before }');
   assert.ok(!edited.includes('"workspaceWidth"') && edited.includes('"bufferMin": null,') && edited.includes('// my choice'));
   h.edit(edited);
   const s = h.settings.get();
   assert.equal(s.preferences.theme, 'light');
-  assert.equal(s.day?.keepAwake, false);
+  assert.equal(s.day?.aiHelps, false);
   assert.equal(s.day?.bufferMin, 10, 'null reads as the default');
   assert.equal(s.preferences.workspaceWidth, 420, 'a missing key reads as the default');
   assert.equal(h.settings.notice(), undefined);
   assert.equal(h.of('settings.updated').length, 1);
   assert.equal(h.text(), `${settingsText(s, pc)}`, 'written whole again: the key is back, own comments go, the comments are current');
   assert.equal(h.json().day.bufferMin, 10);
+});
+
+test('legacy wake switches fold into the local PC preference and are removed on write', (t) => {
+  for (const [dayWake, pcWake, expected] of [
+    [true, true, true], [true, false, true], [false, true, true], [false, false, false],
+    [true, undefined, true], [false, undefined, false], [undefined, false, false], [undefined, undefined, true],
+  ]) {
+    const legacy = { day: { keepAwake: dayWake, aiHelps: false }, preferences: { keepPcAwake: pcWake, theme: 'dark' } };
+    const { settings, problems } = settingsFrom(legacy, defaults, defaults);
+    assert.deepEqual(problems, []);
+    assert.equal(settings.preferences.keepPcAwake, expected, JSON.stringify(legacy));
+    assert.equal(settings.preferences.theme, 'dark');
+    assert.equal(settings.day?.aiHelps, false);
+    assert.equal(Object.hasOwn(settings.day!, 'keepAwake'), false);
+  }
+  const h = setup((_db, file) => writeFileSync(file, JSON.stringify({ day: { keepAwake: true }, preferences: { keepPcAwake: false } }), 'utf8'));
+  t.after(h.done);
+  assert.equal(h.settings.get().preferences.keepPcAwake, true);
+  assert.equal(Object.hasOwn(h.json().day, 'keepAwake'), false, 'legacy key removed on first read');
+  h.settings.update({ preferences: { keepPcAwake: false } });
+  h.settings.close();
+  const again = h.make();
+  assert.equal(again.get().preferences.keepPcAwake, false, 'turning it off after migration survives a restart');
+  again.close();
 });
 
 test('the comments are regenerated: a file without or with stale comments gets the current ones; the values stay', (t) => {

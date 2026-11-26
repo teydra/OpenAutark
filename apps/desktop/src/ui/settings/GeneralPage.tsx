@@ -3,8 +3,8 @@
 // 21.11.2026 the Labels and Text sizes in px, kept on this device – lib/text-size.ts),
 // notifications (the sound – to-dos, blockers and important
 // messages always arrive, notify/service.ts) and behaviour (start at login – desktop window only; closing the window
-// always keeps agents running in the tray, the tray's Quit ends them (20.11.2026: no second toggle for that) –, keep the
-// screen on while agents work, Enter sends). Language and time zone come from the PC; the AI notices the
+// always keeps agents running in the tray, the tray's Quit ends them (20.11.2026: no second toggle for that) –, keep this
+// PC awake without keeping the screen on, Enter sends). Language and time zone come from the PC; the AI notices the
 // language the person speaks and keeps profile.language and profile.notes itself (skill app-settings). The removed rows'
 // keys stay in settings.json for the AI. Every row is a view on settings.json. A securely paired owner phone
 // also edits profile and day, and (owner 12.11.2026) the PC's own start at login, marked as changing the PC (the automatic
@@ -12,8 +12,6 @@
 // 16.11.2026: last, the companies on this PC like accounts – export, import, leave, delete (CompaniesGroup.tsx).
 // Owns: these rows and their mapping onto Settings fields. Never: invents options without effect.
 
-import type { DaySettings } from '../../shared/model/day-settings.ts';
-import { daySettingsOf } from '../../shared/model/day-settings.ts';
 import type { NotificationSettings, Preferences, Profile } from '../../shared/model/system.ts';
 import { HumanAvatar } from '../lib/avatar.tsx';
 import { uploadFile } from '../lib/files.ts';
@@ -34,11 +32,9 @@ export function GeneralPage() {
   const profile = value.profile;
   const prefs = value.preferences;
   const notes = value.notifications;
-  const day = daySettingsOf(value);
   const setProfile = (patch: Partial<Profile>) => act(() => updateSettings({ profile: patch }), 'Could not save');
   const setPrefs = (patch: Partial<Preferences>) => act(() => updateSettings({ preferences: patch }), 'Could not save');
   const setNotes = (patch: Partial<NotificationSettings>) => act(() => updateSettings({ notifications: patch }), 'Could not save');
-  const setDay = (patch: Partial<DaySettings>) => act(() => updateSettings({ day: patch }), 'Could not save');
   const locked = !canEditOwnerSettings();
   const photoUpload = canUploadOwnerPhoto();
   const lockNote = session.value?.kind === 'device' && session.value.capabilities.includes('settings') && !session.value.secure ? HTTPS_NOTE : PC_NOTE;
@@ -105,14 +101,11 @@ export function GeneralPage() {
             <Toggle label={start} checked={prefs.openAtLogin} disabled={!installed} onChange={(openAtLogin) => void setPrefs({ openAtLogin })} />
           </Row>
         )}
-        {bridge && (
-          <Row label="Keep this PC awake" hint="No standby while Autark runs on mains power – on battery it may sleep; the screen can still turn off">
+        {(bridge || remote) && (
+          <Row label="Keep this PC awake" hint={onPc('Stays awake on mains power; on battery only for active turns or queued night work. The screen may turn off.')}>
             <Toggle label="Keep this PC awake" checked={prefs.keepPcAwake} onChange={(keepPcAwake) => void setPrefs({ keepPcAwake })} />
           </Row>
         )}
-        <Row label="Keep the screen on while agents work" hint={locked ? lockNote : 'Also keeps this PC awake for agent work at night'}>
-          <Toggle label="Keep the screen on while agents work" checked={day.keepAwake} disabled={locked} onChange={(keepAwake) => void setDay({ keepAwake })} />
-        </Row>
         {bridge && ( // 26.11.2026, Stanislaus: no "Enter sends" on the phone – it is a keyboard setting of the PC
           <Row label="Enter sends" hint={prefs.enterSends ? 'Shift+Enter for a new line' : 'Ctrl+Enter sends'}>
             <Toggle label="Enter sends" checked={prefs.enterSends} onChange={(enterSends) => void setPrefs({ enterSends })} />

@@ -30,7 +30,7 @@ const refused = (error: unknown) => error instanceof WorkforceError && error.cod
 
 test('defaults: 08:00–20:00, 10 min buffer, the night until 06:00, AI helps and keep awake on; no calendar section', () => {
   const { settings } = setup();
-  assert.deepEqual(settings.get().day, { workStart: '08:00', workEnd: '20:00', bufferMin: 10, planAt: '06:00', aiHelps: true, keepAwake: true });
+  assert.deepEqual(settings.get().day, { workStart: '08:00', workEnd: '20:00', bufferMin: 10, planAt: '06:00', aiHelps: true });
   assert.deepEqual(settings.get().day, { ...DEFAULT_DAY_SETTINGS });
   assert.equal(settings.get().calendar, undefined);
   assert.equal(DAY_BOUNDARY_HOUR, 4);
@@ -63,7 +63,7 @@ test('the value rules: HH:MM, the work start before its end, a buffer of 0–60 
   const { settings, of } = setup();
   for (const day of [
     { workStart: '8:00' }, { workEnd: '24:00' }, { planAt: '06:60' }, { workStart: '20:00' }, { workEnd: '08:00' },
-    { bufferMin: 61 }, { bufferMin: -1 }, { bufferMin: 2.5 }, { autoPlan: true }, { agentLane: false }, { aiHelps: 1 }, { keepAwake: 'no' }, { colour: 'red' },
+    { bufferMin: 61 }, { bufferMin: -1 }, { bufferMin: 2.5 }, { autoPlan: true }, { agentLane: false }, { aiHelps: 1 }, { keepAwake: true }, { colour: 'red' },
   ]) {
     assert.throws(() => settings.update({ day: day as never }), refused, JSON.stringify(day));
   }

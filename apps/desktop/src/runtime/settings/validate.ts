@@ -202,5 +202,5 @@ function validateDay(day: NonNullable<Settings['day']>): void {
   for (const key of ['workStart', 'workEnd', 'planAt'] as const) if (typeof day[key] !== 'string' || !HHMM.test(day[key])) bad(`day.${key}`, 'a time as "HH:MM"');
   if (clockMinutes(day.workStart)! >= clockMinutes(day.workEnd)!) bad('day.workEnd', 'a time after day.workStart');
   intIn(day.bufferMin, 'day.bufferMin');
-  for (const key of ['aiHelps', 'keepAwake'] as const) boolean(day[key], `day.${key}`);
+  boolean(day.aiHelps, 'day.aiHelps');
 }

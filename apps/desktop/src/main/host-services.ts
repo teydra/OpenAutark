@@ -13,7 +13,6 @@ import type { NavigateRequest } from '../shared/api/desktop.ts';
 import type { HostOp, HostOps, HostRequest, Keyframes } from '../shared/api/host-bridge.ts';
 import { WorkforceError } from '../shared/errors.ts';
 import { isId } from '../shared/ids.ts';
-import { SCREEN_ON_REASON } from '../shared/model/day-settings.ts'; // B-078
 import { ownBytes, type DisplayInfo, type Shot } from './capture.ts';
 import { keyframeRequest, type KeyframeRequest } from './media-keyframes.ts';
 import { audioRequest, type AudioRequest } from './media-audio.ts'; // B-058 T2
@@ -40,7 +39,7 @@ export interface HostServicesDeps {
   safeStorage: SafeStorageLike;
   shell: { openExternal(url: string): Promise<void>; openPath(path: string): Promise<string>; showItemInFolder(path: string): void; beep(): void };
   idleSeconds(): number; // powerMonitor.getSystemIdleTime
-  powerSaveBlocker: { start(type: 'prevent-app-suspension' | 'prevent-display-sleep'): number; stop(id: number): unknown };
+  powerSaveBlocker: { start(type: 'prevent-app-suspension'): number; stop(id: number): unknown };
   /** null when the OS has no notification service. */
   createNotification(options: { title: string; body: string; silent: boolean }): NotificationLike | null;
   setBadgeCount(count: number): unknown;
@@ -331,8 +330,7 @@ export class HostServices {
   private keepAwake(args: Args<'keepAwake'>): Result<'keepAwake'> {
     text(args.reason ?? '', 'reason', 200);
     if (this.blockers.size >= MAX_BLOCKERS) throw new WorkforceError('conflict', 'Too many keep-awake requests are active.');
-    // B-078 (D17): running agent turns with day.keepAwake on keep the screen on too (the runtime says so by its reason)
-    const id = this.deps.powerSaveBlocker.start(args.reason === SCREEN_ON_REASON ? 'prevent-display-sleep' : 'prevent-app-suspension');
+    const id = this.deps.powerSaveBlocker.start('prevent-app-suspension');
     this.blockers.add(id);
     return { id };
   }

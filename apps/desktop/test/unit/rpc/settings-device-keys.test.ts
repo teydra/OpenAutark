@@ -67,7 +67,7 @@ test('B-084: a secure settings device (my phone app) may write routing, voice an
 test('mobile owner settings: secure settings device edits profile/day, other callers do not acquire owner authority', async (t) => {
   const f = rpcFixture({ table: createHandlerTable() });
   t.after(f.cleanup);
-  const patch = { profile: { name: 'Mobile owner', company: 'Example' }, day: { workStart: '08:00', workEnd: '17:00', planAt: '07:30', keepAwake: true } };
+  const patch = { profile: { name: 'Mobile owner', company: 'Example' }, day: { workStart: '08:00', workEnd: '17:00', planAt: '07:30' }, preferences: { keepPcAwake: false } };
   for (const scope of [
     { ...phoneScope, secure: false },
     { ...phoneScope, capabilities: ['todo'] as DeviceCapability[] },
@@ -83,10 +83,12 @@ test('mobile owner settings: secure settings device edits profile/day, other cal
   assert.equal(saved.profile.name, patch.profile.name);
   assert.equal(saved.profile.company, patch.profile.company);
   assert.equal(saved.day?.workStart, '08:00');
-  assert.equal(saved.day?.keepAwake, true);
+  assert.equal(saved.preferences.keepPcAwake, false);
+  assert.equal((await phone.request('settings.update', { day: { keepAwake: true } })).error?.code, 'bad_request', 'the legacy key is not writable');
   const before = f.services.settings.get();
   const lan = new TestClient(f.server, { ...phoneScope, deviceId: 'dev_lan_host', secure: false });
   assert.equal((await lan.request('settings.update', { preferences: { theme: 'dark', openAtLogin: !before.preferences.openAtLogin } })).error?.code, 'forbidden');
+  assert.equal((await lan.request('settings.update', { preferences: { keepPcAwake: true } })).error?.code, 'forbidden');
   assert.deepEqual(f.services.settings.get(), before, 'a plain-LAN PC preference refuses the whole patch');
 });
 

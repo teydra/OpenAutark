@@ -12,7 +12,7 @@
 // title names what an agent's answer was written on (B-083: the model and effort the turn ended on, and its temperature).
 // 13.11.2026: only real messages are here – who works shows in the live bar above the composer (LiveBar.tsx); a row an
 // older version left (meta.live / meta.lines, a stopped or streaming state) renders as its body.
-// Right-click (long press) opens the message's menu (MessageActions.tsx: Reply, Copy, Select text on touch, Edit,
+// Right-click (long press) opens the message's menu (MessageActions.tsx: Reply, Copy selection, Select text on touch, Edit,
 // Delete); Edit swaps the body for the inline editor, Select text opens its sheet (SelectText.tsx). F30: the meta row
 // also holds Copy and Reply as two small icons (MessageTools) – after the time on the left, before the markers in the own
 // bubble, so the time keeps its edge. A reply shows its quote line above the body (ReplyQuote). B-078: a message with

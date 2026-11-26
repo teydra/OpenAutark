@@ -2,7 +2,7 @@
 // powerSaveBlocker 'prevent-app-suspension' – no standby, so agents and schedules keep working – and never
 // 'prevent-display-sleep': Windows may still turn the screen off. On battery the hold is released.
 // Owns: the decision (switch × power source) and the one hold. Never: imports electron (the blocker and the power
-// monitor come in), or the day.keepAwake screen hold of running turns (host-services.ts).
+// monitor come in). The runtime's active-turn and after-hours work leases are separate.
 
 export interface PowerBlocker {
   start(type: 'prevent-app-suspension'): number;

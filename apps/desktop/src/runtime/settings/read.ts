@@ -71,6 +71,18 @@ export function sectionProblem(section: string, value: unknown, base: Settings, 
   }
 }
 
+/** Fold old wake choices before applying defaults. An explicit true wins; a lone saved choice is kept. */
+function migrateWakePreference(file: Plain): Plain {
+  const day = file.day;
+  if (!isPlain(day) || typeof day.keepAwake !== 'boolean') return file;
+  const { keepAwake, ...rest } = day;
+  const prefs = file.preferences;
+  if (prefs != null && !isPlain(prefs)) return { ...file, day: rest }; // leave the invalid section to normal validation
+  const pcWake = prefs?.keepPcAwake;
+  if (pcWake != null && typeof pcWake !== 'boolean') return { ...file, day: rest };
+  return { ...file, day: rest, preferences: { ...prefs, keepPcAwake: keepAwake || pcWake === true } };
+}
+
 export interface ReadSettings {
   settings: Settings;
   problems: FileProblem[];
@@ -87,6 +99,7 @@ export interface ReadSettings {
  * version no longer has never costs the whole section. "$schema" (the file's pointer to its JSON Schema) is no section.
  */
 export function settingsFrom(file: Plain, base: Settings, defaults: Settings): ReadSettings {
+  file = migrateWakePreference(file);
   const problems: FileProblem[] = [];
   const rejected: Plain = {};
   const dropped: string[] = [];

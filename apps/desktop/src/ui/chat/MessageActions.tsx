@@ -1,14 +1,14 @@
 // Message actions: the message's right-click (long-press) menu – B-080: first, for each attachment, "Open <name>" and
-// (desktop) "Show <name> in folder"; then Reply, Start thread (B-078: or Open thread), Copy, Edit, Remember why…, Delete,
+// (desktop) "Show <name> in folder"; then Reply, Start thread (B-078: or Open thread), Copy selection, Edit, Remember why…, Delete,
 // each only where it applies – and the inline editor. Reply sets the composer's reply (draft.ts setReply) for a finished
 // text message; Edit and Delete are offered for the caller's own text messages only, where this connection
 // may call them. Edit opens the inline editor in place (Esc cancels, Ctrl+Enter or Save saves; the message
 // then shows "edited"); Remember why… (own text messages) opens its one-field dialog (RememberWhy.tsx); Delete asks
 // first, the runtime leaves a "Message deleted" tombstone.
 // F30 (owner 16.11.2026: "man soll unten drunter ein Copy-Symbol haben", "antworten können … auf dem PC unten drunter
-// Buttons"): Copy takes the mouse selection inside the message when there is one, else the whole message; on touch the
-// menu adds "Select text" (SelectText.tsx). MessageTools puts Copy and Reply as two small icons into the message's meta
-// row. Which text Copy takes and how a message is answered (reply(), also the phone's swipe): message-tools.ts.
+// Buttons"): the Copy button takes the whole message. The menu offers Copy selection only when text is selected
+// inside the message. Touch long press uses native selection; the Select text sheet remains available to touch menus.
+// MessageTools puts Copy and Reply into the message's meta row; message-tools.ts owns their eligibility.
 // 16.11.2026: with a piece of the message marked, "Save as secret" stores it and puts its handle there (message-keys.ts).
 // Owns: the menu entries, the meta row's two tools and the inline editor. Never: decides who may edit (the runtime
 // refuses others' messages) or renders the message itself (MessageItem).
@@ -29,7 +29,7 @@ import { isThread, startThread, threadsByAnchor } from './threads.ts';
 import { conversationMap } from '../lib/store.ts';
 import { platform } from '../lib/platform.ts';
 import { openAttachment, showAttachment } from './Attachments.tsx';
-import { canReply, copyable, copyText, menuSelection, reply } from './message-tools.ts';
+import { canReply, copyable, menuSelection, reply } from './message-tools.ts';
 import { markedSecret, saveAsSecret } from './message-keys.ts';
 
 /** The caller's own finished text message ('human' is the caller on every device) – the runtime's rule (chat/message-edits.ts). */
@@ -60,8 +60,8 @@ function fileItems(message: Message): MenuItem[] {
 }
 
 /**
- * The message's menu: its files first (B-080), then Reply, Start/Open thread, Copy (F30: the mouse selection inside the
- * message when there is one), Select text (touch), Edit, Remember why…, Delete – each only where it applies.
+ * The message's menu: files first, then Reply, Start/Open thread, Copy selection, Select text (touch),
+ * Edit, Remember why…, Delete – each only where it applies. Whole-message Copy lives in MessageTools.
  */
 export function messageMenu(message: Message, open: MenuOpen, actions: { edit: () => void; selectText: () => void }): MenuSection[] {
   const files = fileItems(message);
@@ -73,7 +73,7 @@ export function messageMenu(message: Message, open: MenuOpen, actions: { edit: (
     items.push({ label: threadsByAnchor.peek().has(message.id) ? 'Open thread' : 'Start thread', onSelect: () => void startThread(message) });
   }
   const selected = menuSelection(open); // read now: the menu's own clicks may move the selection
-  if (message.body && message.state !== 'streaming') items.push({ label: 'Copy', onSelect: () => void copy(copyText(message.body, selected)) });
+  if (selected && message.body && message.state !== 'streaming') items.push({ label: 'Copy selection', onSelect: () => void copy(selected) });
   const secret = markedSecret(message, selected);
   if (secret) items.push({ label: 'Save as secret', onSelect: () => void saveAsSecret(message, secret) });
   if (open.touch && copyable(message)) items.push({ label: 'Select text', onSelect: actions.selectText });
@@ -84,18 +84,19 @@ export function messageMenu(message: Message, open: MenuOpen, actions: { edit: (
 }
 
 /**
- * F30: Copy (the whole message) and Reply as two small icons in the message's meta row – on every finished text message
- * (Copy where it has words, Reply where this connection may send), always rendered, so nothing moves: seen on hover or
+ * F30: Copy (the whole message) and Reply as two small icons in the message's meta row – on finished text messages
+ * (Copy also on failed/stopped text; Reply where this connection may send), always rendered, so nothing moves: seen on hover or
  * focus with a mouse, always on touch (chat.css .message-tool). Status lines, task cards and streaming rows have none.
  */
 export function MessageTools(props: { message: Message; menu?: (open: MenuOpen) => MenuSection[] }) {
   const { message } = props;
-  if (message.kind !== 'text' || message.state !== 'final') return null;
+  if (message.kind !== 'text' || message.state === 'streaming') return null;
+  const final = message.state === 'final';
   return (
     <>
       {copyable(message) && <IconButton icon="copy" label="Copy" size="small" iconSize={14} class="message-tool" onClick={() => void copy(message.body)} />}
-      {canReply(message) && <IconButton icon="arrow-bend-up-left" label="Reply" size="small" iconSize={14} class="message-tool" onClick={() => { reply(message); }} />}
-      {props.menu && (
+      {final && canReply(message) && <IconButton icon="arrow-bend-up-left" label="Reply" size="small" iconSize={14} class="message-tool" onClick={() => { reply(message); }} />}
+      {final && props.menu && (
         <IconButton icon="dots-three" label="More" size="small" iconSize={14} class="message-tool" aria-haspopup="menu" onClick={(event) => {
           const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); // the phone's menu: the button's, not a long press's
           openContextMenu(box.left, box.bottom, props.menu!({ touch: false, at: (event.currentTarget as HTMLElement).closest<HTMLElement>('.message') }));

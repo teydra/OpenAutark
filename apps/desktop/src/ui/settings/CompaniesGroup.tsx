@@ -125,7 +125,7 @@ export function CompaniesGroup() {
     <Group title="Companies" id="settings-companies" actions={bridge?.files.pickFolder && <Button variant="ghost" class="small" onClick={() => void importCompany()}>Import…</Button>}>
       {list.map((entry) => (
         <Row key={entry.folder} label={entry.label} hint={only ? `${companyLine(entry)} · the only company on this PC` : companyLine(entry)} reserve>
-          {bridge?.files.pickFolder && <Button variant="ghost" class="small" onClick={() => void exportCompany(entry)} disabled={!entry.current && entry.running === false}>Export…</Button>}
+          {bridge?.files.pickFolder && <Button variant="ghost" class="small" onClick={() => void exportCompany(entry)} disabled={!entry.current && entry.running === false}>Export company…</Button>}
           <Button variant="ghost" class="small" disabled={only} onClick={() => void remove(entry)}>{leaves(entry) ? 'Leave' : 'Delete'}</Button>
         </Row>
       ))}

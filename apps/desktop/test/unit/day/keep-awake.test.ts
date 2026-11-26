@@ -17,8 +17,8 @@ const wall = (date: string, clock: string) => wallTime(date, Number(clock.slice(
 const MON = '2026-10-26';
 const turn: AgentActivity = { agentId: 'ag_x', runId: 'run_1', note: 'working', startedAt: 0 };
 
-function awake(now: number, day: Partial<DaySettings> = {}) {
-  const f = dayFixture({ now, day });
+function awake(now: number, day: Partial<DaySettings> = {}, keepPcAwake = true) {
+  const f = dayFixture({ now, day, keepPcAwake });
   const timers = new FakeTimers();
   const keep = new KeepAwake(f.s, { timers });
   keep.start();
@@ -67,10 +67,14 @@ test('at most 10 h, then not again that night; the setting switches it; stop let
   assert.equal(k.keep.holding, false, '06:00: ten hours');
   k.f.wakes.wake({ agentId: 'ag_y', reason: 'task' });
   assert.equal(k.keep.holding, false, 'not again before the next evening');
-  const off = awake(wall(MON, '21:00'), { keepAwake: false });
+  const off = awake(wall(MON, '21:00'), {}, false);
   off.f.wakes.wake({ agentId: 'ag_x', reason: 'task' });
   assert.equal(off.keep.holding, false);
-  off.f.setDay({ keepAwake: true });
+  off.f.setKeepPcAwake(true);
+  assert.equal(off.keep.holding, true);
+  off.f.setKeepPcAwake(false);
+  assert.equal(off.keep.holding, false, 'switching off releases queued-work standby hold');
+  off.f.setKeepPcAwake(true);
   assert.equal(off.keep.holding, true);
   off.keep.stop();
   assert.equal(off.keep.holding, false);

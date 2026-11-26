@@ -123,7 +123,7 @@ export const SECTIONS: readonly SectionDef[] = [
     flag('enterSends', 'Enter sends a message, Shift+Enter starts a new line (false: Ctrl+Enter sends)', true),
     flag('openAtLogin', 'Whether the app starts with the PC', false),
     flag('autoDownloadUpdates', 'New versions download by themselves', false),
-    flag('keepPcAwake', 'This PC does not go to standby while the app runs and the PC is on mains power (on battery it may sleep; the screen may always turn off)', true),
+    flag('keepPcAwake', 'Keep this PC awake while Autark runs on mains power, or for queued night work on battery. The screen can turn off.', true),
     // Feedback 20031F6D (owner 21.11.2026): the person's own order of the rail (ui/shell/nav-order.ts); keys a version
     // does not know are left out there and its new destinations follow the named ones, so any list of keys is fine here.
     { key: 'navOrder', about: 'Your order of the main destinations in the left rail and the phone tabs (drag them in the rail, or right-click › Reset order)', type: 'array',
@@ -162,9 +162,8 @@ export const SECTIONS: readonly SectionDef[] = [
     clock('workStart', 'Start of your working hours', DEFAULT_DAY_SETTINGS.workStart),
     clock('workEnd', 'End of your working hours (after workStart)', DEFAULT_DAY_SETTINGS.workEnd),
     int('bufferMin', 'Minutes kept free around your appointments when a free time is looked for', 0, MAX_BUFFER_MIN, DEFAULT_DAY_SETTINGS.bufferMin),
-    clock('planAt', 'End of the night: from workEnd until then the PC stays awake while agent work is queued (with keepAwake)', DEFAULT_DAY_SETTINGS.planAt),
+    clock('planAt', 'End of the night: from workEnd until then the PC stays awake while agent work is queued (with preferences.keepPcAwake)', DEFAULT_DAY_SETTINGS.planAt),
     flag('aiHelps', 'Each line of the Tasks page stands at once as your to-do and your assistant sorts it, the AI\'s part to an agent (false: every line is "Only me" – sorted too, never handed to an agent)', DEFAULT_DAY_SETTINGS.aiHelps),
-    flag('keepAwake', 'The screen stays on while agents work, and the PC awake while agent work is queued after working hours', DEFAULT_DAY_SETTINGS.keepAwake),
   ] },
   { key: 'calendar', title: 'Calendar – your own Google client (calendars are connected with the tool calendar.connect)', optional: true, keys: [
     text('googleClientId', 'Your own Google OAuth client id for Google Calendar', 'a client id, or null (none)', { pattern: PATTERNS.googleClientId }),

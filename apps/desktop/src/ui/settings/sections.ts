@@ -27,7 +27,7 @@ export const SECTIONS: readonly SectionInfo[] = [
   { id: 'general', title: 'General', icon: 'gear-six', file: SETTINGS_FILE, requires: ['settings.update'], keywords: [
     'profile', 'name', 'company', 'photo', 'appearance', 'theme', 'dark', 'light',
     'enter sends', 'send', 'tray', 'close', 'login', 'startup', 'start with windows', 'notifications', 'sound',
-    'behavior', 'keep running', 'keep the screen on', 'screen', 'keep awake', 'sleep',
+    'behavior', 'keep running', 'screen', 'keep awake', 'sleep',
     'companies', 'delete company', 'leave company', 'export company', 'import company', 'recycle bin', // 16.11.2026: CompaniesGroup.tsx
   ] },
   // Listed everywhere (B-078: it holds the former Voice page); its providers and uses show where accounts.detect is allowed.

@@ -1,10 +1,7 @@
-// Keep the PC awake for agent work after hours (B-041 track A2, contract §5.10): with settings.day.keepAwake, in
-// the night window (workEnd → the next planAt, profile zone) while agent turns run or wakes wait that are due
-// before the morning, one host.keepAwake('Agents are working tonight') hold – released when nothing is left, at
-// planAt, or after 10 h at most (then not again before the next evening). Running turns hold the PC by
-// themselves (agents/dispatch-live.ts – B-078: with day.keepAwake their hold keeps the screen on too, at any hour; the
-// switch is Settings › General "Keep the screen on while agents work"); this hold covers the gaps between them (queued
-// wakes, the news delay).
+// With preferences.keepPcAwake, defer standby for agent work after hours, including on battery.
+// During the night window (workEnd to planAt), keep the PC awake while agent turns run or wakes are due before
+// morning. Release when nothing is left, at planAt, or after 10 h at most (once per night). The active-turn
+// lease is independent (agents/dispatch-live.ts); this hold covers gaps between turns. The screen may turn off.
 // Event-driven: the wake queue's changes, 'agent.activity', settings changes and resume; one re-armable timeout
 // (people/due-timer.ts) for the next edge – the night's start, or the hold's end. A lid closed anyway still
 // sleeps: B-059 records it – a 'suspend' in the night window while agent work ran or waited, and the 'resume'
@@ -14,7 +11,7 @@
 
 import type { RuntimeServices } from '../contracts.ts';
 import type { SleepSpan } from '../../shared/model/calendar.ts';
-import { clockMinutes } from '../../shared/model/day-settings.ts';
+import { clockMinutes, daySettingsOf } from '../../shared/model/day-settings.ts';
 import { addDays, wallOf, wallTime } from '../../shared/text/when.ts';
 import { DueTimer, REAL_DUE_TIMERS } from '../people/due-timer.ts';
 import type { Timers } from '../people/join.ts';
@@ -100,12 +97,13 @@ export class KeepAwake {
   check(): void {
     if (!this.offs.length) return;
     const now = this.s.clock.now();
-    const settings = daySettings(this.s);
+    const { day, preferences } = this.s.settings.get();
+    const settings = daySettingsOf({ day });
     const tz = dayZone(this.s);
     const night = nightOf(now, tz, settings.workEnd, settings.planAt);
     if (this.release && this.until !== undefined && now >= this.until) { this.spentUntil = night?.to ?? now; this.letGo(); }
     const spent = this.spentUntil !== undefined && now < this.spentUntil;
-    const wanted = settings.keepAwake && night !== undefined && !spent && (this.turns > 0 || this.queued(now, night.to));
+    const wanted = preferences.keepPcAwake && night !== undefined && !spent && (this.turns > 0 || this.queued(now, night.to));
     if (wanted && !this.release) this.hold(now, Math.min(night!.to, now + MAX_HOLD_MS));
     else if (!wanted && this.release) this.letGo();
     if (this.release) this.timer.arm(this.until);

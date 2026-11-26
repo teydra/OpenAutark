@@ -83,6 +83,7 @@ export function fakeSources(sources: CalendarSource[]): CalendarSources & { sync
 
 export interface DayOptions {
   day?: Partial<DaySettings>;
+  keepPcAwake?: boolean;
   now?: number;
   /** The split/briefing helper (false: none – the rules decide). */
   helper?: StructuredRunner | false;
@@ -94,9 +95,14 @@ export function dayFixture(options: DayOptions = {}) {
   const s = h.s as RuntimeServices & { splitHelper?: StructuredRunner | false };
   let settings = {
     profile: { timezone: BERLIN }, day: { ...DEFAULT_DAY_SETTINGS, ...options.day },
+    preferences: { keepPcAwake: options.keepPcAwake ?? true },
     org: { reportDelayMin: 20, autoAssignTasks: true },
   };
   s.settings = { get: () => settings, update: () => { throw new Error('no settings writes'); } } as unknown as RuntimeServices['settings'];
+  const setKeepPcAwake = (keepPcAwake: boolean) => {
+    settings = { ...settings, preferences: { ...settings.preferences, keepPcAwake } };
+    h.bus.emit('settings.updated', settings as never);
+  };
   /** Changes Settings › day and announces it like the settings service. */
   const setDay = (patch: Partial<DaySettings>) => {
     settings = { ...settings, day: { ...settings.day, ...patch } };
@@ -114,5 +120,5 @@ export function dayFixture(options: DayOptions = {}) {
   /** The microtasks of the last writes ran. */
   const settled = async () => { await h.settle(); };
   const todoChat = (): string | undefined => undefined; // B-054: no To-do chat – the person's to-dos are chat-free
-  return { ...h, s, calendar, line, setDay, holds, awake: () => awake, settled, todoChat };
+  return { ...h, s, calendar, line, setDay, setKeepPcAwake, holds, awake: () => awake, settled, todoChat };
 }

@@ -1,13 +1,11 @@
 // Live state the dispatcher publishes while agents work: the agent status ring/line
 // (org.setStatus: working · waiting · idle), the `agent.activity` event ("who is working")
-// and the host keep-awake lease while at least one turn runs (B-078, D17: with settings day.keepAwake – Settings › General
-// "Keep the screen on while agents work" – the lease keeps the screen on too).
+// and the host standby lease while at least one turn runs. The display is free to turn off.
 // Owns: those side effects and "never overwrite a pause". Never: decides what runs.
 
 import type { OrgService, RuntimeServices } from '../contracts.ts';
 import type { AgentStatus } from '../../shared/model/org.ts';
 import type { AgentActivity } from '../../shared/model/runs.ts';
-import { SCREEN_ON_REASON, daySettingsOf } from '../../shared/model/day-settings.ts';
 
 type OrgWithActivity = OrgService & { setActivitySource?(source: () => AgentActivity[]): void };
 
@@ -55,13 +53,12 @@ export class LiveStatus {
     }
   }
 
-  /** Holds the host awake while turns run – with day.keepAwake (B-078) the screen stays on too; releases it when the last one ends. */
+  /** Holds the host awake while turns run regardless of the preference; releases it when the last one ends. */
   awake(working: boolean): void {
     if (working && !this.releaseAwake) {
       const services = this.services();
       try {
-        const screen = (() => { try { return daySettingsOf(services.settings.get()).keepAwake; } catch { return false; } })();
-        if (typeof services.host?.keepAwake === 'function') this.releaseAwake = services.host.keepAwake(screen ? SCREEN_ON_REASON : 'Agents are working');
+        if (typeof services.host?.keepAwake === 'function') this.releaseAwake = services.host.keepAwake('Agents are working');
       } catch (error) {
         services.log.warn('keepAwake failed', { error: String(error) });
       }

@@ -92,7 +92,7 @@ function BackupRows() {
   const staged = status?.staged;
   return (
     <>
-      <Row label="Back up" reserve hint={saved ? `Saved ${time(saved.at)} · ${fileSize(saved.bytes)}` : "All data into the data folder, with encrypted secrets and the agents' website logins, not the AI sign-ins; keep it private"}>
+      <Row label="Back up" reserve hint={saved ? `Saved ${time(saved.at)} · ${fileSize(saved.bytes)}` : "A restorable snapshot with encrypted secrets and agents’ website logins, but no AI sign-ins; keep it private"}>
         <Button variant="ghost" class="small" disabled={!saved} onClick={() => saved && open(saved.path)}>Show in folder</Button>
         {pickFolder && <Button variant="ghost" class="small" disabled={backingUp} onClick={() => void backUpTo()}>Back up to…</Button>}
         <Button variant="ghost" class="small" busy={backingUp} onClick={() => void backUp()}>Back up</Button>
@@ -132,7 +132,7 @@ function ChatExportRow() {
     if (dir) await start(dir);
   };
   return (
-    <Row label="Export chats" reserve hint={done ? `Exported ${count(done.chats, 'chat')} · ${count(done.messages, 'message')} · ${count(done.files, 'file')}` : 'Every chat as a folder with its messages and files'}>
+    <Row label="Export chats" reserve hint={done ? `Exported ${count(done.chats, 'chat')} · ${count(done.messages, 'message')} · ${count(done.files, 'file')}` : 'Readable chat folders with messages and files; not a backup'}>
       <Button variant="ghost" class="small" disabled={!done} onClick={() => done && open(done.dir)}>Show in folder</Button>
       {pickFolder && <Button variant="ghost" class="small" disabled={busy || !chats.length} onClick={() => void startTo()}>Export to…</Button>}
       <Button variant="ghost" class="small" busy={busy} disabled={!chats.length} onClick={() => void start()}>Export</Button>

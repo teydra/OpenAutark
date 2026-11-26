@@ -285,7 +285,7 @@ const SECTION_FORM: Record<string, string[]> = {
   notifications: ['enabled', 'sound', 'quietHours', 'pushFor'],
   voice: ['ttsVoice', 'vocabulary', 'realtime', 'talker', 'localStt', 'localTts'],
   routing: ['work', 'decision', 'voice', 'stt', 'tts', 'image', 'video', 'music', 'sound', 'embeddings', 'costMode', 'allowPaidFallback'],
-  day: ['workStart', 'workEnd', 'bufferMin', 'planAt', 'aiHelps', 'keepAwake'],
+  day: ['workStart', 'workEnd', 'bufferMin', 'planAt', 'aiHelps'],
   calendar: ['googleClientId', 'googleSecretId'],
   lifecycle: ['retention'],
   feedback: ['includeDiagnostics'],

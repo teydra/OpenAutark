@@ -168,13 +168,16 @@ test('openPath opens or reveals absolute paths only', async () => {
 });
 
 test('keepAwake blockers are tracked and released with the runtime', async () => {
-  const h = harness();
+  const kinds: string[] = [];
+  const stopped: number[] = [];
+  const h = harness({ powerSaveBlocker: { start: kind => kinds.push(kind), stop: id => stopped.push(id) } });
   const a = await h.call('keepAwake', { reason: 'render video' }) as { id: number };
-  const b = await h.call('keepAwake', { reason: 'long run' }) as { id: number };
+  const b = await h.call('keepAwake', { reason: 'Agents are working – the screen stays on' }) as { id: number };
   assert.deepEqual(await h.call('releaseAwake', { id: a.id }), { ok: true });
   assert.deepEqual(await h.call('releaseAwake', { id: 9999 }), { ok: true }, 'unknown ids are ignored');
   h.host.releaseAll();
-  assert.deepEqual(h.calls.stopped, [a.id, b.id]);
+  assert.deepEqual(kinds, ['prevent-app-suspension', 'prevent-app-suspension'], 'even a legacy reason cannot keep the screen on');
+  assert.deepEqual(stopped, [a.id, b.id]);
 });
 
 test('badge, idle, displays and screenshot ops', async () => {

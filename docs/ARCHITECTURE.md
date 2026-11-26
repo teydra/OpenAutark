@@ -682,7 +682,7 @@ rewords every scheduled message – an agent's too, still posted under its name 
   click: an appointment, or the person's line through `tasks.quickCreate`), `calendar/rules.ts` (conflicts, busy spans,
   free gaps), `day/assistant.ts` (the person's secretary or CEO assistant – sorts the line, §4.3), `day/keep-awake.ts`
   (keep the PC awake for agent work after hours), `day/clock.ts` (the profile zone and the day settings). Settings:
-  `settings.json` `day` (work hours, `bufferMin`, `planAt` as the night's end, `aiHelps` for the line, `keepAwake`) and
+  `settings.json` `day` (work hours, `bufferMin`, `planAt` as the night's end, `aiHelps` for the line), `preferences.keepPcAwake` for the standby switch, and
   `calendar`. The day planner, the morning planner and briefing, the focus timer, learned estimates, "Handed off", the
   stale-asks tidy and the Next card are gone, with `day.plan/briefing/handedOff`, `day.add` and the keys
   `day.autoPlan`/`day.agentLane`.

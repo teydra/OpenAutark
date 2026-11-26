@@ -1,12 +1,6 @@
-// What a message's Copy and Reply do (F30, owner 16.11.2026: "vielleicht will ich ja nur den Teil kopieren", "außerdem
-// möchte ich antworten können"). Copy takes the text the person selected with the mouse where the selection touches
-// this message, else the whole message (its raw text, as before). A touch long press selects one word by itself – the
-// browser's pick, not the person's (lib/context-menu.tsx drops it) – so on touch Copy takes the whole message and the
-// menu offers "Select text" (SelectText.tsx), where the phone's own handles choose the part. reply() is the one way the
-// menu entry, the meta row's Reply icon (MessageActions.tsx) and the phone's swipe (shell/MobileShell.tsx) answer a
-// message: the composer's draft gets the reply (composer/draft.ts setReply), and the composer shows the quote and takes
-// the focus.
-// Owns: those rules. Never: writes the clipboard (MessageActions.tsx), changes the selection or renders.
+// Copy takes the whole message. Marking text lets the person copy just that part; a touch long press
+// uses the device's own selection. reply() sets the composer's reply draft, whether from a menu, button or swipe.
+// Owns: those rules. Never: writes the clipboard, changes the selection or renders.
 
 import type { Message } from '../../shared/model/chat.ts';
 import { can } from '../lib/session.ts';
@@ -15,8 +9,8 @@ import { setReply } from './composer/draft.ts';
 /** A finished text message this connection may answer (also a failed or stopped one; never one still streaming). */
 export const canReply = (message: Message) => message.kind === 'text' && message.state !== 'streaming' && can('messages.send');
 
-/** A finished text message with words: Copy and Select text apply. */
-export const copyable = (message: Message) => message.kind === 'text' && message.state === 'final' && message.body.trim().length > 0;
+/** A non-streaming text message with words can be copied, including failed or stopped replies. */
+export const copyable = (message: Message) => message.kind === 'text' && message.state !== 'streaming' && message.body.trim().length > 0;
 
 /** The next message of the chat answers `message`; false where it cannot (nothing changes then). */
 export function reply(message: Message): boolean {
@@ -44,12 +38,7 @@ export function selectedIn(element: Node | null, selection: SelectionLike | null
   return '';
 }
 
-/** What Copy writes: the selected part when there is one, else the whole body. */
-export function copyText(body: string, selected: string): string {
-  return selected.trim() ? selected : body;
-}
-
-/** The selection Copy may take for a menu opened on `at`: the mouse's, never a touch long press's. */
+/** The selection the menu may copy for a menu opened on `at`: the mouse's, never a touch long press's. */
 export function menuSelection(open: { touch: boolean; at: Node | null }, selection: SelectionLike | null = currentSelection()): string {
   return open.touch ? '' : selectedIn(open.at, selection);
 }

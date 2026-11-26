@@ -1,5 +1,5 @@
 // F30 (owner 16.11.2026): a message's Copy and Reply (src/ui/chat/message-tools.ts, MessageActions.tsx, MessageItem.tsx,
-// chat.css). Copy takes the mouse selection where it touches the message, else the whole message; a touch long press's
+// chat.css). Copy selection uses only marked text touching the message; a touch long press's
 // own one-word pick never counts, and on touch the menu offers "Select text" (its sheet, SelectText.tsx). Copy and Reply
 // are two small icons in every finished text message's meta row – after the time on the left, before the markers in the
 // own bubble – always rendered (nothing moves), seen on hover or focus, always on touch. reply() is the one way the menu,
@@ -16,7 +16,7 @@ import { session } from '../../../src/ui/lib/session.ts';
 
 (rpc as unknown as { onOpen: unknown }).onOpen = () => () => undefined;
 (rpc as unknown as { call: unknown }).call = async () => ({ ok: true });
-const { canReply, copyText, copyable, menuSelection, reply, selectedIn } = await import('../../../src/ui/chat/message-tools.ts');
+const { canReply, copyable, menuSelection, reply, selectedIn } = await import('../../../src/ui/chat/message-tools.ts');
 const { draftFor } = await import('../../../src/ui/chat/composer/draft.ts');
 
 const read = (file: string) => readFileSync(new URL(`../../../${file}`, import.meta.url), 'utf8');
@@ -31,7 +31,7 @@ const selection = (text: string, touches: unknown[]) => ({
   getRangeAt: () => ({ intersectsNode: (node: unknown) => touches.includes(node) }),
 });
 
-test('Copy takes the mouse selection where it touches the message, else the whole message', () => {
+test('Copy selection uses only marked text touching the message', () => {
   const row = {} as Node;
   const other = {} as Node;
   assert.equal(selectedIn(row, selection('Anna back', [row])), 'Anna back', 'a selection inside the message');
@@ -39,15 +39,14 @@ test('Copy takes the mouse selection where it touches the message, else the whol
   assert.equal(selectedIn(row, selection('', [row])), '', 'no selection');
   assert.equal(selectedIn(row, selection('   ', [row])), '', 'only blanks selected');
   assert.equal(selectedIn(null, selection('Anna', [row])), '');
-  assert.equal(copyText('Call **Anna** back at 10.', 'Anna back'), 'Anna back');
-  assert.equal(copyText('Call **Anna** back at 10.', ''), 'Call **Anna** back at 10.', 'nothing selected: the whole message, its raw text');
   assert.equal(menuSelection({ touch: false, at: row }, selection('Anna', [row])), 'Anna', 'the mouse\'s selection counts');
-  assert.equal(menuSelection({ touch: true, at: row }, selection('Anna', [row])), '', 'a long press\'s one word is the browser\'s pick: the whole message');
+  assert.equal(menuSelection({ touch: true, at: row }, selection('Anna', [row])), '', 'a long press\'s one word is the browser\'s pick, not a selection to copy');
 });
 
-test('the menu: Copy uses the selection read when it opens; Select text only on touch and only with words', () => {
+test('the menu: Copy selection is offered only with a selection; Select text only on touch and only with words', () => {
   const actions = read('src/ui/chat/MessageActions.tsx');
-  assert.match(actions, /const selected = menuSelection\(open\);[^\n]*\n\s*if \(message\.body && message\.state !== 'streaming'\) items\.push\(\{ label: 'Copy', onSelect: \(\) => void copy\(copyText\(message\.body, selected\)\) \}\);/);
+  assert.match(actions, /const selected = menuSelection\(open\);[^\n]*\n\s*if \(selected && message\.body && message\.state !== 'streaming'\) items\.push\(\{ label: 'Copy selection', onSelect: \(\) => void copy\(selected\) \}\);/);
+  assert.doesNotMatch(actions, /items\.push\(\{ label: 'Copy',/);
   assert.match(actions, /if \(open\.touch && copyable\(message\)\) items\.push\(\{ label: 'Select text', onSelect: actions\.selectText \}\);/);
   assert.match(read('src/ui/chat/MessageItem.tsx'), /const build = \(open: MenuOpen\) => messageMenu\(message, open, \{ edit: \(\) => setEditing\(true\), selectText: \(\) => setSelecting\(true\) \}\);\s*const menu = useContextMenu\(build, \{ touchByButton: true \}\);/, '17.11.2026: a finger selects natively, the menu is the More button');
   const menu = read('src/ui/lib/context-menu.tsx');
@@ -62,14 +61,16 @@ test('the menu: Copy uses the selection read when it opens; Select text only on 
 
 test('the meta row: Copy and Reply on finished text messages only, after the time on the left, before the markers in the own bubble', () => {
   assert.equal(copyable(message()), true);
+  assert.equal(copyable(message({ state: 'failed' })), true);
+  assert.equal(copyable(message({ state: 'stopped' })), true);
   assert.equal(copyable(message({ state: 'streaming' })), false, 'not while it streams');
   assert.equal(copyable(message({ kind: 'status' })), false, 'no status line');
   assert.equal(copyable(message({ kind: 'task' })), false, 'no task card');
   assert.equal(copyable(message({ body: '  ' })), false, 'nothing to copy');
   const actions = read('src/ui/chat/MessageActions.tsx');
-  assert.match(actions, /if \(message\.kind !== 'text' \|\| message\.state !== 'final'\) return null;/);
+  assert.match(actions, /if \(message\.kind !== 'text' \|\| message\.state === 'streaming'\) return null;/);
   assert.match(actions, /<IconButton icon="copy" label="Copy" size="small" iconSize=\{14\} class="message-tool" onClick=\{\(\) => void copy\(message\.body\)\} \/>/);
-  assert.match(actions, /\{canReply\(message\) && <IconButton icon="arrow-bend-up-left" label="Reply" [^>]*class="message-tool" onClick=\{\(\) => \{ reply\(message\); \}\} \/>\}/);
+  assert.match(actions, /\{final && canReply\(message\) && <IconButton icon="arrow-bend-up-left" label="Reply" [^>]*class="message-tool" onClick=\{\(\) => \{ reply\(message\); \}\} \/>\}/);
   const item = read('src/ui/chat/MessageItem.tsx');
   assert.match(item, /<div class="message-actions">\s*\{props\.own && <MessageTools message=\{message\} menu=\{props\.menu\} \/>\}/, 'own bubble: before the markers, the time keeps the edge');
   // Owner 24.11.2026 (task_3x012n3a, "wie bei WhatsApp"): the own bubble's ticks come right after its time, at the edge.
