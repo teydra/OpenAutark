@@ -1,7 +1,7 @@
 // Owns: the native pairing levels (B-084 decision 3), also used for "Add a company": 1 "Connect to your PC" (icon, where
 // the code is on the PC, "How feedback works" – the feedback video again, 16.11.2026 F15 –, the one big "Scan QR code",
 // a small "Enter the code instead"); 2 the full-height scanner
-// (ScanView) with the photo strip (RecentStrip) pinned below and a status overlay that never moves anything; 2b the
+// (ScanView) with the one "Choose QR image" button (ChooseImage) pinned below and a status overlay that never moves anything; 2b the
 // 9-digit code grouped 3-3-3 with "Connect" enabled at 9 digits; 3 the wait while the PC accepts (the 4-digit code
 // large, Cancel). Light/dark from uiMode. Back walks the levels. Every way to an ID (scan, picture, typing) ends in one
 // callback; the pairing itself, its texts and what follows belong to MainActivity. Never: pairs, stores or sends anything.
@@ -35,7 +35,7 @@ public final class PairScreens {
     private static int level, from;
     private static String typed = "";
     private static ScanView scan;
-    private static RecentStrip strip;
+    private static ChooseImage strip;
     private static TextView message, digits;
 
     private PairScreens() {}
@@ -73,20 +73,18 @@ public final class PairScreens {
         activity = null; host = null; look = null; onRemoteId = null; onCancel = null; message = null; digits = null; level = 0;
     }
 
-    /** Request 44 (camera) and 45 (photos); true when it was one of them. */
+    /** Request 44 (camera); true when it was that. */
     public static boolean onPermissionResult(int code, int[] grants) {
         if (code == ScanView.CAMERA_REQUEST) {
             if (scan != null) scan.permission(grants != null && grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED);
-            if (strip != null) strip.ask();
             return true;
         }
-        if (code == RecentStrip.PHOTOS_REQUEST) { if (strip != null) strip.permission(); return true; }
         return false;
     }
 
-    /** Request 46 (the Files or Photos picker); true when it was that. */
+    /** Request 46 (the system image chooser); true when it was that. */
     public static boolean onActivityResult(int code, int result, Intent data) {
-        if (code != RecentStrip.PICK_REQUEST) return false;
+        if (code != ChooseImage.PICK_REQUEST) return false;
         if (strip != null) strip.result(result, data);
         return true;
     }
@@ -160,12 +158,11 @@ public final class PairScreens {
         pillAt.setMargins(look.dp(16), 0, look.dp(16), look.dp(16));
         camera.addView(pill, pillAt);
         page.addView(camera, PairLook.fill());
-        strip = new RecentStrip(activity, look, PairScreens::picked);
-        page.addView(strip, PairLook.row(RecentStrip.height(look)));
+        strip = new ChooseImage(activity, look, PairScreens::picked);
+        page.addView(strip, PairLook.row(ChooseImage.height(look)));
         put(page, PairLook.CAMERA, PairLook.CAMERA);
         scan.start();
         strip.start();
-        if (activity.checkSelfPermission(android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) strip.ask();
     }
 
     private static void code() {
