@@ -102,6 +102,7 @@ export interface ClaudeEngineDeps {
   accountsRoots?: readonly string[];
   /** Login guard 03.11.: how long an ended or stopped CLI may take to exit by itself before its tree is killed (CLAUDE_EXIT_GRACE_MS). */
   graceMs?: number;
+  lifecycle?: (message: string, data: Record<string, unknown>) => void;
   /** Sicher-Runde 19.11.2026: services.security – in Secure mode an agent turn's permission prompts go through its gate (permissions.ts). */
   security?: SecurityLookup;
   /** 0.3.19: the persistent managed-shell marks (managed-path.ts); none: process memory only. */
@@ -140,7 +141,7 @@ export class ClaudeEngine implements Engine {
     });
     this.kept = new ClaudeKept({ supervisor: deps.supervisor, graceMs: deps.graceMs ?? CLAUDE_EXIT_GRACE_MS, now: this.now });
     this.trust = new ManagedSessions({ engine: this, store: deps.managed, locate: (account, ref) => this.rebuilds.transcriptOf(account, ref) });
-    this.turns = new ClaudeTurns({ supervisor: deps.supervisor, graceMs: deps.graceMs, now: this.now, uuid: this.uuid, noEffort: this.noEffort, purging: this.purging });
+    this.turns = new ClaudeTurns({ supervisor: deps.supervisor, graceMs: deps.graceMs, now: this.now, uuid: this.uuid, noEffort: this.noEffort, purging: this.purging, lifecycle: deps.lifecycle });
   }
 
   async listModels(account: Account): Promise<EngineModel[]> {

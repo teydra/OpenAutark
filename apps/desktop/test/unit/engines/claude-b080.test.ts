@@ -18,11 +18,12 @@ const input = (patch: Record<string, unknown> = {}) => turnInput({ model: 'claud
 const sessionOf = (args: string[]) => args[args.indexOf('--session-id') + 1];
 
 test('claude: a background task keeps the turn open past its first result; the result after its notification ends it with both texts', async () => {
+  const samples: unknown[] = [];
   const h = claudeSetup({ exit: false, turn: (_call, session) => [
     { type: 'system', subtype: 'task_started', task_id: 'bash_1', is_backgrounded: true, description: 'sleep 30 && echo DONE' },
     assistant('Der Test läuft im Hintergrund.'),
     result(session, 'Der Test läuft im Hintergrund.'),
-  ] });
+  ] }, { lifecycle: (name, details) => samples.push([name, details]) });
   const t = input();
   let ended = false;
   const running = h.engine.run(t.input).then((value) => { ended = true; return value; });
@@ -32,11 +33,13 @@ test('claude: a background task keeps the turn open past its first result; the r
   assert.equal(ended, false, 'the first result ends nothing while the task runs');
   assert.equal(call.child.stdin.writableEnded, false, 'its input stays open');
   assert.equal(await h.engine.steer('run_1', 'Und wie läufts?'), true, 'a line still goes in');
+  h.clock.now += 1300;
   call.child.send({ type: 'system', subtype: 'task_notification', task_id: 'bash_1', status: 'completed', output_file: '', summary: 'DONE' });
   call.child.send(assistant('DONE – der Test ist durch.'));
   call.child.send(result(sessionOf(call.args), 'DONE – der Test ist durch.'));
   const done = await running;
   assert.equal(done.stop, 'done');
+  assert.deepEqual(samples, [['claude background wait after result', { durationMs: 1300, waits: 1, interrupted: false, streamEnded: false }]]);
   assert.match(done.text, /im Hintergrund[\s\S]*DONE – der Test ist durch\./);
   assert.deepEqual(t.events.filter((event: any) => event.type === 'background'), [
     { type: 'background', id: 'bash_1', running: true }, { type: 'background', id: 'bash_1', running: false },

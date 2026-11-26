@@ -55,6 +55,7 @@ export interface CodexServerOptions {
   onExit?: () => void;
   /** A warning for the runtime log (the reason a connection closed). */
   log?: (message: string, data: Record<string, unknown>) => void;
+  lifecycle?: (message: string, data: Record<string, unknown>) => void;
 }
 
 /** A file's stamp ("<mtime>:<size>"), '' when it is missing or unreadable. */
@@ -90,7 +91,9 @@ export class CodexServer {
   constructor(options: CodexServerOptions) {
     this.options = options;
     this.key = options.key;
-    this.idle = new IdleTimer(options.idleMs, () => void this.dispose());
+    this.idle = new IdleTimer(options.idleMs, () => void this.dispose(), options.lifecycle
+      ? (durationMs, end) => options.lifecycle?.('codex server without a turn hold', { account: this.key, durationMs, end })
+      : undefined);
   }
 
   get running(): boolean { return Boolean(this.client && !this.client.isClosed); }
@@ -98,7 +101,7 @@ export class CodexServer {
   /** The open connection, if any – never starts or restarts the process (C4: "Stop all work" reaches only what runs). */
   get current(): RpcClient | undefined { return this.running ? this.client : undefined; }
 
-  async rpc(): Promise<RpcClient> {
+  async rpc(reason: 'account-check' | 'work' = 'work'): Promise<RpcClient> {
     const running = this.client && !this.client.isClosed ? this.client : undefined;
     // Restart between turns (a running turn is never cut): another codex.exe, PowerShell 7 arrived, or the login file changed.
     if (running && !this.idle.busy && !this.starting && (this.restartDue || this.pwshArrived() || await this.loginChanged()) && this.client === running && !this.idle.busy) {
@@ -106,7 +109,10 @@ export class CodexServer {
       await this.dispose();
     }
     if (this.client && !this.client.isClosed) return this.client;
-    if (!this.starting) this.starting = this.start().finally(() => { this.starting = undefined; });
+    if (!this.starting) this.starting = this.start().then((client) => {
+      this.options.lifecycle?.('codex server cold start', { account: this.key, reason });
+      return client;
+    }).finally(() => { this.starting = undefined; });
     return this.starting;
   }
 
@@ -178,7 +184,7 @@ export class CodexServer {
     client.handler = (method, params) => this.route(method, params);
     client.onNotification((note) => this.dispatch(note));
     client.onClose((closed) => {
-      if (this.client === client) { this.client = undefined; this.lease = undefined; }
+      if (this.client === client) { this.idle.clear(); this.client = undefined; this.lease = undefined; }
       // 18.11.2026: the process of a closed connection ends with it. Before, the lease was only forgotten: every closed connection
       // left its app-server running (four at once on the server), the next call started another, and a thread delete found
       // its thread "already has an active writer" in the one left behind.

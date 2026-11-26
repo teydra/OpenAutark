@@ -20,10 +20,10 @@ function appServer() {
   });
 }
 
-function codexServer(home: string, fake: ReturnType<typeof fakeSpawn>, env: NodeJS.ProcessEnv = { PATH: '/bin' }): CodexServer {
+function codexServer(home: string, fake: ReturnType<typeof fakeSpawn>, env: NodeJS.ProcessEnv = { PATH: '/bin' }, lifecycle?: ConstructorParameters<typeof CodexServer>[0]['lifecycle']): CodexServer {
   return new CodexServer({
     key: 'acc_test', home, executable: { command: '/bin/codex', prefixArgs: [], path: '/bin/codex' } as unknown as Executable,
-    supervisor: testSupervisor(fake.spawn), cwd: '/data/engine-cwd', version: '0.2.0', env,
+    supervisor: testSupervisor(fake.spawn), cwd: '/data/engine-cwd', version: '0.2.0', env, lifecycle,
   });
 }
 
@@ -89,4 +89,24 @@ test('a Windows app-server started before PowerShell 7 was there restarts betwee
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('a cold account check and intervals without a turn hold are distinct measurements', async (t) => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'wf-codex-idle-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const samples: Array<[string, Record<string, unknown>]> = [];
+  const server = codexServer(home, appServer(), undefined, (name, details) => samples.push([name, details]));
+  t.after(() => server.dispose());
+  await server.rpc('account-check');
+  await server.rpc();
+  const one = server.beginTurn(), two = server.beginTurn();
+  one();
+  assert.equal(samples.length, 2, 'one cold start, one idle sample before the first hold');
+  two();
+  await server.dispose();
+  assert.deepEqual(samples[0], ['codex server cold start', { account: 'acc_test', reason: 'account-check' }]);
+  assert.deepEqual(samples.slice(1).map(([name, data]) => [name, data.end]), [
+    ['codex server without a turn hold', 'hold'], ['codex server without a turn hold', 'clear'],
+  ]);
+  assert.ok(samples.slice(1).every(([, { durationMs }]) => typeof durationMs === 'number' && durationMs >= 0));
 });

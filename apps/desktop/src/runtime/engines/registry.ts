@@ -71,6 +71,7 @@ export function createEngineRegistry(deps: {
   onLimits?: (accountId: string, limits: AccountLimits) => void;
   /** A warning for the runtime log (Codex: why a connection closed). */
   warn?: (message: string, data: Record<string, unknown>) => void;
+  lifecycle?: (message: string, data: Record<string, unknown>) => void;
   fetch?: FetchFn; fake?: boolean;
   /** ACP accounts → the agent to start (undefined: no ACP agent is known yet, turns report it as not installed). */
   acp?: AcpResolver;
@@ -84,12 +85,12 @@ export function createEngineRegistry(deps: {
   let shared: NodeJS.ProcessEnv | undefined;
   const env = () => (shared ??= agentEnv(deps.paths.data));
   const factories: EngineFactories = {
-    codex: () => new CodexEngine({ supervisor: deps.supervisor, finder: deps.finder, cwd: processCwd, version: deps.version, onLimits: deps.onLimits, log: deps.warn, env: env(), security: deps.security, tempDir: deps.paths.temp, managed: deps.managed }),
+    codex: () => new CodexEngine({ supervisor: deps.supervisor, finder: deps.finder, cwd: processCwd, version: deps.version, onLimits: deps.onLimits, log: deps.warn, lifecycle: deps.lifecycle, env: env(), security: deps.security, tempDir: deps.paths.temp, managed: deps.managed }),
     // B-048 E2: rebuilt transcripts live in the app's data folder; only the app's own homes may take the 'project' tier.
     claude: () => new ClaudeEngine({
       supervisor: deps.supervisor, finder: deps.finder, tempDir: deps.paths.temp, env: env(),
       transcriptsDir: claudeTranscriptsDir(deps.paths.data), accountsRoots: homeRoots(deps.paths), security: deps.security, // the plans' homes (Paths.accounts) and <data>/accounts
-      managed: deps.managed,
+      managed: deps.managed, lifecycle: deps.lifecycle,
     }),
     openai: () => new OpenAiEngine(http),
     anthropic: () => new AnthropicEngine(http),

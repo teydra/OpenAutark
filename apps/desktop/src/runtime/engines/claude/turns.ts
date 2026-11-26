@@ -28,6 +28,7 @@ interface LiveTurn { emit(event: EngineEvent): void; model: string; effort: Effo
 export interface ClaudeTurnsDeps {
   supervisor: Supervisor;
   graceMs?: number;
+  lifecycle?: (message: string, data: Record<string, unknown>) => void;
   now: () => number;
   uuid: () => string;
   noEffort: ReadonlySet<string>;
@@ -115,6 +116,13 @@ export class ClaudeTurns {
     let lines = 0;
     let open = true; // the turn has not returned yet; afterwards the lines of a CLI ending by itself are not part of it
     let stopWaiting = () => {};
+    let backgroundSince: number | undefined;
+    let backgroundWaitMs = 0, backgroundWaits = 0;
+    const stopBackgroundWait = () => {
+      if (backgroundSince === undefined) return;
+      backgroundWaitMs += Math.max(0, this.now() - backgroundSince);
+      backgroundSince = undefined;
+    };
     const finished = new Promise<void>((resolve) => {
       stopWaiting = () => resolve();
       if (!lease.child.stdout) { broken = true; resolve(); return; }
@@ -128,10 +136,15 @@ export class ClaudeTurns {
         parser.push(message);
         this.ranOn(turn); // FIXES-3 C1
         if (fresh && parser.state.sessionId) { emit({ type: 'session', ref: parser.state.sessionId, generation: fresh.generation }); fresh = undefined; } // B-080: bound at once
+        if (parser.state.background.size === 0 || parser.state.isError) stopBackgroundWait();
         if (!parser.state.done) return;
         const result = isRecord(message) && message.type === 'result';
         if (result) results++;
-        if (parser.state.background.size > 0 && !parser.state.isError) return; // B-080: its own background work is part of the turn (the CLI answers its notification itself); an error result ends it now
+        // B-080: native background work stays part of the turn; measure only the hold after a result.
+        if (parser.state.background.size > 0 && !parser.state.isError) {
+          if (result && backgroundSince === undefined) { backgroundSince = this.now(); backgroundWaits++; }
+          return;
+        }
         // Steered lines (17:09) are taken into this turn or answered as their own: no more input, then each
         // answer (one result per line) or the CLI's end – a steered line is never left unanswered.
         if (results > (this.steered.get(input.runId) ?? 0)) { if (result) resolve(); }
@@ -158,6 +171,10 @@ export class ClaudeTurns {
       this.live.delete(input.runId);
       try { lease.child.stdin?.end(); } catch { /* gone */ }
       void lease.releaseAfter(this.deps.graceMs ?? CLAUDE_EXIT_GRACE_MS); // it ends by itself; its tree is killed only after the grace
+      stopBackgroundWait();
+      if (backgroundWaits > 0) this.deps.lifecycle?.('claude background wait after result', {
+        durationMs: backgroundWaitMs, waits: backgroundWaits, interrupted, streamEnded: broken,
+      });
     }
     // `exited` may come before the last stdout data: a start without a line counts only once stdout ended (at most 2 s).
     const stdout = lease.child.stdout;

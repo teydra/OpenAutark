@@ -85,14 +85,14 @@ export const claudeAccount = (patch: Record<string, unknown> = {}) => {
 };
 
 /** Engine over the scripted CLI with in-memory files; `clock` drives the probe throttle. */
-export function claudeSetup(script: ClaudeScript = {}, options: { installed?: boolean; security?: ConstructorParameters<typeof ClaudeEngine>[0]['security'] } = {}) {
+export function claudeSetup(script: ClaudeScript = {}, options: { installed?: boolean; security?: ConstructorParameters<typeof ClaudeEngine>[0]['security']; lifecycle?: ConstructorParameters<typeof ClaudeEngine>[0]['lifecycle'] } = {}) {
   const cli = claudeCli(script);
   const memory = memoryFiles();
   const clock = { now: 1_800_000_000_000 };
   let n = 0;
   const engine = new ClaudeEngine({
     supervisor: testSupervisor(cli.spawn), finder: fakeFinder({ claude: options.installed === false ? null : '/fake-bin/claude' }),
-    tempDir: TEMP, files: memory.files, env: BASE_ENV, now: () => clock.now,
+    tempDir: TEMP, files: memory.files, env: BASE_ENV, now: () => clock.now, lifecycle: options.lifecycle,
     uuid: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     ...(options.security ? { security: options.security } : {}), // Sicher-Runde 19.11.2026
   });

@@ -157,15 +157,21 @@ export function addCache(a: CacheTokens, b: CacheTokens, sign: 1 | -1 = 1): Cach
 }
 
 /** A process's idle shutdown (Codex app-server, ACP agent): `stop` runs once nothing held it for `ms` (10 min by default). */
+export type IdleEnd = 'hold' | 'timeout' | 'clear';
+
 export class IdleTimer {
   private readonly ms: number;
   private readonly stop: () => void;
   private held = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(ms: number | undefined, stop: () => void) {
+  private since: number | undefined;
+  private readonly observe?: (durationMs: number, end: IdleEnd) => void;
+
+  constructor(ms: number | undefined, stop: () => void, observe?: (durationMs: number, end: IdleEnd) => void) {
     this.ms = ms ?? 600_000;
     this.stop = stop;
+    this.observe = observe;
   }
 
   get busy(): boolean { return this.held > 0; }
@@ -173,7 +179,7 @@ export class IdleTimer {
   /** Marks work in progress (no idle shutdown meanwhile); its end – once – starts the wait again. */
   hold(): () => void {
     this.held++;
-    this.clear();
+    this.clear('hold');
     let ended = false;
     return () => {
       if (ended) return;
@@ -187,13 +193,23 @@ export class IdleTimer {
   arm(): void {
     if (this.held > 0) return;
     this.clear();
-    this.timer = setTimeout(() => { if (this.held === 0) this.stop(); }, this.ms);
+    if (this.observe) this.since = performance.now();
+    this.timer = setTimeout(() => {
+      if (this.held !== 0) return;
+      this.clear('timeout');
+      this.stop();
+    }, this.ms);
     this.timer.unref?.();
   }
 
-  clear(): void {
+  clear(end: IdleEnd = 'clear'): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    if (this.since !== undefined) {
+      const since = this.since;
+      this.since = undefined;
+      this.observe?.(Math.round(performance.now() - since), end);
+    }
   }
 }
 

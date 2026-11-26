@@ -60,6 +60,7 @@ export interface CodexEngineDeps {
   env?: NodeJS.ProcessEnv;
   /** A warning for the runtime log (CodexServer: why a connection closed). */
   log?: (message: string, data: Record<string, unknown>) => void;
+  lifecycle?: (message: string, data: Record<string, unknown>) => void;
   /** The real path of a thread's cwd (one more spelling to mark untrusted); default fs.realpath. */
   realpath?: (dir: string) => Promise<string>;
   /** Variables every agent shell gets (I02: gitSafeEnv; applied after Codex's KEY/SECRET/TOKEN excludes). */
@@ -114,7 +115,7 @@ export class CodexEngine implements Engine {
         version: this.deps.version, idleMs: this.deps.idleMs, env: this.deps.env,
         onLimits: (params) => this.limitsPushed(account.id, params),
         onExit: () => { this.loaded.delete(account.id); },
-        log: this.deps.log,
+        log: this.deps.log, lifecycle: this.deps.lifecycle,
       });
       this.servers.set(account.id, server);
     }
@@ -136,7 +137,7 @@ export class CodexEngine implements Engine {
 
   async checkAccount(account: Account, options: { details?: boolean } = {}): Promise<AccountCheck> {
     let rpc;
-    try { rpc = await (await this.server(account)).rpc(); }
+    try { rpc = await (await this.server(account)).rpc('account-check'); }
     catch { return { state: 'error', message: 'Codex is not installed or could not start.' }; }
     return readCodexAccount(rpc, { details: options.details === true, now: this.now, seen: (raw) => this.lastLimits.set(account.id, raw) });
   }

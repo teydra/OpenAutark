@@ -253,6 +253,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     security: () => s.security, // Sicher-Runde 19.11.2026: Secure mode routes native tools through the gate
     acp: accounts.acpLaunch, // PR8: an ACP plan runs the launch its detection confirmed (unavailable until then)
     warn: (message, data) => log.warn(message, data),
+    lifecycle: (message, data) => log.info(message, data),
     managed: new ManagedPathStore({ db, now: () => clock.now(), device: () => selfId(db) }),
     onLimits: (accountId, limits) => { try { accounts.updateLimits(accountId, limits); } catch (error) { log.warn('limits update failed', { error: String(error) }); } },
   });
