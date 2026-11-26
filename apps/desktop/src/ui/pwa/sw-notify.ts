@@ -141,7 +141,7 @@ export function wireNotifications(sw: NotifyScope, options: NotifyOptions): void
     if (isDuePush(payload)) { // one notice for what is due, replaced not stacked, closed after a few seconds (due-notice.ts)
       const stamp = lastStamp = Math.max(Date.now(), lastStamp + 1);
       const shown = enqueue(async () => {
-        const grouped = groupDue({ ...payload, url: payload.url ?? '/#/day' }, (await notices(DUE_TAG)).flatMap((old) => dueItems(old.data)), stamp);
+        const grouped = groupDue({ ...payload, url: payload.url ?? '/#/tasks' }, (await notices(DUE_TAG)).flatMap((old) => dueItems(old.data)), stamp);
         await showPush(grouped.payload, false, grouped.data);
         await badge();
       });

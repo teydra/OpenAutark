@@ -1,5 +1,5 @@
 // Pure rules of the side pane: the tab kinds (a blank or website tab, and the app's own panels – Tasks (the one task
-// page, narrow; a My day or Work tab from before the Quests round is no tab any more), Activity, a chat's Notes, a Media item or the media library, a chat's Video work, this PC's Screen, an agent's own browser, a file or folder by its path), how a
+// page, narrow), a chat's Notes, a Media item or the media library, a chat's Video work, this PC's Screen, an agent's own browser, a file or folder by its path), how a
 // tab is named, what the address slot shows at rest, which tab is shown and which one is chosen after a
 // close or by Ctrl+Tab and Ctrl+1…9, and a space's tabs to and from side-tabs.json's form (a blank tab stays in the window).
 // B-076: a tab can belong to another PC – a website running there ('remote': its PC, its tab id there, its address) or a
@@ -11,7 +11,6 @@ import { pathTabId, remoteTabId, type BrowserKeyAction, type PageOpener, type Si
 /** The app's own tabs (no website): what each one shows. */
 export type AppTab =
   | { kind: 'tasks' }
-  | { kind: 'activity' }
   | { kind: 'agent'; agentId: string }
   | { kind: 'notes'; conversationId: string }
   | { kind: 'media'; fileId?: string; path?: string; name?: string; device?: string }
@@ -30,15 +29,15 @@ export type TabKind = TabEntry['kind'];
 /** A tab as the strip and the tab list show it (an app tab: `host` is its kind's word, `title` what it shows; `transient`: an agent's preview tab; `device`: the PC it belongs to, when that is named). */
 export interface TabInfo { id: string; kind: TabKind; blank: boolean; url: string; host: string; title: string; loading?: boolean; favicon?: string; download?: TabDownload; opener?: PageOpener; agentId?: string; audible?: boolean; muted?: boolean; transient?: true; device?: string }
 
-export const APP_KIND_LABEL: Record<AppTab['kind'], string> = { tasks: 'Tasks', activity: 'Activity', agent: 'Browser', notes: 'Notes', media: 'Media', video: 'Video', screen: 'Screen', file: 'File', folder: 'Folder', page: 'Page', remote: 'Website' };
+export const APP_KIND_LABEL: Record<AppTab['kind'], string> = { tasks: 'Tasks', agent: 'Browser', notes: 'Notes', media: 'Media', video: 'Video', screen: 'Screen', file: 'File', folder: 'Folder', page: 'Page', remote: 'Website' };
 
 export function isAppTab(entry: TabEntry | undefined): entry is AppEntry {
   return entry !== undefined && entry.kind !== 'new' && entry.kind !== 'website';
 }
 
-/** One tab per thing shown: Tasks, Activity, an agent's browser, a chat's notes, a file (of this PC or another), the media library, a chat's video work, the screen, another PC's website. */
+/** One tab per thing shown: Tasks, an agent's browser, a chat's notes, a file (of this PC or another), the media library, a chat's video work, the screen, another PC's website. */
 export function appTabId(tab: AppTab): string {
-  if (tab.kind === 'tasks' || tab.kind === 'activity') return tab.kind;
+  if (tab.kind === 'tasks') return tab.kind;
   if (tab.kind === 'agent') return `agent:${tab.agentId}`;
   if (tab.kind === 'notes') return `notes:${tab.conversationId}`;
   if (tab.kind === 'video') return `video:${tab.conversationId}`;
@@ -49,10 +48,18 @@ export function appTabId(tab: AppTab): string {
   return 'screen';
 }
 
+const isRetiredTaskPanel = (kind: unknown): boolean => kind === 'activity' || kind === 'day' || kind === 'work';
+
+/** A retired panel's selection follows its tab to Tasks, not to the last unrelated tab. */
+export function restoredTabId(tabs: readonly TabEntry[], chosen: string): string {
+  return isRetiredTaskPanel(chosen) && !tabs.some((tab) => tab.id === chosen)
+    && tabs.some((tab) => tab.kind === 'tasks') ? 'tasks' : chosen;
+}
+
 /** App tabs read back from storage: only well-formed ones count (one Tasks tab, however many stood for it before). */
 export function appTabsOf(value: unknown): AppEntry[] {
   if (!Array.isArray(value)) return [];
-  return value.map((item) => (['day', 'work'].includes((item as { kind?: string } | null)?.kind ?? '') ? { id: 'tasks', kind: 'tasks' } : item)) // bridge 0.3.16: a stored My day / Work tab opens as Tasks
+  return value.map((item) => (isRetiredTaskPanel((item as { kind?: unknown } | null)?.kind) ? { id: 'tasks', kind: 'tasks' } : item))
     .filter((item, index, all) => all.findIndex((other) => (other as { id?: unknown } | null)?.id === (item as { id?: unknown } | null)?.id) === index)
     .filter((item): item is AppEntry => {
     const tab = item as Record<string, unknown> | null;
@@ -65,7 +72,7 @@ export function appTabsOf(value: unknown): AppEntry[] {
     if (tab.kind === 'agent') return typeof tab.agentId === 'string' && id();
     if (tab.kind === 'file' || tab.kind === 'folder') return typeof tab.path === 'string' && id();
     if (tab.kind === 'page') return typeof tab.name === 'string' && id();
-    return (tab.kind === 'screen' || tab.kind === 'tasks' || tab.kind === 'activity') && id();
+    return (tab.kind === 'screen' || tab.kind === 'tasks') && id();
   });
 }
 
@@ -102,10 +109,17 @@ export function toSideSpace(tabs: readonly TabEntry[], shown: string): SideSpace
 
 /** A space's tabs from side-tabs.json (well-formed ones). */
 export function fromSideSpace(space: SideSpace): TabEntry[] {
-  return space.tabs.flatMap((entry): TabEntry[] => {
+  const tabs = space.tabs.flatMap((entry): TabEntry[] => {
     if (entry.panel === undefined) return [{ id: entry.id, kind: 'website' }];
     const { panel, ...rest } = entry;
     return appTabsOf([{ ...rest, kind: panel }]);
+  });
+  let hasTasks = false;
+  return tabs.filter((tab) => {
+    if (tab.kind !== 'tasks') return true;
+    if (hasTasks) return false;
+    hasTasks = true;
+    return true;
   });
 }
 

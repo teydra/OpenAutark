@@ -57,7 +57,7 @@
 .search-hit-where { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-hit-head > time { flex: none; font-size: calc(11px * var(--ui-text, 1)); }
 .search-hit-text { display: -webkit-box; overflow: hidden; color: var(--text); font-size: calc(13px * var(--ui-text, 1)); line-height: max(18px, calc(18px * var(--ui-text, 1))); -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
-.chat-list .team-activity { margin-top: 14px; } /* the chat list's folded section, not Team › Activity (team/ActivityView.tsx) */
+.chat-list .team-activity { margin-top: 14px; } /* the chat list's folded section */
 .section-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 36px; padding: 0 16px 0 20px; color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); text-align: left; }
 .section-toggle:hover { color: var(--secondary); }
 /* Entwurf 2b: agents found by the chat search – name, role, team, and "Message" (opens the 1:1) */

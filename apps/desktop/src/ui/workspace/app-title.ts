@@ -7,7 +7,7 @@ import { agentName, conversationMap } from '../lib/store.ts';
 import { APP_KIND_LABEL, type AppEntry } from './browser-model.ts';
 
 export function appTitle(entry: AppEntry): string {
-  if (entry.kind === 'tasks' || entry.kind === 'activity') return APP_KIND_LABEL[entry.kind];
+  if (entry.kind === 'tasks') return APP_KIND_LABEL[entry.kind];
   if (entry.kind === 'agent') return `${agentName(entry.agentId)}'s browser`;
   if (entry.kind === 'notes' || entry.kind === 'video') return conversationMap.value.get(entry.conversationId)?.title || 'Chat';
   if (entry.kind === 'media') return entry.name || entry.path?.split(/[\\/]/).pop() || (entry.fileId ? 'File' : APP_KIND_LABEL.media);

@@ -32,7 +32,7 @@ function worker() {
   return { tray, timers, send, flush };
 }
 
-const due = (title: string, taskId = title) => ({ kind: 'todo', title: `Due: ${title}`, body: 'notes', tag: `todo:${taskId}`, url: '/#/day', id: `n_${taskId}` });
+const due = (title: string, taskId = title) => ({ kind: 'todo', title: `Due: ${title}`, body: 'notes', tag: `todo:${taskId}`, url: '/#/tasks', id: `n_${taskId}` });
 
 test('what is a Due push, and how the notice reads: one title as it is, more say how many and list them (each once, the newest five)', () => {
   assert.equal(isDuePush(due('Call')), true);
@@ -50,13 +50,13 @@ test('what is a Due push, and how the notice reads: one title as it is, more say
 
 test('three to-dos fall due in the same millisecond: one notice stays in the tray, saying 3 to-dos due; it closes by itself after DUE_SHOW_MS', async () => {
   const sw = worker();
-  for (const title of ['2 minutes at the PC', 'Recording', 'At the server']) await Promise.all(await sw.send(due(title)).then((pending) => pending.slice(0, 0)));
+  for (const title of ['2 minutes at the PC', 'Recording', 'At the server']) await Promise.all(await sw.send({ ...due(title), url: undefined }).then((pending) => pending.slice(0, 0)));
   await sw.flush();
   assert.equal(sw.tray.length, 1, 'not three cards');
   assert.equal(sw.tray[0]!.tag, 'due');
   assert.equal(sw.tray[0]!.title, '3 to-dos due');
   assert.equal(sw.tray[0]!.body, '2 minutes at the PC · Recording · At the server');
-  assert.equal(sw.tray[0]!.data?.url, '/#/day', 'a tap opens My day');
+  assert.equal(sw.tray[0]!.data?.url, '/#/tasks', 'a tap opens Tasks');
   assert.deepEqual(sw.timers.map((timer) => timer.ms), [6_000, 6_000, 6_000]);
   sw.timers[0]!.fn(); // the first push's timer: a newer notice stands, so it stays
   await sw.flush();

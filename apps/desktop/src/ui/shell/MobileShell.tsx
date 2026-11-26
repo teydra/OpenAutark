@@ -1,11 +1,11 @@
 // Phone layout (PWA, narrow windows): the same frame as a stack – one top row, the status line
 // over the body's top, the body, the bottom tabs – all from shell/views.ts phoneView. Tabs in the rail's
-// order (the person's, rail-order.ts navOrder; by default Tasks – also the 'home' route, with the For-you badge – · Chats · Team); a chat, an agent, a person or Team ›
-// Activity is pushed on top (Back, no tab bar) – and a to-do's or quest's detail on the Tasks page, which takes the
+// order (the person's, rail-order.ts navOrder; by default Tasks – also the 'home' route, with the For-you badge – · Chats · Team); a chat, an agent or a person
+// is pushed on top (Back, no tab bar) – and a to-do's or quest's detail on the Tasks page, which takes the
 // list's place (its Close leads back), and Settings (the list and a section,
 // Back in the frame's row) have no tab bar either: every screen with Back looks the same (C3 D-3). The top
 // row (lib/header.tsx, zone 'phone', class mobile-top) is drawn by the frame unless the body draws
-// its own with Back as its lead (a chat, an agent, a person, Team › Activity – views.ts ownHeader):
+// its own with Back as its lead (a chat, an agent or a person – views.ts ownHeader):
 // Back where the settings list goes Home and a settings section to all settings, the title, and
 // fixed cells – on tab roots the compact update item (UpdateButton; only with the desktop bridge), search
 // and the profile, which ends the row at the caption controls as the desktop header's last cell does. Search
@@ -18,7 +18,7 @@
 // global opens it (Watch on a to-do, say); so does the row's Browser cell – in the desktop app's narrow window, where
 // websites live, and on the phone, whose pane is its PC's (B-076, workspace/phone-tabs.ts) – the frame's cell of the
 // wide window (its dot: an agent's new tab waits there). Back or any navigation closes it.
-// The status line (StatusLine.tsx) overlays the body's first line and never pushes it. The four tabs are always there
+// The status line (StatusLine.tsx) overlays the body's first line and never pushes it. The three destination tabs are always there
 // (19.11.2026, D2: a failed reconnect filtered them down to Team and every tab moved); a tab whose list this connection
 // may not read shows its empty body.
 // B-055 Q4: the feedback cell (feedback/cell.tsx: tap opens the feedback sheet, hold talks where this page can dictate)

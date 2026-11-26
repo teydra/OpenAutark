@@ -89,10 +89,15 @@ test('spaces: created by hiring, named on the Team rows; rename/add/archive thro
   assert.equal(await groups.nth(1).locator('.team-row .row-title', { hasText: 'Ella' }).count(), 1, 'the secretary heads her own group');
   assert.equal(await row('Ella').locator('.team-row-space').count(), 0, "the secretary's row repeats no space: its group names it");
   assert.equal((await row('Jonas').locator('.team-row-space').textContent())?.trim(), 'Personal brand', "the video editor's row names its space");
-  // The desktop Team page: the same tree, read-only and fully open.
-  assert.ok((await page.locator('.team-view .team-overview .team-row').count()) >= 3, 'the main page shows the whole tree');
-  assert.equal(await page.locator('.team-view .team-caret').count(), 0, 'read-only: no carets in the main zone');
+  assert.equal(await page.locator('.team-nav').count(), 1, 'the Team page shows only one tree');
+  assert.equal(await page.locator('.team-view .team-row').count(), 0, 'no duplicate alongside the sidebar');
   await shot('spaces-01-team-light');
+  const toggle = process.platform === 'darwin' ? 'Meta+B' : 'Control+B';
+  await page.keyboard.press(toggle);
+  await page.locator('.team-view .team-nav').waitFor();
+  assert.equal(await page.locator('.team-nav').count(), 1, 'the same navigation is available with the sidebar closed');
+  await page.keyboard.press(toggle);
+  await page.locator('.sidebar .team-nav').waitFor();
 
   // Spaces are system data (renamed by managers through spaces.save, archived through spaces.archive).
   const brand = (await rpc.call('spaces.list')).find((space) => space.name === 'Personal brand');

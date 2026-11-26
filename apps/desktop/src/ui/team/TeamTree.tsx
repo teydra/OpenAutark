@@ -1,5 +1,4 @@
-// The one org tree, drawn by the Team sidebar (TeamNav.tsx, carets and splits) and the desktop Team page
-// (TeamView.tsx, read-only and fully open): People (the owner on top, people under whom they report to, with the
+// The one org tree, drawn by TeamNav.tsx with carets and splits: People (the owner on top, people under whom they report to, with the
 // agents that report to them), then the top agents grouped by space under real headings – space-less ones such as
 // the Manager first ("Agents", whenever another group stands beside it) – each report nested under its manager
 // whatever its space. A report in another space than the one it sits in names it first on its status line, as a
@@ -7,10 +6,8 @@
 // subtree + splits) is one `.team-branch`, which draws its parent's 1 px guide beside it – the last one down to its
 // row's middle only, so a guide ends at its parent's last direct report. Team-Call 21.11.2026: rows drag and drop –
 // an agent onto an agent reports to it, a person onto an agent makes it theirs (team-drag.ts, drop-model.ts). Every row: real
-// status ring/dot, one line under the name – in the sidebar its live status, on the Team page (F18) its role and how
-// many report to it directly (model.ts structureLine) and, 21.11.2026, the PC it runs on when that is not this one ("on
-// Tower", runs-on.ts) – the tiny "AI"; right-click or long-press opens its menu (menus.ts). B-057: in
-// the sidebar an agent's splits are rows inside the same expansion, below its reports (splits/SplitNav.tsx).
+// status ring/dot, a live status line with the remote PC when known, and the tiny "AI"; right-click or long-press opens its menu (menus.ts).
+// An agent's splits are rows inside the same expansion, below its reports (splits/SplitNav.tsx).
 // Owns: the rows, branches and grouped body of the tree. Never: keeps expand state (the caller passes `open`),
 // edits the org or draws header markup.
 
@@ -21,7 +18,7 @@ import { runsOn, watchPcs } from './runs-on.ts';
 import { useContextMenu } from '../lib/context-menu.tsx';
 import { agentName } from '../lib/store.ts';
 import { go } from '../lib/router.ts';
-import { countReports, groupBySpace, reportSpace, structureLine, teamMoreLabel } from './model.ts';
+import { countReports, groupBySpace, reportSpace, teamMoreLabel } from './model.ts';
 import type { OrgEntry } from './model.ts';
 import { countPersonReports, statusLabel } from './people-model.ts';
 import type { PersonEntry } from './people-model.ts';
@@ -43,13 +40,13 @@ function Caret(props: { name: string; toggle: Toggle; what?: string }) {
   );
 }
 
-export function AgentRow(props: { agent: Agent; depth: number; reports: number; toggle?: Toggle; activeId?: string; what?: string; space?: string; direct?: number }) {
+export function AgentRow(props: { agent: Agent; depth: number; reports: number; toggle?: Toggle; activeId?: string; what?: string; space?: string }) {
   const { agent } = props;
   const active = agent.id === props.activeId;
   const toggle = props.toggle ?? null;
   watchPcs();
-  const where = props.direct === undefined ? undefined : runsOn(agent); // 21.11.2026: the Team page names an agent's PC when it is not this one
-  const line = props.direct === undefined ? agentLine(agent) : [structureLine(agent, props.direct), where && !where.here ? `on ${where.name}` : ''].filter(Boolean).join(' · '); // F18: the Team page shows the structure
+  const where = runsOn(agent);
+  const line = [agentLine(agent), where && !where.here ? `on ${where.name}` : ''].filter(Boolean).join(' · ');
   const menu = useContextMenu(() => agentMenu(agent));
   return (
     <div class={`team-row${active ? ' active' : ''}${dropTarget.value === agent.id ? ' drop-target' : ''}`} style={{ '--depth': String(props.depth) }} {...menu} {...rowDrag({ kind: 'agent', id: agent.id })}>
@@ -92,25 +89,24 @@ export function PersonRow(props: { person: Person; depth: number; reports: numbe
   );
 }
 
-/** How the tree opens: `toggle` absent = read-only and fully open (no carets, no splits). `line: 'role'`: each agent's
- *  second line is its role and its direct reports (the Team page), else its live status line (the sidebar). */
-export interface Expand { open: (id: string) => boolean; toggle?: (id: string) => void; activeId?: string; splitId?: string; personId?: string; line?: 'role' }
+/** The navigation's expand state and current selection. */
+export interface Expand { open: (id: string) => boolean; toggle: (id: string) => void; activeId?: string; splitId?: string; personId?: string }
 
-/** One agent and – while open – its reports (and, in the sidebar, its splits). `space`: the space it sits in ('' = none). */
+/** One agent and – while open – its reports and its splits. `space`: the space it sits in ('' = none). */
 function Branch(props: { entry: OrgEntry; depth: number; expand: Expand; space: string }) {
   const { entry, expand } = props;
   const { toggle } = expand;
   const open = expand.open(entry.agent.id);
   const hasReports = entry.reports.length > 0;
-  const splits = Boolean(toggle) && hasSplits(entry.agent.id); // B-057: the same expansion shows its split rows (never opened by itself)
+  const splits = hasSplits(entry.agent.id); // B-057: the same expansion shows its split rows (never opened by itself)
   const where = reportSpace(entry.agent, props.space, spaces.value);
-  const more = Boolean(toggle) && hasReports && !open; // Entwurf 2c: a closed team says how many are in it, one tap opens it
+  const more = hasReports && !open; // Entwurf 2c: a closed team says how many are in it, one tap opens it
   return (
     <div class="team-branch" style={{ '--depth': String(props.depth) }}>
       <AgentRow agent={entry.agent} depth={props.depth} reports={more ? 0 : countReports(entry)} activeId={expand.splitId && splits && open ? undefined : expand.activeId}
-        what={hasReports ? (splits ? 'reports and splits' : 'reports') : 'splits'} space={where.name} direct={expand.line === 'role' ? entry.reports.length : undefined}
-        toggle={toggle && (hasReports || splits) ? { expanded: open, onToggle: () => toggle(entry.agent.id) } : null} />
-      {more && toggle && (
+        what={hasReports ? (splits ? 'reports and splits' : 'reports') : 'splits'} space={where.name}
+        toggle={hasReports || splits ? { expanded: open, onToggle: () => toggle(entry.agent.id) } : null} />
+      {more && (
         <button type="button" class="team-more" style={{ '--depth': String(props.depth + 1) }} aria-expanded={false} onClick={() => toggle(entry.agent.id)}>
           <Icon name="caret-right" size={12} /> {teamMoreLabel(entry)}
         </button>
@@ -134,7 +130,7 @@ function PersonBranch(props: { entry: PersonEntry; depth: number; expand: Expand
   return (
     <div class="team-branch" style={{ '--depth': String(props.depth) }}>
       <PersonRow person={entry.person} depth={props.depth} reports={countPersonReports(entry)} activeId={expand.personId}
-        toggle={toggle && reports ? { expanded: open, onToggle: () => toggle(id) } : null} />
+        toggle={reports ? { expanded: open, onToggle: () => toggle(id) } : null} />
       {reports > 0 && open && (
         <div class="team-reports" role="group" aria-label={`Reports of ${entry.person.name}`}>
           {entry.people.map((report) => <PersonBranch key={report.person.id} entry={report} depth={props.depth + 1} expand={expand} />)}

@@ -23,7 +23,7 @@ import { bridge } from '../lib/platform.ts';
 import { rpc } from '../lib/rpc.ts';
 import { can, isOwner, session } from '../lib/session.ts';
 import { toastError } from '../lib/toasts.ts';
-import { fromSideSpace, toSideSpace } from './browser-model.ts';
+import { fromSideSpace, restoredTabId, toSideSpace } from './browser-model.ts';
 import { acceptLayout, linkPhone, ownLayout, pagesListed, shownOf } from './pages.ts';
 import { phonePaneOpen } from './phone-pane.ts';
 
@@ -56,7 +56,11 @@ export function showOpenedOnPc(): boolean {
 }
 
 /** A space as this pane would send it back (what it shows of it, in its order). */
-const normal = (space: SideSpace | undefined): SideSpace => (space ? toSideSpace(fromSideSpace(space), space.shown ?? '') : { tabs: [] });
+function normal(space: SideSpace | undefined): SideSpace {
+  if (!space) return { tabs: [] };
+  const tabs = fromSideSpace(space);
+  return toSideSpace(tabs, restoredTabId(tabs, space.shown ?? ''));
+}
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** What goes to the PC after `next` (this pane's spaces): each space that differs from `known` (the PC's), and the remote tabs closed here. */

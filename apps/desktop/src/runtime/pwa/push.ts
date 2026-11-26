@@ -46,12 +46,12 @@ const APP_ROUTE = /^#\/[\w%./-]{1,200}$/;
 
 /**
  * Where a notification leads and what it replaces (DEV5A): a notice's own app route (B-084) – else the chat
- * (`#/chat/<id>`) – else a to-do or blocker opens My day (`#/day`, B-041; always for a recipient without chat
+ * (`#/chat/<id>`) – else a to-do or blocker opens Tasks (`#/tasks`; always for a recipient without chat
  * access – `chat: false`) and anything else Home (`#/home`); the tag makes a newer notification for the same
  * to-do or chat replace the older one on the phone.
  */
 export function pushTarget(message: Pick<PushMessage, 'kind' | 'conversationId' | 'taskId' | 'route'>, options: { chat?: boolean } = {}): { url: string; tag: string } {
-  const own = message.kind === 'todo' || message.kind === 'blocker' ? '/#/day' : '/#/home';
+  const own = message.kind === 'todo' || message.kind === 'blocker' ? '/#/tasks' : '/#/home';
   const chat = message.conversationId && options.chat !== false ? `/#/chat/${encodeURIComponent(message.conversationId)}` : own;
   const url = message.route && APP_ROUTE.test(message.route) ? `/${message.route}` : chat;
   const tag = message.taskId ? `todo:${message.taskId}` : message.conversationId ? `chat:${message.conversationId}` : `workforce:${message.kind}`;

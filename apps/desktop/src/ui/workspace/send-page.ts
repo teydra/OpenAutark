@@ -1,4 +1,4 @@
-// "Send page to chat" (the page's right-click menu, main/workspace-page-menu.ts, and the pane's menu): the page's address
+// "Send page to chat" (the page's right-click menu, main/workspace-page-menu.ts; “Add page to message” in the pane menu): the page's address
 // goes into the open chat's message field and a picture of the visible page (main's capture) is
 // attached to it – the person sends the message. Without a picture the address goes alone. Mark a region
 // (RegionDialog.tsx) and Comment at (VideoView.tsx) put their part into the message field through the same steps; a pin

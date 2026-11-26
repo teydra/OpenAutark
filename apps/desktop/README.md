@@ -1,6 +1,6 @@
 # Autark desktop
 
-The desktop app of Autark: an Electron app (Node.js 24, TypeScript) with its own agent runtime. One AI company per person – a manager, teams and a secretary – with chats, tasks, "My day" with a calendar, a browser beside the chat, phone access and linked PCs. Agents run through Claude Code, Codex, other plans, API keys or local servers.
+The desktop app of Autark: an Electron app (Node.js 24, TypeScript) with its own agent runtime. One AI company per person – a manager, teams and a secretary – with chats, tasks with a calendar, a browser beside the chat, phone access and linked PCs. Agents run through Claude Code, Codex, other plans, API keys or local servers.
 
 ## The system is a few files
 

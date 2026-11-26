@@ -158,6 +158,7 @@ export function phoneView(current: Route): PhoneView {
       ? { key: 'settings', body: h(Settings, null), pushed, title: settingsSectionTitle(current.section), back: 'settings', header: settingsNavHeader, ownHeader: false } // F20: the settings search, not the palette
       : { key: 'settings-list', body: h(SettingsNav, null), pushed, title: tabTitle(current), back: 'home', header: settingsNavHeader, ownHeader: false };
     case 'team': {
+      if (!pushed) return { key: 'team', body: h('div', { class: 'team-view' }, h('div', { class: 'team-scroll' }, h(TeamNav, null))), pushed, title: tabTitle(current), back: null, ownHeader: false };
       const page = teamBody(current);
       return { ...page, pushed, title: pushed ? '' : tabTitle(current), back: null, ownHeader: ownsTopRow(current) };
     }

@@ -18,9 +18,14 @@ test('Share in chat: the latest listed chats, not the area the page is in', () =
   assert.equal(shareChats(chats)[0].id, 'b');
 });
 
-test('Share in chat as a section: the other chats; nothing without an address', () => {
-  const sections = chatSections('https://a.example/', 'chat:a', [chat('a', 1), chat('b', 2)]);
-  assert.deepEqual(sections.map((section) => [section.title, section.items.map((item) => item.label)]), [['Share in chat', ['b']]]);
+test('Share in chat offers a draft action and tabs in other chats; nothing without an address', () => {
+  let drafted = false;
+  const sections = chatSections('https://a.example/', 'chat:a', [chat('a', 1), chat('b', 2)], () => { drafted = true; });
+  assert.deepEqual(sections.map((section) => [section.title, section.items.map((item) => item.label)]),
+    [[undefined, ['Add page to message']], ['Open as a tab in', ['b']]]);
+  sections[0].items[0].onSelect();
+  assert.equal(drafted, true);
+  assert.deepEqual(chatSections('https://a.example/', 'chat:a', [chat('a', 1)]), [], 'remote page without another target');
   assert.deepEqual(chatSections('', 'global', [chat('b', 2)]), []);
 });
 

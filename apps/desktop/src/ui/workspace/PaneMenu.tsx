@@ -1,5 +1,5 @@
 // The one menu cell at the end of a surface's address row (and of an agent browser's toolbar): for a website Find in page,
-// the zoom (kept per site), Mute, Mark a region, DevTools, Copy address, Open in system browser and Send page to chat;
+// the zoom (kept per site), Mute, Mark a region, DevTools, Copy address, and Open in system browser;
 // on the Screen tab Mark a region; Keep tab on an agent's preview tab; All tabs (the list of the surface's tabs, a popover
 // at this cell – TabsMenu.tsx); in the desktop app History (Ctrl+H, a popover at this cell too) and Reopen closed tab; on
 // a computer Full view. 21.11.2026: on every tab "Open on ›" (a PC of any person) and, on a tab with a share key,
@@ -42,7 +42,7 @@ export function PaneMenu(props: { id: string | undefined }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [historyAt, setHistoryAt] = useState<HTMLElement | null>(null);
   const [listAt, setListAt] = useState<HTMLElement | null>(null);
-  const [sub, setSub] = useState<{ at: HTMLElement | null; which: 'open' | 'share' } | null>(null); // Open on › or Share with ›
+  const [sub, setSub] = useState<{ at: HTMLElement | null; which: 'open' | 'share' | 'chat' } | null>(null); // Open on › or Share with ›
   const atCell = () => cell.current?.firstElementChild as HTMLElement | null;
   const showHistory = () => setHistoryAt(atCell());
   const asked = historyAsk.value;
@@ -63,6 +63,8 @@ export function PaneMenu(props: { id: string | undefined }) {
   const openOn = openOnSections(entry, paneTargets.value, space);
   const shareWith = shareWithSection(entry, paneTargets.value);
   const chatUrl = website ? url : shownEntryHere?.kind === 'remote' ? shownEntryHere.url : '';
+  const shareInChat = chatSections(chatUrl, space, conversations.value,
+    website && id ? () => { void sendPageToChat(id).catch((error) => toastError(error)); } : undefined);
   const full = fullView.value === space;
   const zoom = page?.zoom ?? 100;
   const tab = (action: 'mute' | 'devtools') => { if (id) void command({ action, id }); };
@@ -79,13 +81,14 @@ export function PaneMenu(props: { id: string | undefined }) {
     ] }, { items: [
       { label: 'Copy address', disabled: !url, onSelect: () => copyAddress(url) },
       { label: 'Open in system browser', disabled: !url, onSelect: () => openExternal(url) },
-      { label: 'Send page to chat', disabled: !url, onSelect: () => void sendPageToChat(id).catch((error) => toastError(error)) },
     ] }] : []),
     ...(openOn.length || shareWith.length ? [{ items: [
       ...(openOn.length ? [{ label: 'Open on', hint: '›', onSelect: () => setSub({ at: atCell(), which: 'open' }) }] : []),
       ...(shareWith.length ? [{ label: 'Share with', hint: '›', onSelect: () => { void readShares(entry); setSub({ at: atCell(), which: 'share' }); } }] : []),
     ] }] : []),
-    ...chatSections(chatUrl, space, conversations.value),
+    ...(shareInChat.length ? [{ items: [
+      { label: 'Share in chat', hint: '›', onSelect: () => setSub({ at: atCell(), which: 'chat' }) },
+    ] }] : []),
     ...(kind === 'screen' && can('computer.preview') ? [{ items: [{ label: 'Mark a region', onSelect: () => void markScreen() }] }] : []),
     { items: [
       ...(shownTab?.transient ? [{ label: 'Keep tab', onSelect: () => keepTab(shownTab) }] : []),
@@ -104,7 +107,7 @@ export function PaneMenu(props: { id: string | undefined }) {
           onClick={(event) => setAnchor(anchor ? null : event.currentTarget as HTMLElement)} />
       </span>
       <Menu anchor={anchor} open={anchor !== null} onClose={() => setAnchor(null)} placement="bottom-end" label="Browser menu" sections={sections} />
-      <Menu anchor={sub?.at ?? null} open={sub !== null} onClose={() => setSub(null)} placement="bottom-end" label={sub?.which === 'open' ? 'Open on' : 'Share with'} sections={sub?.which === 'open' ? openOn : shareWith} />
+      <Menu anchor={sub?.at ?? null} open={sub !== null} onClose={() => setSub(null)} placement="bottom-end" label={sub?.which === 'open' ? 'Open on' : sub?.which === 'chat' ? 'Share in chat' : 'Share with'} sections={sub?.which === 'open' ? openOn : sub?.which === 'chat' ? shareInChat : shareWith} />
       <AllTabs anchor={listAt} onClose={() => setListAt(null)} tabs={tabs} shown={id} />
       {hasPersonalBrowser() && <HistoryPopover anchor={historyAt} onClose={() => setHistoryAt(null)} onOpen={(url, newTab) => openFromHistory(space, url, newTab)} />}
     </>

@@ -15,7 +15,7 @@ import { tabName, type TabInfo, type TabKind } from './browser-model.ts';
 import { closeOthers, closePage, command, selectPage } from './pages.ts';
 import { useSpace } from './space.ts';
 
-const KIND_ICON: Record<TabKind, IconName> = { new: 'globe', website: 'globe', tasks: 'list-checks', activity: 'chart-bar', agent: 'browsers', notes: 'file-text', media: 'image', video: 'play', screen: 'monitor', file: 'file', folder: 'folder', page: 'app-window', remote: 'globe' };
+const KIND_ICON: Record<TabKind, IconName> = { new: 'globe', website: 'globe', tasks: 'list-checks', agent: 'browsers', notes: 'file-text', media: 'image', video: 'play', screen: 'monitor', file: 'file', folder: 'folder', page: 'app-window', remote: 'globe' };
 
 export function copyAddress(url: string): void {
   navigator.clipboard.writeText(url).then(() => pushToast({ title: 'Copied', tone: 'info' }, 1500), (error: unknown) => toastError(error, 'Could not copy'));

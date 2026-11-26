@@ -127,8 +127,12 @@ export function shareChats(chats: readonly ConversationSummary[], except?: strin
     .sort((a, b) => (b.lastMessageAt ?? b.updatedAt) - (a.lastMessageAt ?? a.updatedAt)).slice(0, SHARE_CHATS);
 }
 
-/** "Share in chat" for a page at `url` shown in `space` (not the chat whose area it is in). */
-export function chatSections(url: string, space: string, chats: readonly ConversationSummary[]): MenuSection[] {
-  const targets = url ? shareChats(chats, space.startsWith('chat:') ? space.slice(5) : undefined) : [];
-  return targets.length ? [{ title: 'Share in chat', items: targets.map((chat) => ({ label: chatTitle(chat), onSelect: () => void shareInChat(url, chat) })) }] : [];
+/** One Share in chat menu, with distinct choices for a message draft and a tab in another chat. */
+export function chatSections(url: string, space: string, chats: readonly ConversationSummary[], addToMessage?: () => void): MenuSection[] {
+  if (!url) return [];
+  const targets = shareChats(chats, space.startsWith('chat:') ? space.slice(5) : undefined);
+  return [
+    ...(addToMessage ? [{ items: [{ label: 'Add page to message', onSelect: addToMessage }] }] : []),
+    ...(targets.length ? [{ title: 'Open as a tab in', items: targets.map((chat) => ({ label: chatTitle(chat), onSelect: () => void shareInChat(url, chat) })) }] : []),
+  ];
 }

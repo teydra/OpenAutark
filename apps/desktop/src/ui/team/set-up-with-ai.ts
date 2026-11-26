@@ -13,8 +13,7 @@ import { go } from '../lib/router.ts';
 import { agents, conversations, upsertById } from '../lib/store.ts';
 import { pushToast, toastError } from '../lib/toasts.ts';
 
-export const importTeamRequest = (): string => 'Import an agent team from: ';
-export const folderAgentRequest = (): string => 'Make an agent from this folder on my PC: ';
+export const teamSetupRequest = (): string => 'Help me set up an agent or import a team. I want to: ';
 export const duplicateRequest = (agent: Pick<Agent, 'name'>): string => `Duplicate ${agent.name}`;
 export const reportsToRequest = (agent: Pick<Agent, 'name'>): string => `Change who ${agent.name} reports to. New manager: `;
 export const connectCalendarRequest = (): string => 'Connect a calendar to my Tasks page (Google Calendar or a calendar link): ';

@@ -1,6 +1,5 @@
 // Pure helpers for the team views: the org tree (managers → reports), grouping its roots by space and the space a
-// report names, "most used" ranking from real chat activity, agent status lines and the Team page's structure line
-// (role · N reports), the Team page headline, search,
+// report names, "most used" ranking from real chat activity, agent status lines, the Team page headline, search,
 // the archived list and pairing of run items (tool call ↔ result).
 // Owns: these rules (unit-tested in test/unit/ui/team-model.test.ts).
 // Never: imports the store, rpc or the DOM – callers pass data in.
@@ -138,16 +137,6 @@ export function matchesAgent(agent: Pick<Agent, 'name' | 'role' | 'team'>, query
 /** Effective status: a live run always means "working" (activity is the real source). */
 export function effectiveStatus(agent: Pick<Agent, 'status'>, live: AgentActivity | undefined): AgentStatus {
   return live ? 'working' : agent.status;
-}
-
-/**
- * F18 (owner 15.11.2026: "nicht sehen, was die machen, sondern welche Unteragenten die haben"): the Team page's line
- * under an agent's name – its role, and for a manager how many report to it directly ("Head of sales · 3 reports");
- * the live state stays in the avatar ring and the headline.
- */
-export function structureLine(agent: Pick<Agent, 'role'>, reports: number): string {
-  const count = reports > 0 ? `${reports} ${reports === 1 ? 'report' : 'reports'}` : '';
-  return [agent.role.trim(), count].filter(Boolean).join(' · ');
 }
 
 /** The one-line status under an agent's name: live note, else status note, else role. */

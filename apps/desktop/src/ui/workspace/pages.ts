@@ -22,7 +22,7 @@ import { newId } from '../../shared/ids.ts';
 import { GLOBAL_SPACE, isSpace, omniboxUrl, remoteTabId, type SideSpaces, type WorkspaceBrowserCommand, type WorkspaceBrowserPage } from '../../shared/api/workspace-browser.ts';
 import { bridge, openExternal } from '../lib/platform.ts';
 import { pushToast, toastError } from '../lib/toasts.ts';
-import { appTabId, appTabsOf, chosenAfterClose, fromSideSpace, isAppTab, shownId, toSideSpace, type AppTab, type TabEntry } from './browser-model.ts';
+import { appTabId, appTabsOf, chosenAfterClose, fromSideSpace, isAppTab, restoredTabId, shownId, toSideSpace, type AppTab, type TabEntry } from './browser-model.ts';
 
 const CHOSEN_KEY = 'wf.workspaceTab';
 const APP_TABS_KEY = 'wf.workspaceAppTabs';
@@ -34,7 +34,10 @@ function readDeviceSpaces(): Record<string, SpaceTabs> {
   let kept: unknown = [];
   try { kept = JSON.parse(localStorage.getItem(APP_TABS_KEY) ?? '[]'); } catch { /* storage may be blocked */ }
   const lists = Array.isArray(kept) ? { [GLOBAL_SPACE]: kept } : kept && typeof kept === 'object' ? kept as Record<string, unknown> : {};
-  return Object.fromEntries(Object.entries(lists).filter(([key]) => isSpace(key)).map(([key, tabs]) => [key, { tabs: appTabsOf(tabs), shown: key === GLOBAL_SPACE ? readChosen() : '' }]));
+  return Object.fromEntries(Object.entries(lists).filter(([key]) => isSpace(key)).map(([key, stored]) => {
+    const tabs = appTabsOf(stored);
+    return [key, { tabs, shown: key === GLOBAL_SPACE ? restoredTabId(tabs, readChosen()) : '' }];
+  }));
 }
 
 const spaces = signal<Record<string, SpaceTabs>>(bridge?.workspaceBrowser ? {} : readDeviceSpaces());
@@ -354,7 +357,7 @@ export function acceptLayout(layout: SideSpaces): void {
     const blank = before[key]?.tabs.filter((tab) => tab.kind === 'new' || opening.has(tab.id)) ?? [];
     const listed = layout[key] ? fromSideSpace(layout[key]) : [];
     const tabs = [...listed, ...blank.filter((tab) => !listed.some((item) => item.id === tab.id))];
-    if (tabs.length) next[key] = { tabs, shown: layout[key]?.shown ?? before[key]?.shown ?? '' };
+    if (tabs.length) next[key] = { tabs, shown: restoredTabId(tabs, layout[key]?.shown ?? before[key]?.shown ?? '') };
   }
   layoutReady = true;
   sentLayout = JSON.stringify(layoutOf(next));

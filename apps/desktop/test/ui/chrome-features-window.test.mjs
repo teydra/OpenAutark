@@ -1,7 +1,7 @@
 // Real Electron: the browser's Chrome features. History with suggestions under the address field (and Ctrl+H, its file,
 // agents' pages stay out of it), Ctrl+Shift+T, Ctrl+Tab and Ctrl+1…9 in the pane and inside a page, All tabs in the menu, zoom kept per site over
 // a restart, mute with its mark on the tab, DevTools, Mark a region into the composer (a page; the screen without a saved
-// picture), the Activity panel, the media library with its search, and Comment at in the Video panel. Screenshots:
+// picture), retired Activity tabs opening Tasks, the media library with its search, and Comment at in the Video panel. Screenshots:
 // SCREENSHOTS names the folder. A temp profile, the demo engine, a local fixture server, no real sites.
 // Owns: these user paths. Never: touches the person's profile or external websites.
 
@@ -22,7 +22,7 @@ import { runtimeInfo } from './lib/runtime-info.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test('Chrome features: history, reopen, keys, zoom, mute, DevTools, Mark a region, Activity, Media, Comment at', { timeout: 480_000 }, async (t) => {
+test('Chrome features: history, reopen, keys, zoom, mute, DevTools, Mark a region, Activity-to-Tasks migration, Media, Comment at', { timeout: 480_000 }, async (t) => {
   const profile = await mkdtemp(path.join(os.tmpdir(), 'workforce-chrome-'));
   const out = path.resolve(process.env.SCREENSHOTS ?? path.join(profile, 'shots'));
   await mkdir(out, { recursive: true });
@@ -218,6 +218,17 @@ test('Chrome features: history, reopen, keys, zoom, mute, DevTools, Mark a regio
   await menu('Zoom in');
   await until('zoom again', async () => (await file('workspace-zoom.json')).sites['127.0.0.1'] === 110);
 
+  // One browser menu entry for both sharing effects.
+  await bar().getByRole('button', { name: 'Browser menu' }).click();
+  const browserMenu = page.getByRole('menu', { name: 'Browser menu', exact: true });
+  assert.equal(await browserMenu.getByRole('menuitem', { name: 'Send page to chat' }).count(), 0);
+  await browserMenu.getByRole('menuitem', { name: 'Share in chat' }).click();
+  const sharing = page.getByRole('menu', { name: 'Share in chat', exact: true });
+  await sharing.getByRole('menuitem', { name: 'Add page to message' }).waitFor();
+  await sharing.getByRole('menuitem', { name: 'Chrome chat' }).waitFor();
+  await shot('04b-share-in-chat');
+  await page.keyboard.press('Escape');
+
   // ---- mute: a mark on the tab in the icon's cell, nothing moves
   await expectStable(page, ['.browser-strip-tab.selected', '.browser-strip-tab.selected .browser-strip-title', '.browser-strip-tab.selected .browser-strip-close'], () => menu('Mute tab'));
   await page.locator('.browser-strip-tab.selected .browser-strip-sound').waitFor();
@@ -262,12 +273,12 @@ test('Chrome features: history, reopen, keys, zoom, mute, DevTools, Mark a regio
   await page.locator('.composer-attachments button[aria-label*="Remove"]').first().click().catch(() => {});
   step('region ok');
 
-  // ---- the panels: Activity
+  // ---- the panels: an old Activity tab now opens Tasks
   const panel = async (name) => {
     await strip().getByRole('button', { name: 'New tab', exact: true }).click();
     await page.locator('.new-tab-row', { hasText: name }).first().click();
   };
-  /** An app tab the New tab page no longer offers (B-078 cut its Activity and Screen rows; a stored one still opens):
+  /** An app tab the New tab page no longer offers (retired Activity or a Screen tab):
    *  written into side-tabs.json as the shown tab, as the Video tab below. */
   const openStored = async (entry) => {
     const tabs = await until('the layout in its file', async () => { const read = await file('side-tabs.json').catch(() => undefined); return read?.spaces?.global ? read : undefined; });
@@ -276,11 +287,10 @@ test('Chrome features: history, reopen, keys, zoom, mute, DevTools, Mark a regio
     await writeFile(path.join(profile, 'side-tabs.json'), `${JSON.stringify(tabs, null, 1)}\n`);
   };
   await openStored({ id: 'activity', panel: 'activity' });
-  await page.locator('.pane-activity .activity-row').first().waitFor();
-  assert.equal(await shownTitle(), 'Activity');
-  assert.ok(await page.locator('.activity-row', { hasText: manager.name }).count(), 'the agents are listed');
-  await shot('09-activity-light');
-  await page.emulateMedia({ colorScheme: 'dark' }); await shot('10-activity-dark'); await page.emulateMedia({ colorScheme: 'light' });
+  await page.locator('.global-pane .tasks-page.in-pane').waitFor();
+  assert.equal(await shownTitle(), 'Tasks');
+  assert.equal(await strip().getByText('Activity', { exact: true }).count(), 0);
+  await shot('09-retired-activity-opens-tasks');
 
   // ---- Mark a region on the Screen tab (the picture is this PC's screen: no screenshot of it is kept; the tab opens from
   // the computer-use notice – shell/computer-notice.ts – or from side-tabs.json)

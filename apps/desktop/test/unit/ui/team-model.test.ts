@@ -192,13 +192,3 @@ test('applyArchived: an archived agent comes in newest first, a restored one goe
   assert.deepEqual(list.map((entry) => entry.id), ['ag_2'], 'restored: out');
   assert.deepEqual(applyArchived(list, agent('ag_3')).map((entry) => entry.id), ['ag_2'], 'active agents never join');
 });
-
-test('F18: the Team page line is the structure – role and direct reports – whatever the agent does right now', async () => {
-  const { structureLine } = await import('../../../src/ui/team/model.ts');
-  const manager = agent('ag_konrad', { role: 'Personal manager', status: 'working', statusNote: 'Reviewing the launch plan' });
-  const [root] = buildOrg([manager, agent('ag_nora', { managerId: 'ag_konrad' }), agent('ag_mara', { managerId: 'ag_konrad' }), agent('ag_ida', { managerId: 'ag_nora' })]);
-  assert.equal(structureLine(manager, root.reports.length), 'Personal manager · 2 reports', 'direct reports; the live note stays out');
-  assert.equal(structureLine(agent('ag_nora'), 1), 'Role · 1 report');
-  assert.equal(structureLine(agent('ag_ida'), 0), 'Role', 'a leaf: the role alone');
-  assert.equal(structureLine(agent('ag_x', { role: ' ' }), 3), '3 reports');
-});

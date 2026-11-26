@@ -10,6 +10,11 @@ import type { Route } from '../../../src/ui/lib/router.ts';
 
 const TASK = 'task_0123456789ab';
 
+test('retired Activity and Work links open Tasks without changing an agent’s Work page', () => {
+  for (const link of ['#/activity', '#/work']) assert.equal(formatRoute(parseRoute(link)), '#/tasks');
+  assert.equal(formatRoute(parseRoute('#/team/ag_1/work')), '#/team/ag_1/work');
+});
+
 test('an older #/day link (My day before) opens the Tasks page – on its day when the date is real; it is no route of its own', () => {
   assert.deepEqual(parseRoute('#/day'), { view: 'tasks' });
   assert.deepEqual(parseRoute('#/day/2026-10-24'), { view: 'tasks', date: '2026-10-24' });

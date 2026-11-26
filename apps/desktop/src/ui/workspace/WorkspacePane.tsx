@@ -16,7 +16,6 @@ import { Boundary } from '../blocks/Boundary.tsx';
 import { TasksPage } from '../tasks/TasksPage.tsx';
 import { agentName } from '../lib/store.ts';
 import { Icon } from '../lib/ui.tsx';
-import { ActivityView } from '../team/ActivityView.tsx';
 import { BrowserHeader } from './BrowserHeader.tsx';
 import { BrowserLive } from './BrowserLive.tsx';
 import { BrowserPage } from './BrowserPage.tsx';
@@ -43,7 +42,6 @@ import { VideoView } from './VideoView.tsx';
 function AppTabView(props: { entry: AppEntry }) {
   const { entry } = props;
   if (entry.kind === 'tasks') return <TasksPage scope="pane" />; // the Tasks page, narrow, with its own selection
-  if (entry.kind === 'activity') return <ActivityView />;
   if (entry.kind === 'agent') {
     return (
       <div class="workspace-body tab-browser agent-browser" role="region" aria-label={`${agentName(entry.agentId)}'s browser`}>

@@ -66,6 +66,8 @@ export function parseRoute(hash: string): Route {
   const [path, query = ''] = hash.replace(/^#\/?/, '').split('?');
   const parts = path.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
   switch (parts[0]) {
+    case 'activity':
+    case 'work': return { view: 'tasks' }; // retired top-level pages, not an agent's /team/<id>/work
     case 'day': return tasksRoute(isLocalDate(parts[1]) ? parts[1] : undefined); // My day before: the page on that day
     case 'chat': return parts[1] ? chatRoute(parts[1]) : { view: 'chats' };
     case 'chats': return { view: 'chats' };

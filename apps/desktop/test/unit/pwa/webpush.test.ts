@@ -79,8 +79,8 @@ test('push service encrypts per subscription and drops gone endpoints', async ()
 test('pushTarget: a tap opens the chat, My day (to-dos, blockers) or Home; the tag replaces an older notice for the same to-do or chat', () => {
   assert.deepEqual(pushTarget({ kind: 'todo', conversationId: 'ch_1', taskId: 'ta_9' }), { url: '/#/chat/ch_1', tag: 'todo:ta_9' });
   assert.deepEqual(pushTarget({ kind: 'reply', conversationId: 'ch_1' }), { url: '/#/chat/ch_1', tag: 'chat:ch_1' });
-  assert.deepEqual(pushTarget({ kind: 'todo', taskId: 'ta_9' }), { url: '/#/day', tag: 'todo:ta_9' }); // B-041: My day
-  assert.deepEqual(pushTarget({ kind: 'blocker' }), { url: '/#/day', tag: 'workforce:blocker' });
+  assert.deepEqual(pushTarget({ kind: 'todo', taskId: 'ta_9' }), { url: '/#/tasks', tag: 'todo:ta_9' }); // Tasks
+  assert.deepEqual(pushTarget({ kind: 'blocker' }), { url: '/#/tasks', tag: 'workforce:blocker' });
   assert.deepEqual(pushTarget({ kind: 'important' }), { url: '/#/home', tag: 'workforce:important' });
 });
 
@@ -134,7 +134,7 @@ test('the encrypted payload carries url and tag; unsubscribe removes only the ca
 });
 
 test('pushTarget: a recipient without chat access is led to My day, never into the chat', () => {
-  assert.deepEqual(pushTarget({ kind: 'todo', conversationId: 'ch_1', taskId: 'ta_9' }, { chat: false }), { url: '/#/day', tag: 'todo:ta_9' });
+  assert.deepEqual(pushTarget({ kind: 'todo', conversationId: 'ch_1', taskId: 'ta_9' }, { chat: false }), { url: '/#/tasks', tag: 'todo:ta_9' });
   assert.deepEqual(pushTarget({ kind: 'todo', conversationId: 'ch_1', taskId: 'ta_9' }, { chat: true }), { url: '/#/chat/ch_1', tag: 'todo:ta_9' });
 });
 

@@ -19,7 +19,7 @@ const ids = () => tabsOf(SPACE).map((tab) => tab.id);
 test('Open on puts the same path of another PC in the tab\'s place, and back', () => {
   openPanel({ kind: 'tasks' }, undefined, SPACE);
   openFileTab('/notes/a.md', undefined, SPACE);
-  openPanel({ kind: 'activity' }, undefined, SPACE);
+  openPanel({ kind: 'screen' }, undefined, SPACE);
   const before = ids();
   const at = before.indexOf('file:/notes/a.md');
   openPathOn({ id: 'file:/notes/a.md', kind: 'file', path: '/notes/a.md' }, 'dev_tower', SPACE);

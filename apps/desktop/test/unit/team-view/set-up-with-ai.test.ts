@@ -4,10 +4,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { connectCalendarRequest, duplicateRequest, importTeamRequest, reportsToRequest, withRequest } from '../../../src/ui/team/set-up-with-ai.ts';
+import { connectCalendarRequest, duplicateRequest, teamSetupRequest, reportsToRequest, withRequest } from '../../../src/ui/team/set-up-with-ai.ts';
 
 test('the requests name the thing and end where the person adds the missing detail', () => {
-  assert.equal(importTeamRequest(), 'Import an agent team from: ');
+  assert.equal(teamSetupRequest(), 'Help me set up an agent or import a team. I want to: ');
   assert.equal(duplicateRequest({ name: 'Pia' }), 'Duplicate Pia');
   assert.equal(reportsToRequest({ name: 'Pia' }), 'Change who Pia reports to. New manager: ');
   assert.match(connectCalendarRequest(), /^Connect a calendar to my Tasks page .*: $/);

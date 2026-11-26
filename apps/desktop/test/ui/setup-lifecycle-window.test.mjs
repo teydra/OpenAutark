@@ -113,7 +113,10 @@ test('first-run cards and Back; Start → the Manager\'s chat, no setup line; "S
   const add = page.locator('.sidebar [data-cell="add"]');
   await add.waitFor({ timeout: 15_000 });
   await add.getByRole('button', { name: 'Add' }).click();
-  await page.getByRole('menu', { name: 'Add' }).getByRole('menuitem', { name: 'Start setup again' }).click();
+  const addMenu = page.getByRole('menu', { name: 'Add' });
+  assert.equal(await addMenu.getByRole('menuitem', { name: 'Set up with AI…', exact: true }).count(), 1);
+  assert.equal(await addMenu.getByRole('menuitem', { name: /Import an agent team|Agent from a folder/ }).count(), 0);
+  await addMenu.getByRole('menuitem', { name: 'Start setup again' }).click();
   const ask = page.getByRole('dialog', { name: 'Start setup again?' });
   await ask.waitFor({ timeout: 5_000 });
   await ask.getByRole('button', { name: 'Cancel', exact: true }).click();

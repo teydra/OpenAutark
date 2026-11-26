@@ -32,6 +32,16 @@ test('a space to and from side-tabs.json: websites by id, panels with what they 
   assert.deepEqual(fromSideSpace({ tabs: [{ id: 'x', panel: 'unknown' }, { id: 'notes:other', panel: 'notes', conversationId: 'ch_1' }] }), [], 'a malformed panel is left out');
 });
 
+test('restoring a selected retired panel opens one Tasks tab, not an unrelated tab later in the list', async () => {
+  const { pages } = await pane();
+  for (const panel of ['activity', 'day', 'work']) {
+    pages.acceptLayout({ global: { shown: panel, tabs: [{ id: panel, panel }, { id: 'tasks', panel: 'tasks' }, { id: 'web-a' }] } });
+    assert.deepEqual(pages.tabsOf('global').map((tab) => tab.id), ['tasks', 'web-a']);
+    assert.equal(pages.shownEntry('global')?.kind, 'tasks');
+  }
+  pages.acceptLayout({});
+});
+
 test('a tab an agent opened carries its opener', () => {
   const opener = (chatId?: string) => ({ agentId: 'ag_ada', agentName: 'Ada', ...(chatId ? { chatId } : {}) });
   const pages = [page('web-a', { opener: opener('ch_1') }), page('web-b'), page('web-c', { opener: opener('ch_1') }), page('web-d', { opener: opener() })];
@@ -55,19 +65,19 @@ test('an app tab is named by its kind and what it shows; only well-formed stored
   assert.deepEqual(infos.map((info) => [info.kind, info.host, tabName(info), info.blank, info.url]), [['notes', 'Notes', 'Launch plan', false, ''], ['screen', 'Screen', 'This PC', false, '']]);
   assert.deepEqual(appTabsOf([
     { id: 'notes:c1', kind: 'notes', conversationId: 'c1' }, { id: 'media:f', kind: 'media', fileId: 'f' }, { id: 'screen', kind: 'screen' },
-    { id: 'notes:x', kind: 'notes', conversationId: 'c1' }, { id: 'web-1', kind: 'website' }, { id: 'media:', kind: 'media' }, { id: 'media', kind: 'media' }, { id: 'activity', kind: 'activity' }, null, 'screen',
-  ]).map((tab) => tab.id), ['notes:c1', 'media:f', 'screen', 'media', 'activity']);
+    { id: 'notes:x', kind: 'notes', conversationId: 'c1' }, { id: 'web-1', kind: 'website' }, { id: 'media:', kind: 'media' }, { id: 'media', kind: 'media' }, null, 'screen',
+  ]).map((tab) => tab.id), ['notes:c1', 'media:f', 'screen', 'media']);
   assert.deepEqual(appTabsOf('not a list'), []);
 });
 
-test('panels are tabs: Tasks once, one tab per agent\'s browser; only well-formed ones come back (a My day or Work tab from before opens as Tasks)', () => {
+test('panels are tabs: Tasks once, one tab per agent\'s browser; only well-formed ones come back (a retired tab opens as Tasks)', () => {
   assert.deepEqual([appTabId({ kind: 'tasks' }), appTabId({ kind: 'agent', agentId: 'ag_1' })], ['tasks', 'agent:ag_1']);
   assert.deepEqual(appTabsOf([
-    { id: 'tasks', kind: 'tasks' }, { id: 'day', kind: 'day' }, { id: 'work', kind: 'work' }, { id: 'agent:ag_1', kind: 'agent', agentId: 'ag_1' },
+    { id: 'tasks', kind: 'tasks' }, { id: 'day', kind: 'day' }, { id: 'work', kind: 'work' }, { id: 'activity', kind: 'activity' }, { id: 'agent:ag_1', kind: 'agent', agentId: 'ag_1' },
     { id: 'other', kind: 'tasks' }, { id: 'agent:x', kind: 'agent', agentId: 'ag_1' }, { id: 'agent:', kind: 'agent' },
   ]).map((tab) => tab.id), ['tasks', 'agent:ag_1']);
-  assert.deepEqual(appTabsOf([{ id: 'day', kind: 'day' }, { id: 'agent:ag_1', kind: 'agent', agentId: 'ag_1' }, { id: 'work', kind: 'work' }]),
-    [{ id: 'tasks', kind: 'tasks' }, { id: 'agent:ag_1', kind: 'agent', agentId: 'ag_1' }], 'bridge 0.3.16: the stored My day and Work tabs are one Tasks tab where the first stood');
+  assert.deepEqual(appTabsOf([{ id: 'activity', kind: 'activity' }, { id: 'agent:ag_1', kind: 'agent', agentId: 'ag_1' }, { id: 'work', kind: 'work' }]),
+    [{ id: 'tasks', kind: 'tasks' }, { id: 'agent:ag_1', kind: 'agent', agentId: 'ag_1' }], 'retired panels are one Tasks tab where the first stood');
   const [info] = tabInfos([{ id: 'agent:ag_1', kind: 'agent', agentId: 'ag_1' }], [], () => 'Ada\'s browser');
   assert.equal(info.agentId, 'ag_1', 'its avatar on the tab');
   assert.equal(tabName(info), 'Ada\'s browser');

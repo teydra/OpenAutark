@@ -1,6 +1,6 @@
 // Sidebar content for #/team (and the phone's Team tab): the one org chart (TeamTree.tsx) with carets. Header data
-// (teamNavHeader – "Team", the in-place search and ONE fixed "Add" cell whose menu holds Agent, Person, Import an agent
-// team… and Agent from a folder… (both set up with AI) and Start setup again). A manager row (or a person with
+// (teamNavHeader – "Team", the in-place search and ONE fixed "Add" cell whose menu holds Agent, Person, Set up with AI…
+// and Start setup again). A manager row (or a person with
 // reports) expands its reports right below; branches open by hand (remembered per device) and above the open agent.
 // While searching: matching people and agents as flat rows. At the very end – F14 – a collapsed "Invited (n)" group for the
 // owner (people who never joined: not in the tree until they do; their menu offers Remove), then the collapsed
@@ -28,7 +28,7 @@ import type { Expand } from './TeamTree.tsx';
 import { ArchivedGroup } from './ArchivedGroup.tsx';
 import { NewAgentDialog } from './NewAgentDialog.tsx';
 import { PersonDialogs } from './person-dialogs.tsx';
-import { folderAgentRequest, importTeamRequest, setUpWithAi } from './set-up-with-ai.ts';
+import { setUpWithAi, teamSetupRequest } from './set-up-with-ai.ts';
 import { useSplitNav } from '../splits/SplitNav.tsx'; // B-057
 
 const EXPANDED_KEY = 'wf.teamExpanded';
@@ -38,13 +38,12 @@ const search = signal({ open: false, query: '' });
 
 const addingAgent = signal(false);
 
-/** The Add menu: Agent, Person (owner), Import an agent team… and Agent from a folder… (the Manager's chat, prepared) and – apart – Start setup again. */
+/** The Add menu: Agent, Person (owner), Set up with AI… (the Manager's chat, prepared) and – apart – Start setup again. */
 function addMenu(): MenuSection[] {
   const sections: MenuSection[] = [{ items: [
     { label: 'Agent', onSelect: () => { addingAgent.value = true; } },
     ...(can('people.save') ? [{ label: 'Person', onSelect: () => go.addPerson() }] : []),
-    { label: 'Import an agent team…', onSelect: () => { void setUpWithAi(importTeamRequest()); } },
-    { label: 'Agent from a folder…', onSelect: () => { void setUpWithAi(folderAgentRequest()); } },
+    { label: 'Set up with AI…', onSelect: () => { void setUpWithAi(teamSetupRequest()); } },
   ] }];
   if (setupAgainAllowed()) sections.push({ items: [{ label: 'Start setup again', onSelect: () => { void startSetupAgain(); } }] });
   return sections;

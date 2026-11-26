@@ -1,5 +1,5 @@
 // Measures the app's memory per process in a fresh test profile (demo engine, nothing touches the person's data):
-// boots the built app, finishes onboarding, chats once, opens My day, Team, Work and Settings, back to the chat,
+// boots the built app, finishes onboarding, chats once, opens Team, Tasks and Settings, back to the chat,
 // waits idle and prints each process's private memory (what Task Manager counts) and working set, the window's JS
 // heap and the runtime's heap; then the same with the window minimized.
 // Run (after npm run build): node scripts/measure-memory.mjs [--idle <seconds>] [--json <file>] [--flags "<switches>"]
@@ -42,7 +42,7 @@ try {
   await composer.fill('Hello from the memory measurement');
   await page.locator('button.send-button').first().click();
   await page.getByText(/Echo: .*memory measurement/).first().waitFor({ timeout: 90_000 });
-  for (const hash of ['#/day', '#/team', '#/tasks', '#/settings']) await go(hash);
+  for (const hash of ['#/team', '#/tasks', '#/settings']) await go(hash);
   await go(`#/chat/${encodeURIComponent(conversationId)}`);
 
   const sample = async (label) => {
