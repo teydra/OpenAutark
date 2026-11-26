@@ -67,11 +67,18 @@ test('one page per platform with a canonical address, one h1, a big button and v
   }
 });
 
-test('home: downloads right after the hero, no status chips or board, no umbrella links', () => {
+// 26.11.2026 (Konrad, task_xbgv3vd6, owner's go 11:17): the start page is short – the promise with one download button that
+// finds the visitor's platform, the three steps, the footer. Choosing a platform happens on /download/ only.
+test('home: hero with one auto download button, three steps, footer – no platform list, no status chips, no umbrella links', () => {
   const html = home(rel);
-  const hero = html.indexOf('id="top"'); const get = html.indexOf('id="get"'); const org = html.indexOf('aria-label="Your company at work"');
-  assert.ok(hero < get && get < org, 'downloads block sits between hero and the first story section');
-  for (const p of platforms) assert.ok(html.includes(`download/${p.id}/`), p.id);
+  const main = html.slice(html.indexOf('<main'), html.indexOf('</main>'));
+  assert.equal((main.match(/<section[\s>]/g) || []).length, 2, 'hero and the steps; the footer is the third block');
+  assert.ok(main.indexOf('id="top"') < main.indexOf('id="how"'));
+  assert.equal((main.match(/data-dl-auto/g) || []).length, 1, 'exactly one download button');
+  assert.match(main, new RegExp(`<a class="link" href="${BASE}download/">Other devices`), 'a small link to every device');
+  for (const p of platforms.filter((x) => x.id !== 'windows')) assert.ok(!html.includes(`download/${p.id}/`), `no ${p.id} link on the home page (header, main or footer)`);
+  assert.ok(!html.includes('data-plat=') && !html.includes('class="plats'), 'no platform tiles');
+  assert.ok(!ldOf(html).flatMap((g) => g['@graph']).some((n) => n['@type'] === 'FAQPage'), 'the FAQ structured data lives on /faq/');
   assert.ok(!html.includes('pill--available') && !html.includes('id="status"') && !html.includes('· working'));
   assert.ok(!html.includes(`href="${maker.umbrellaUrl}"`) && !html.includes(`href="${maker.telecodingUrl}"`) && !html.includes(maker.umbrella));
 });

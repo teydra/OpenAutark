@@ -83,9 +83,12 @@
   document.documentElement.dataset.os = os;
   $$(`[data-plat="${os}"]`).forEach((c) => c.classList.add('is-you'));
   const mine = REL?.platforms?.find((p) => p.id === os);
-  if (mine && os !== 'windows') $$('[data-dl-auto]').forEach((b) => {
-    b.href = `${REL.base}download/${os}/`; b.removeAttribute('rel');
-    const label = $('[data-dl-label]', b); if (label) label.textContent = os === 'iphone' ? 'Autark on iPhone' : `Download for ${mine.os}`;
+  // A system we do not know (ChromeOS, BSD …) gets the overview with every platform instead of the Windows page;
+  // on the overview itself the button stays as it is.
+  const unknown = REL && os === 'other' && document.body.dataset.page !== 'download';
+  if ((mine && os !== 'windows') || unknown) $$('[data-dl-auto]').forEach((b) => {
+    b.href = unknown ? `${REL.base}download/` : `${REL.base}download/${os}/`; b.removeAttribute('rel');
+    const label = $('[data-dl-label]', b); if (label) label.textContent = unknown ? 'Download' : os === 'iphone' ? 'Autark on iPhone' : `Download for ${mine.os}`;
     $('[data-rel="windows-meta"]', b)?.remove();
     const ic = $('.ic', b); if (ic) ic.outerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>';
   });

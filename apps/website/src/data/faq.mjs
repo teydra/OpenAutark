@@ -1,4 +1,5 @@
-// Owns: the questions people (and AI search) ask, `home: true` = also on the home page.
+// Owns: the questions people (and AI search) ask, `home: true` = the short list of the most asked ones
+// (shown on the home page until 26.11.2026; the short home page links to /faq/ instead).
 // Never: markup; answers are plain text so they work in HTML, JSON-LD and llms.txt alike.
 import { release } from '../config.mjs';
 

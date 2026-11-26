@@ -27,7 +27,7 @@
 
 /* ───────── footer ───────── */
 .ftr { background: var(--night); color: var(--moon); --line: var(--night-line); --line-2: var(--night-line-2); padding: clamp(64px, 9vw, 120px) 0 28px; overflow: hidden; }
-.ftr__top { display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(4, minmax(0, 1fr)); gap: 36px 24px; }
+.ftr__top { display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)); gap: 36px 24px; }
 @media (max-width: 1000px) { .ftr__top { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ftr__intro { grid-column: 1 / -1; } }
 .ftr__intro p { margin-top: 18px; color: var(--moon-2); max-width: 24em; font-size: 15px; }
 .ftr__intro .ftr__community { margin-top: 12px; font-size: 14px; }

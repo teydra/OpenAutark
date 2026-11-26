@@ -62,7 +62,6 @@ function footer(root) {
       </div>
       ${col('Product', [['Overview', root], ['All capabilities', `${root}product/`], ['How it works', `${root}how-it-works/`], ['Access and data', `${root}access/`], ['Compare', `${root}compare/`], ['Download', `${root}download/`], ['Changelog', `${root}changelog/`]])}
       ${col('Resources', [['FAQ', `${root}faq/`], ['In the press', `${root}press/`], ['Brand and press kit', `${root}brand/`], ['Releases on GitHub', release.releasesUrl, 1], ['Report a problem', maker.feedbackUrl, 1], ['llms.txt', `${root}llms.txt`], ['Facts (JSON)', `${root}facts.json`]])}
-      ${col('Download', platforms.map((p) => [p.os, `${root}download/${p.id}/`]).concat([['All releases', release.releasesUrl, 1]]))}
       ${col(maker.company, [['About', `${root}about/`], [maker.company, maker.companyUrl, 1], [maker.founder, maker.founderUrl, 1], [`Book: ${maker.bookTitle}`, maker.bookUrl, 1], ...maker.social.map((s) => [s.name, s.url, 1]), ['Contact', maker.contactUrl, 1]])}
     </div>
     <div class="ftr__giant">${kword().replace('class="kword ', 'class="kword ftr__kword ')}</div>
