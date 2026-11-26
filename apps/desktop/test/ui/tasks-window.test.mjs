@@ -241,7 +241,8 @@ test('Tasks page: head, quests, input line with time marks, For you, calendar sl
   await menu.getByRole('menuitem', { name: 'Rename…' }).click();
   await quest.waitFor({ timeout: 15_000 });
   await until(() => quest.locator('.detail-title').evaluate((el) => document.activeElement === el), 'the title takes the caret');
-  await page.keyboard.type('Tax return 2026 – Finanzamt');
+  const longQuestTitle = 'Tax return 2026 – Finanzamt – collect supporting documents and check every receipt before filing';
+  await page.keyboard.type(longQuestTitle);
   await page.keyboard.press('Enter');
   await page.locator('.sidebar .quest-item', { hasText: 'Finanzamt' }).waitFor({ timeout: 15_000 });
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -284,7 +285,20 @@ test('Tasks page: head, quests, input line with time marks, For you, calendar sl
   await phone.waitFor({ timeout: 15_000 });
   assert.deepEqual(await phone.locator('.tasks-seg [role="tab"]').evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('aria-label'))), ['Tasks', 'Calendar']);
   assert.ok(await phone.locator('.day-line-days .day-dot').count() >= 5, 'five days or more beside the arrows at 390 px');
-  await phone.locator('.quest-chip', { hasText: 'Tax return 2026' }).waitFor();
+  const questChip = phone.getByRole('button', { name: longQuestTitle, exact: true });
+  await questChip.waitFor();
+  const label = await questChip.locator('.quest-chip-label').evaluate((el) => {
+    const style = getComputedStyle(el);
+    const chip = el.closest('.quest-chip');
+    const row = chip.closest('.quest-chips');
+    return {
+      ellipsis: style.textOverflow === 'ellipsis' && style.overflowX === 'hidden',
+      truncated: el.scrollWidth > el.clientWidth && el.clientWidth > 0,
+      fits: el.getBoundingClientRect().right <= chip.getBoundingClientRect().right
+        && chip.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1,
+    };
+  });
+  assert.deepEqual(label, { ellipsis: true, truncated: true, fits: true }, 'long quest title ends inside its chip with an ellipsis');
   await until(async () => (await overflow()) <= 1, `no horizontal page scroll at 390 px (${await overflow()}px)`, 5_000);
   assert.deepEqual((await page.locator('.mobile-shell .tab-bar .tab-label').allTextContents()).map((text) => text.trim()), ['Tasks', 'Chats', 'Team'], 'one Tasks tab');
   await shot('tasks-10-phone-light');

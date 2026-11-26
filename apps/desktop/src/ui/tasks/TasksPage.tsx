@@ -64,7 +64,8 @@ function QuestChip(props: { scope: PageScope; line: QuestLine }) {
   const menu = useContextMenu(() => taskMenu(asView(line.quest), props.scope));
   return (
     <button type="button" class="quest-chip" style={{ '--qc': `var(--wf-c${line.hue})` }} onClick={() => openDetail(props.scope, line.quest.id)} {...menu}>
-      <span class="task-dot" aria-hidden="true" />{line.quest.title}
+      <span class="task-dot" aria-hidden="true" />
+      <span class="quest-chip-label">{line.quest.title}</span>
     </button>
   );
 }
