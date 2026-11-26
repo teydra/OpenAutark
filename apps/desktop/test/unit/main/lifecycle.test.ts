@@ -8,7 +8,7 @@ import type { UpdateState } from '../../../src/shared/model/system.ts';
 import { WorkforceError } from '../../../src/shared/errors.ts';
 import { appInfo, appPaths, launchFlags } from '../../../src/main/app-paths.ts';
 import { PICK_LIMIT, dialogOptions, folderFiles, pickAndUpload } from '../../../src/main/files-pick.ts';
-import { quitSteps, runShutdown } from '../../../src/main/shutdown.ts';
+import { armQuitWatchdog, beforeDesktopQuit, QUIT_MS, quitSteps, runShutdown } from '../../../src/main/shutdown.ts';
 import { DesktopUpdates, inactiveUpdater } from '../../../src/main/updates-wiring.ts';
 import type { DesktopUpdatesDeps } from '../../../src/main/updates-wiring.ts';
 import type { Updater } from '../../../src/main/updates/update-service.ts';
@@ -177,3 +177,60 @@ test('a refused draft flush aborts before anything stops; a cancelled automatic 
   auto.dispose();
 });
 
+
+test('hard quit is armed only after safe shutdown and never keeps a normal quit alive', () => {
+  const order: string[] = [];
+  const timers: Array<() => void> = [];
+  const timer = (fn: () => void, delay: number) => {
+    assert.equal(delay, 10_000);
+    assert.equal(delay, QUIT_MS);
+    timers.push(fn);
+    return { unref: () => order.push('unref') };
+  };
+  const log = (line: string) => order.push(line);
+  const exit = () => order.push('exit');
+  armQuitWatchdog(false, log, exit, timer);
+  assert.equal(timers.length, 0);
+  armQuitWatchdog(true, log, exit, timer);
+  assert.equal(timers.length, 1);
+  assert.deepEqual(order, ['unref']);
+  timers[0]!();
+  assert.deepEqual(order, ['unref', 'drained quit did not end the app; forcing exit', 'exit']);
+});
+
+test('before-quit attests precisely a confirmed update drain, before native teardown', async () => {
+  const run = async (drained: boolean, blocked = false) => {
+    const order: string[] = [];
+    const ready = 'runtime stopped; update quitting: current-attempt';
+    let finish!: () => void;
+    const done = new Promise<void>(resolve => { finish = resolve; });
+    const beforeQuit = beforeDesktopQuit({
+      blockFailedUpdateQuit: () => blocked,
+      begin: () => { order.push('begin'); },
+      cleanup: [],
+      commitDrainedQuit: () => drained,
+      quitReadyLine: () => ready,
+      actions: () => ({
+        flushDrafts: async () => false,
+        disposeUpdates: () => undefined,
+        stopRuntime: async () => { order.push('stop'); },
+        releasePower: () => order.push('power'),
+        destroyTray: () => undefined,
+      }),
+      armDueStart: async () => undefined,
+      quit: () => { order.push('quit'); finish(); },
+      exit: () => { throw new Error('normal test quit did not end'); },
+      setTimer: () => ({ unref() {} }),
+      log: { line: line => order.push(line), lineNow: line => order.push(line), close: () => undefined },
+    });
+    beforeQuit({ preventDefault: () => order.push('defer') });
+    if (!blocked) await done;
+    return { order, ready };
+  };
+  const update = await run(true);
+  assert.deepEqual(update.order, ['defer', 'begin', 'quitting', update.ready, 'power', 'quit']);
+  const undrained = await run(false);
+  assert.deepEqual(undrained.order, ['defer', 'begin', 'quitting', 'stop', 'power', 'quit']);
+  const cancelled = await run(true, true);
+  assert.deepEqual(cancelled.order, ['defer', 'update quit cancelled: installer did not start']);
+});

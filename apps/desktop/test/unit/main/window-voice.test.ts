@@ -57,6 +57,6 @@ test('wiring: the window asks the hold at close and on voice changes; the quit, 
   assert.match(window, /powerMonitor\.on\('shutdown', \(\) => this\.voice\.letGo\(\)\);/);
   assert.ok(window.indexOf("window.on('session-end'") < window.indexOf("window.on('close'"), 'registered before the close handler');
   const desktop = read('main/desktop.ts');
-  assert.match(desktop, /quitting = true; mainWindow\.letGo\(\);/);
+  assert.match(desktop, /app\.on\('before-quit', beforeDesktopQuit\(\{[\s\S]*?begin: \(\) => \{ mainWindow\.letGo\(\);/);
   assert.match(desktop, /before-quit-for-update', \(\) => \{ desktopUpdates\.markUpdateQuit\(\); mainWindow\.letGo\(\); \}/);
 });

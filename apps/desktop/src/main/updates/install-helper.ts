@@ -10,16 +10,15 @@
 // Values reach the cmd script through environment variables, so the script is plain ASCII and a path with spaces,
 // umlauts or % needs no quoting. When the helper cannot start, the library's own quitAndInstall runs as before.
 //   Windows start, a hand-over (08.11.2026): a detached cmd (DETACHED_PROCESS) has no console, so every console tool it
-//     runs (tasklist, find, ping) gets a console of its own instead of the script's redirections; `find` then read
+//     runs gets a console of its own instead of the script's redirections; the old `find` then read
 //     that console's keyboard forever, the installer never ran and the app stayed closed. A non-detached child dies
 //     with the app (libuv kills its children through a job object when the process ends). So the app starts a hidden
 //     cmd (windowsHide: a console without a window) whose only step is `start "" /b cmd /d /c .\update-helper.cmd`:
 //     that grandchild shares the hidden console, is outside the job (silent breakaway) and outlives the app. The
 //     first cmd's exit code 0 means the helper runs; the helper's own end cannot be watched, so `ended` follows after
 //     HANDOFF_LIFETIME_MS, when a helper that found the app still running has given up.
-// When the app still runs after WAIT_SECONDS (longer than update-service.ts INSTALL_WATCHDOG_MS, after which the app
-// has resumed work), both helpers leave the update for the next try and install nothing; while a helper process lives,
-// a further quitAndInstall only quits again (that helper installs once the app ends); its exit frees the next start.
+// Windows only: after a confirmed, drained update quit, the helper can end a hung process before installing.
+// Without that proof it gives up as before. The Linux AppImage script still only waits; it has a separate wait path.
 // B-080: a build from a file (app.install / system.install) runs through the same helpers (updates-wiring.ts installFile).
 // F25 (16.11.2026): every company updates itself, so the helper starts the company that pressed Update again – its
 // `--company=<id>` after --updated (Windows: AUTARK_UPDATE_ARGS, empty for the first company; Linux: the 5th argument);
@@ -36,6 +35,7 @@
 // the update (electron-updater did both before 'update-downloaded').
 
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -45,17 +45,35 @@ import type { Updater } from './update-service.ts';
 
 export const HELPER_LOG = 'update-helper.log';
 export const WINDOWS_SCRIPT_NAME = 'update-helper.cmd';
-/**
- * How long a helper waits for the app to end. The graceful quit takes up to about 15 s; the install watchdog
- * (INSTALL_WATCHDOG_MS, 20 s) resumes the app after its own wait, so a helper that waits longer never installs over
- * a resumed app: it gives up instead (install-helper.test.ts checks the order).
- */
+/** Grace period for the old app to exit naturally. */
 export const WAIT_SECONDS = 45;
-/**
- * Windows: after this long a handed-over helper counts as ended. Its wait loop runs WAIT_SECONDS rounds of about
- * 1–1.5 s (tasklist, then ping as the pause), so twice WAIT_SECONDS lies safely past its give-up.
- */
+/** The Windows hand-over cannot observe the helper's exit. Leave room for PowerShell and its post-kill wait. */
 export const HANDOFF_LIFETIME_MS = WAIT_SECONDS * 2 * 1000;
+const FORCE_EXIT_WAIT_MS = 3000;
+const UPDATE_QUIT_LINE = 'runtime stopped; update quitting: ';
+
+/**
+ * Wait on a handle to the specific old process. Keeping it open also prevents recycling its PID before taskkill.
+ * Check creation time against the launch request before waiting: a recycled PID may already exist when we get here.
+ * Only this attempt's synchronous, post-drain log line authorizes killing, and only for the expected executable.
+ * 0 = already gone, 3 = not safe to install, 4 = forced exit verified. Paths arrive through the environment.
+ */
+const WINDOWS_WAIT = [
+  "$ErrorActionPreference = 'Stop'",
+  '$pidToWaitFor = [int]$env:AUTARK_UPDATE_PID',
+  '$old = Get-Process -Id $pidToWaitFor -ErrorAction SilentlyContinue',
+  'if (!$old) { exit 0 }',
+  'try { $null = $old.Handle } catch { if (!(Get-Process -Id $pidToWaitFor -ErrorAction SilentlyContinue)) { exit 0 }; exit 3 }',
+  '$latestStart = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$env:AUTARK_UPDATE_REQUESTED_AT).UtcDateTime',
+  'if ($old.StartTime.ToUniversalTime() -gt $latestStart) { exit 3 }',
+  'if ($old.WaitForExit(' + WAIT_SECONDS * 1000 + ')) { exit 0 }',
+  'if ($old.Path -ne $env:AUTARK_UPDATE_EXE) { exit 3 }',
+  "$line = '[main] " + UPDATE_QUIT_LINE + "' + $env:AUTARK_UPDATE_ATTEMPT",
+  'if (!(Get-Content -LiteralPath $env:AUTARK_UPDATE_MAIN_LOG | Select-String -SimpleMatch -Pattern $line -Quiet)) { exit 3 }',
+  "& (Join-Path $env:SystemRoot 'System32/taskkill.exe') /PID $old.Id /T /F | Out-Null",
+  'if (!$old.WaitForExit(' + FORCE_EXIT_WAIT_MS + ')) { exit 3 }',
+  'exit 4',
+].join('; ');
 /** The install lock's folder name in the temp folder: one for every company of this PC's user. */
 export const LOCK_NAME = 'autark-install.lock';
 /**
@@ -69,18 +87,14 @@ const LOCK_WAIT_ROUNDS = LOCK_STALE_MS / 1000; // one ping pause of about 1 s pe
 export const WINDOWS_HELPER_SCRIPT = `@echo off
 setlocal
 call :note "helper started; waiting for the app (pid %AUTARK_UPDATE_PID%) to end"
-set /a tries=0
-:wait
-"%SystemRoot%\\System32\\tasklist.exe" /FI "PID eq %AUTARK_UPDATE_PID%" /NH 2>nul | "%SystemRoot%\\System32\\find.exe" " %AUTARK_UPDATE_PID% " >nul
-if errorlevel 1 goto gone
-set /a tries+=1
-if %tries% geq ${WAIT_SECONDS} goto late
-"%SystemRoot%\\System32\\PING.EXE" -n 2 127.0.0.1 >nul
-goto wait
-:late
+"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -Command "${WINDOWS_WAIT}"
+if "%errorlevel%"=="0" goto gone
+if "%errorlevel%"=="4" goto killed
 if not defined AUTARK_UPDATE_AFTER rmdir "%AUTARK_UPDATE_LOCK%" 2>nul
 call :note "the app still runs after ${WAIT_SECONDS} s; update left for the next try"
 exit /b 3
+:killed
+call :note "the drained app did not exit; its process tree was stopped"
 :gone
 if defined AUTARK_UPDATE_AFTER goto after
 call :note "app ended; installer starts"
@@ -154,6 +168,8 @@ export interface HelperLaunch {
   handoff: boolean;
   /** Windows: the script text written to args' script file before the spawn. */
   script?: { file: string; text: string };
+  /** This exact line, written synchronously at a drained quit, authorizes the Windows helper's fallback. */
+  quitReadyLine?: string;
 }
 
 /**
@@ -177,7 +193,11 @@ export interface WindowsHelperInput {
 export function windowsHelper(input: WindowsHelperInput): HelperLaunch {
   const dir = path.win32.dirname(input.installer);
   const file = path.win32.join(dir, WINDOWS_SCRIPT_NAME);
+  const attempt = randomUUID();
   const env: Record<string, string> = {
+    AUTARK_UPDATE_ATTEMPT: attempt,
+    AUTARK_UPDATE_REQUESTED_AT: String(Date.now()),
+    AUTARK_UPDATE_MAIN_LOG: path.win32.join(path.win32.dirname(input.logFile), 'main.log'),
     AUTARK_UPDATE_PID: String(input.pid),
     AUTARK_UPDATE_INSTALLER: input.installer,
     AUTARK_UPDATE_EXE: input.exe,
@@ -194,6 +214,7 @@ export function windowsHelper(input: WindowsHelperInput): HelperLaunch {
     cwd: dir, // never the install folder: the uninstaller removes that folder
     verbatim: true,
     handoff: true,
+    quitReadyLine: UPDATE_QUIT_LINE + attempt,
     script: { file, text: WINDOWS_HELPER_SCRIPT.replace(/\n/g, '\r\n') },
   };
 }
@@ -225,16 +246,9 @@ export interface InstallHelperDeps {
   logFile: string;
   /** Writes the script, starts the helper detached; calls exactly one of started/failed, and ended when a started helper exits. */
   spawn(launch: HelperLaunch, events: HelperEvents): void;
-  quit(): void;
-  /** 19.11.2026: ends this process at once (app.exit) when the quit above did not end it within QUIT_MS. */
-  exit?(): void;
+  quit(launch: HelperLaunch): void;
   log?(line: string): void;
 }
-
-/** 19.11.2026: a quit for the install that has not ended the app by then (a quit step threw and the app kept waiting on
- * itself – the owner's PC could not update for hours, and no customer can run commands) ends it hard; the runtime is
- * drained already, and this is shorter than update-service.ts INSTALL_WATCHDOG_MS, which would resume work instead. */
-export const QUIT_MS = 12_000;
 
 /** The downloaded file electron-updater 6.8.9 verified (BaseUpdater.installerPath, downloadedUpdateHelper.packageFile). */
 function downloaded(updater: Updater): { file: string | null; packageFile: string | null; admin: boolean } {
@@ -257,41 +271,42 @@ export function helperLaunch(updater: Updater, deps: Pick<InstallHelperDeps, 'pl
 /** Replaces the updater's quitAndInstall on Windows and Linux; the original stays the fallback. */
 export function installWithHelper(updater: Updater, deps: InstallHelperDeps): void {
   const original = updater.quitAndInstall.bind(updater);
-  let waiting = false; // a helper process lives and waits for this process to end
+  let waiting: { launch: HelperLaunch; started: boolean } | undefined;
   const fallback = (isSilent: boolean, isForceRunAfter: boolean, why: string) => {
     deps.log?.(`update helper not used (${why}); the installer relaunches the app`);
     original(isSilent, isForceRunAfter);
   };
   updater.quitAndInstall = (isSilent, isForceRunAfter) => {
-    if (waiting) { deps.quit(); return; }
+    if (waiting) { if (waiting.started) deps.quit(waiting.launch); return; }
     const launch = helperLaunch(updater, deps);
     if (typeof launch === 'string') { fallback(isSilent, isForceRunAfter, launch); return; }
     let settled = false;
-    waiting = true;
+    const attempt = { launch, started: false };
+    waiting = attempt;
     try {
       deps.spawn(launch, {
         started: () => {
           if (settled) return;
           settled = true;
+          attempt.started = true;
           deps.log?.('update helper started; quitting for the install');
-          deps.quit();
-          if (deps.exit) setTimeout(() => { deps.log?.('the quit did not end the app; ending it for the install'); deps.exit?.(); }, QUIT_MS).unref?.();
+          deps.quit(launch);
         },
         failed: error => {
           if (settled) return;
           settled = true;
-          waiting = false;
+          waiting = undefined;
           fallback(isSilent, isForceRunAfter, errorCode(error));
         },
         ended: () => {
-          waiting = false; // it gave up (the app kept running) or did its work; the next click starts a new one
+          waiting = undefined; // it gave up (the app kept running) or did its work; the next click starts a new one
           deps.log?.('update helper ended');
         },
       });
     } catch (error) {
       if (settled) return;
       settled = true;
-      waiting = false;
+      waiting = undefined;
       fallback(isSilent, isForceRunAfter, errorCode(error));
     }
   };

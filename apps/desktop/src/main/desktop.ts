@@ -51,7 +51,7 @@ import { MediaArm } from './security.ts';
 import { sessionEnded, watchSessionEnd } from './session-end.ts';
 import { guardAllContents, installSessionGuards } from './session-guards.ts';
 import { SettingsView, changedPreferences } from './settings-view.ts';
-import { quitSteps, runShutdown } from './shutdown.ts'; import { quitWake, sleeperScript } from './sleeper.ts'; // 19.11.2026: goodbye + wake helper
+import { beforeDesktopQuit } from './shutdown.ts'; import { quitWake, sleeperScript } from './sleeper.ts'; // 19.11.2026: goodbye + wake helper
 import { applyWaker } from './waker.ts'; // 0.3.19: the broker's waker registration
 import { AppTray } from './tray.ts';
 import { DesktopUpdates, inactiveUpdater, loadUpdater, settleAfterStart, siblingUpdates, updateFromElsewhere } from './updates-wiring.ts';
@@ -98,7 +98,6 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   const runMarks = new RunStateMarks(paths.data, line => log.line(line)); // B-044: every deliberate quit is marked (launcher.ts)
   log.line(`starting ${app.getVersion()}${app.isPackaged ? '' : ' (development)'}${testMode ? ' (test data)' : ''}`);
 
-  let quitting = false;
   const media = new MediaArm();
   const link = new RuntimeLink<MessagePortMain>();
   setFillRpc(link.rpc); // B-078 D20: "Fill login" reaches secrets.fillLogin over main's own link
@@ -263,11 +262,17 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   });
 
   // ---------------------------------------------------------------- updates
+  let updateQuitLine: string | undefined;
+  const quitForHelper = (launch: { quitReadyLine?: string }): void => {
+    // before-quit runs inside app.quit(). Do not leave the attempt attached to a later ordinary quit.
+    updateQuitLine = launch.quitReadyLine;
+    try { app.quit(); } finally { updateQuitLine = undefined; }
+  };
   let updater = inactiveUpdater();
   let updaterLoaded = false;
   if (app.isPackaged && !testMode) { // F25: every company has its updater (one install for all; the helper starts the one that pressed Update again)
     try {
-      updater = await loadUpdater(line => log.line(line), companyArgs(company));
+      updater = await loadUpdater(quitForHelper, line => log.line(line), companyArgs(company));
       updaterLoaded = true;
     } catch (error) {
       log.line(`updater not available: ${errorText(error)}`); // the app still starts, without updates
@@ -289,7 +294,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
       stop: reason => link.stop(reason), bye: (reason) => link.rpc.call('devices.bye', { reason }), // 19.11.2026: linked PCs hear "Updating…"
       start: () => link.start(),
     },
-    install: { pid: process.pid, exe: process.execPath, appImage: process.env.APPIMAGE, logs: paths.logs, quit: () => app.quit(), exit: () => app.exit(0), args: companyArgs(company) }, // B-080: installFile; 23.11.2026: exit ends a quit that hangs
+    install: { pid: process.pid, exe: process.execPath, appImage: process.env.APPIMAGE, logs: paths.logs, quit: quitForHelper, args: companyArgs(company) }, // B-080: installFile
     publish: state => {
       renderer.send(IPC.updateState, state);
       link.event('update.state', state);
@@ -398,40 +403,22 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   watchSessionEnd({ platform, app, powerMonitor, BaseWindow }, sessionEnded(runMarks, log), line => log.line(line)); // B-080 wave 3: and one main.log line at once
 
   // ---------------------------------------------------------------- graceful quit
-  let quitDone = false;
-  const shutdownSteps = () => quitSteps({
-    drained: desktopUpdates.draining,
-    flushDrafts: () => renderer.prepareRestart(3000),
-    disposeUpdates: () => desktopUpdates.dispose(),
-    stopRuntime: () => link.stop('quit'),
-    releasePower: () => { pcAwake.dispose(); return host.releaseAll(); }, destroyTray: () => tray.destroy(),
-    ...quitWake({ by: runMarks.by, call: (method, params) => link.rpc.call(method, params), start: { exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), dataDir: paths.data, args: companyArgs(company), log: line => log.line(line) } }),
-  });
-  app.on('before-quit', event => {
-    if (desktopUpdates.blockFailedUpdateQuit()) {
-      event.preventDefault();
-      log.line('update quit cancelled: installer did not start');
-      return;
-    }
-    if (quitDone) return;
-    event.preventDefault();
-    if (quitting) return;
-    quitting = true; mainWindow.letGo(); // 19.11.2026: a close during a call closes now (window-voice.ts)
-    runMarks.quit(desktopUpdates.draining ? 'update' : 'person'); // tray Quit, menu, window close and the update install alike
-    // 18.11.2026: one step that throws (a window already gone) left `quitting` set and the app unable to quit or update
-    for (const step of [() => workStop.dispose(), () => screenCursor.dispose(), () => floatBar?.close(), () => hidden.dispose(), () => workspaceBrowser?.dispose()]) {
-      try { step(); } catch (error) { log.line(`quit step failed: ${(error as Error).message}`); }
-    }
-    log.line('quitting');
-    const keepRunning = settings.preferences().openAtLogin;
-    void runShutdown(shutdownSteps(), { log: line => log.line(line) })
-      .then(() => armDueStart(keepRunning, runMarks.by, launcher)) // B-044: next-due.json is settled now (runtime stopped)
-      .finally(() => {
-        quitDone = true;
-        log.close();
-        app.quit();
-      });
-  });
+  app.on('before-quit', beforeDesktopQuit({
+    blockFailedUpdateQuit: () => desktopUpdates.blockFailedUpdateQuit(),
+    begin: () => { mainWindow.letGo(); runMarks.quit(desktopUpdates.draining ? 'update' : 'person'); },
+    cleanup: [() => workStop.dispose(), () => screenCursor.dispose(), () => floatBar?.close(), () => hidden.dispose(), () => workspaceBrowser?.dispose()],
+    commitDrainedQuit: () => desktopUpdates.commitDrainedQuit(),
+    quitReadyLine: () => updateQuitLine,
+    actions: () => ({
+      flushDrafts: () => renderer.prepareRestart(3000),
+      disposeUpdates: () => desktopUpdates.dispose(),
+      stopRuntime: () => link.stop('quit'),
+      releasePower: () => { pcAwake.dispose(); return host.releaseAll(); }, destroyTray: () => tray.destroy(),
+      ...quitWake({ by: runMarks.by, call: (method, params) => link.rpc.call(method, params), start: { exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), dataDir: paths.data, args: companyArgs(company), log: line => log.line(line) } }),
+    }),
+    armDueStart: () => armDueStart(settings.preferences().openAtLogin, runMarks.by, launcher), // B-044: next-due.json is settled once the runtime stops
+    quit: () => app.quit(), exit: () => app.exit(0), log,
+  }));
 
   nativeUpdater.on('before-quit-for-update', () => { desktopUpdates.markUpdateQuit(); mainWindow.letGo(); }); // an update closes windows first
 

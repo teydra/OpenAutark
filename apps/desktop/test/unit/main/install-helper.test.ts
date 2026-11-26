@@ -6,14 +6,14 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  LINUX_HELPER_SCRIPT, LOCK_NAME, LOCK_STALE_MS, QUIT_MS, WAIT_SECONDS, WINDOWS_HELPER_SCRIPT, helperLaunch, installWithHelper, linuxHelper, spawnHelper, takeInstallLock, windowsHelper,
+  LINUX_HELPER_SCRIPT, LOCK_NAME, LOCK_STALE_MS, WAIT_SECONDS, WINDOWS_HELPER_SCRIPT, helperLaunch, installWithHelper, linuxHelper, spawnHelper, takeInstallLock, windowsHelper,
   type HelperLaunch, type InstallHelperDeps,
 } from '../../../src/main/updates/install-helper.ts';
-import { INSTALL_WATCHDOG_MS } from '../../../src/main/updates/update-service.ts';
 import type { Updater } from '../../../src/main/updates/update-service.ts';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'wf-helper-'));
@@ -32,7 +32,12 @@ test('Windows: a plain-ASCII cmd script beside the installer, values through the
   assert.equal(launch.verbatim, true);
   assert.equal(launch.handoff, true, 'not detached: a detached cmd has no console and its tasklist | find never ends');
   assert.equal(launch.cwd, dir, 'never the install folder, which the uninstaller removes');
-  assert.deepEqual(launch.env, {
+  const { AUTARK_UPDATE_ATTEMPT: attempt, AUTARK_UPDATE_REQUESTED_AT: requested, ...env } = launch.env;
+  assert.match(attempt, /^[a-f0-9-]{36}$/);
+  assert.ok(Number(requested) > 0);
+  assert.equal(launch.quitReadyLine, 'runtime stopped; update quitting: ' + attempt);
+  assert.deepEqual(env, {
+    AUTARK_UPDATE_MAIN_LOG: path.win32.join(path.win32.dirname(LOG), 'main.log'),
     AUTARK_UPDATE_PID: '4242', AUTARK_UPDATE_INSTALLER: INSTALLER, AUTARK_UPDATE_EXE: EXE,
     AUTARK_UPDATE_DIR: 'C:\\Users\\Jürgen Ä\\AppData\\Local\\Programs\\Autark', AUTARK_UPDATE_LOG: LOG, AUTARK_UPDATE_ARGS: '',
     AUTARK_UPDATE_LOCK: path.win32.join(os.tmpdir(), LOCK_NAME),
@@ -45,8 +50,7 @@ test('Windows: a plain-ASCII cmd script beside the installer, values through the
   assert.match(text, /start "" \/wait "%AUTARK_UPDATE_INSTALLER%" --updated \/S\r\n/);
   assert.doesNotMatch(text, /--force-run/, 'the helper starts the app, not NSIS through Explorer');
   assert.match(text, /start "" \/D "%AUTARK_UPDATE_DIR%" "%AUTARK_UPDATE_EXE%" --updated %AUTARK_UPDATE_ARGS%\r\n/);
-  assert.match(text, /"%SystemRoot%\\System32\\tasklist\.exe" \/FI "PID eq %AUTARK_UPDATE_PID%"/);
-  assert.match(text, /\| "%SystemRoot%\\System32\\find\.exe" /, 'never a find from PATH (Git\'s find matches nothing)');
+  assert.match(text, /"%SystemRoot%\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe" -NoProfile -NonInteractive/);
   assert.match(text, />>"%AUTARK_UPDATE_LOG%" echo/);
   assert.doesNotMatch(text, /timeout /, 'timeout fails without a console input; ping waits instead');
   assert.equal(WINDOWS_HELPER_SCRIPT.includes('\r'), false);
@@ -94,7 +98,7 @@ function fakeUpdater(file: string | null): Updater & { original: Array<[boolean,
 }
 
 function deps(patch: Partial<InstallHelperDeps> & { outcome?: 'started' | 'failed' | 'throws' | 'silent' } = {}) {
-  const record = { quits: 0, launches: [] as HelperLaunch[], lines: [] as string[], ends: [] as Array<() => void> };
+  const record = { quits: 0, quitLaunches: [] as HelperLaunch[], launches: [] as HelperLaunch[], lines: [] as string[], ends: [] as Array<() => void> };
   const value: InstallHelperDeps = {
     platform: 'win32', pid: 9, exe: EXE, logFile: LOG,
     spawn: (launch, events) => {
@@ -104,7 +108,7 @@ function deps(patch: Partial<InstallHelperDeps> & { outcome?: 'started' | 'faile
       if (patch.outcome === 'failed') events.failed(Object.assign(new Error('blocked'), { code: 'EACCES' }));
       else if (patch.outcome !== 'silent') events.started();
     },
-    quit: () => { record.quits += 1; },
+    quit: launch => { record.quits += 1; record.quitLaunches.push(launch); },
     log: line => record.lines.push(line),
     ...patch,
   };
@@ -126,30 +130,15 @@ test('quitAndInstall: the started helper quits the app; the library\'s own insta
   updater.quitAndInstall(true, true);
   assert.equal(record.launches.length, 2, 'after the helper ended, the next click starts a new one');
   assert.equal(record.quits, 3);
+  assert.deepEqual(record.quitLaunches, [record.launches[0], record.launches[0], record.launches[1]]);
+  assert.notEqual(record.launches[0]!.quitReadyLine, record.launches[1]!.quitReadyLine, 'a previous attempt cannot authorize this one');
 });
 
-test('19.11.2026: a quit for the install that does not end the app ends it hard before the watchdog resumes work', async () => {
-  assert.ok(QUIT_MS < INSTALL_WATCHDOG_MS, 'the app ends before update-service.ts would resume it');
-  assert.ok(QUIT_MS < WAIT_SECONDS * 1000, 'and before the helper gives up');
-  const updater = fakeUpdater(INSTALLER);
-  let exits = 0;
-  const { value, record } = deps({ exit: () => { exits += 1; } });
-  const timers: Array<() => void> = [];
-  const real = globalThis.setTimeout;
-  globalThis.setTimeout = ((fn: () => void) => { timers.push(fn); return { unref() {} }; }) as unknown as typeof setTimeout;
-  try { installWithHelper(updater, value); updater.quitAndInstall(true, true); } finally { globalThis.setTimeout = real; }
-  assert.equal(record.quits, 1);
-  assert.equal(exits, 0, 'first the ordinary quit');
-  timers.forEach((fn) => fn());
-  assert.equal(exits, 1, 'then a hard end – the process is gone in a quit that ran, so this only fires when it hangs');
-  assert.ok(record.lines.includes('the quit did not end the app; ending it for the install'));
-});
-
-test('a helper never installs over a resumed app: it waits longer than the install watchdog, then gives up', () => {
-  assert.ok(WAIT_SECONDS * 1000 > INSTALL_WATCHDOG_MS + 15_000, 'longer than the watchdog plus a slow graceful quit');
-  const text = WINDOWS_HELPER_SCRIPT;
-  const late = text.slice(text.indexOf(':late'), text.indexOf(':gone'));
-  assert.match(late, /update left for the next try"\nexit \/b 3\n$/, 'Windows: no installer (and no taskkill) after the wait');
+test('the helper gives up rather than installing over a process whose exit it cannot confirm', () => {
+  const windows = WINDOWS_HELPER_SCRIPT;
+  assert.match(windows, /if "%errorlevel%"=="0" goto gone/);
+  assert.match(windows, /if "%errorlevel%"=="4" goto killed/);
+  assert.match(windows, /update left for the next try"\nexit \/b 3\n:killed/);
   assert.match(LINUX_HELPER_SCRIPT, new RegExp(`-gt ${WAIT_SECONDS * 2} \\]; then note "the app still runs after ${WAIT_SECONDS} s; update left for the next try"; exit 3; fi`));
 });
 
@@ -181,6 +170,16 @@ test('the library\'s own path where the helper has nothing to work with', () => 
   assert.equal(record.launches.length, 0);
 });
 
+async function startNaturallyExitingApp(ms: number) {
+  const app = spawn(process.execPath, ['-e', 'console.log("ready"); setTimeout(() => {}, ' + ms + ')'], {
+    stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+  });
+  await once(app.stdout!, 'data');
+  // Model an app that is already running, not an update requested in the same Windows clock tick as its creation.
+  await new Promise(resolve => setTimeout(resolve, 50));
+  return app;
+}
+
 test('Windows helper, really run through spawnHelper: waits for the process, then runs the installer', { skip: process.platform !== 'win32' && 'Windows only' }, async () => {
   // Before 08.11.2026 the helper ran detached without a console; its `find` waited for keyboard input forever.
   const dir = path.join(tmp, 'win run Ä');
@@ -189,7 +188,7 @@ test('Windows helper, really run through spawnHelper: waits for the process, the
   const installer = path.join(dir, 'autark-windows-x64.exe');
   copyFileSync(path.join(system32, 'whoami.exe'), installer); // a stand-in: rejects --updated /S with exit code 1
   const logFile = path.join(dir, 'update-helper.log');
-  const app = spawn(path.join(system32, 'PING.EXE'), ['-n', '4', '127.0.0.1'], { stdio: 'ignore', windowsHide: true }); // "the app", about 3 s
+  const app = await startNaturallyExitingApp(3000);
   let appEnded = false;
   app.once('exit', () => { appEnded = true; });
   const lock = path.join(dir, LOCK_NAME);
@@ -250,7 +249,7 @@ test('one install at a time, really run: a second company\'s helper runs no inst
   const logFile = path.join(dir, 'update-helper.log');
   const lock = path.join(dir, LOCK_NAME);
   mkdirSync(lock); // the first company's helper installs right now
-  const app = spawn(path.join(system32, 'PING.EXE'), ['-n', '2', '127.0.0.1'], { stdio: 'ignore', windowsHide: true });
+  const app = await startNaturallyExitingApp(1000);
   const launch = windowsHelper({ pid: app.pid!, installer, exe: path.join(dir, 'missing', 'Autark.exe'), logFile, lock, args: ['--company=company-2'] });
   await new Promise<void>((resolve, reject) => spawnHelper(launch, dir, { started: resolve, failed: reject, ended: () => undefined }));
   const read = () => (existsSync(logFile) ? readFileSync(logFile, 'utf8').trim().split(/\r?\n/) : []);
@@ -265,6 +264,79 @@ test('one install at a time, really run: a second company\'s helper runs no inst
   assert.equal(lines.length, 3, lines.join('\n'));
   assert.match(lines[2], /nothing to start$/, 'it went on to start its own company');
   assert.equal(lines.some(line => line.includes('installer')), false, 'no second installer');
+});
+
+test('Windows hung quit: only a matching drain marker authorizes the original PID and its tree', {
+  skip: process.platform !== 'win32' && 'Windows only', timeout: 45_000,
+}, async () => {
+  const dir = path.join(tmp, 'win hung Ä');
+  mkdirSync(dir);
+  const installer = path.join(dir, 'installer.exe');
+  copyFileSync(path.join(process.env.SystemRoot!, 'System32', 'whoami.exe'), installer);
+  const exe = process.execPath;
+  const forever = 'setInterval(() => {}, 1000)';
+  const sibling = spawn(exe, ['-e', forever], { stdio: 'ignore', windowsHide: true });
+  const helperUrl = new URL('../../../src/main/updates/install-helper.ts', import.meta.url).href;
+  const logUrl = new URL('../../../src/main/main-log.ts', import.meta.url).href;
+  const old = spawn(exe, ['-e', [
+    'const { spawn } = require("node:child_process");',
+    'const child = spawn(process.execPath, ["-e", process.argv[1]], { stdio: "ignore", windowsHide: true });',
+    'console.log(child.pid);',
+    'process.once("message", async ({ launch, dir }) => {',
+    '  const { spawnHelper } = await import(process.argv[2]);',
+    '  const { openMainLog } = await import(process.argv[3]);',
+    '  const log = openMainLog(dir);',
+    '  log.line("fixture started");',
+    '  spawnHelper(launch, dir, { started: () => { log.lineNow(launch.quitReadyLine); process.send(true); },',
+    '    failed: () => process.send(false), ended: () => {} });',
+    '});', forever,
+  ].join(' '), forever, helperUrl, logUrl], { stdio: ['ignore', 'pipe', 'ignore', 'ipc'], windowsHide: true });
+  const alive = (pid: number) => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  const until = async (done: () => boolean) => {
+    for (let i = 0; i < 100 && !done(); i++) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.ok(done(), 'fixture reached the expected state');
+  };
+  let childPid = 0;
+  old.stdout!.once('data', data => { childPid = Number(String(data).trim()); });
+  try {
+    await until(() => childPid > 0 && alive(sibling.pid!) && alive(childPid));
+    const run = async (name: string, marker: 'stale' | 'current', wrongStart = false) => {
+      const logFile = path.join(dir, name + '.log');
+      const launch = windowsHelper({ pid: old.pid!, installer, exe, logFile, lock: path.join(dir, 'lock'), args: ['--company=company-2'] });
+      launch.script!.text = launch.script!.text.replace('WaitForExit(' + WAIT_SECONDS * 1000 + ')', 'WaitForExit(50)');
+      if (wrongStart) launch.env.AUTARK_UPDATE_REQUESTED_AT = '0'; // same PID / image, wrong lifetime
+      const line = marker === 'current' ? launch.quitReadyLine : 'runtime stopped; update quitting: a-previous-attempt';
+      writeFileSync(launch.env.AUTARK_UPDATE_MAIN_LOG!, name === 'recovered' ? '' : '2026-11-26T10:06:19.000Z [main] ' + line + '\n');
+      if (name === 'recovered') {
+        // The real hand-over starts inside the process that taskkill will end, not as an independent sibling.
+        let started: unknown;
+        old.once('message', message => { started = message; });
+        old.send({ launch, dir });
+        await until(() => started !== undefined);
+        assert.equal(started, true);
+      } else {
+        await new Promise<void>((resolve, reject) => spawnHelper(launch, dir, { started: resolve, failed: reject, ended: () => undefined }));
+      }
+      const read = () => existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';
+      await until(() => /left for the next try|new version started/.test(read()));
+      return read();
+    };
+    for (const log of [await run('stale', 'stale'), await run('reused', 'current', true)]) {
+      assert.match(log, /left for the next try/);
+      assert.doesNotMatch(log, /installer starts/);
+      assert.ok(alive(old.pid!) && alive(childPid) && alive(sibling.pid!));
+    }
+    const recovered = await run('recovered', 'current');
+    assert.match(recovered, /process tree was stopped[\s\S]*app ended; installer starts[\s\S]*new version started/);
+    await until(() => !alive(old.pid!) && !alive(childPid));
+    assert.ok(alive(sibling.pid!), 'an independent instance of the same executable is untouched');
+  } finally {
+    old.kill();
+    if (childPid && alive(childPid)) process.kill(childPid);
+    sibling.kill();
+  }
 });
 
 const shell = spawnSync('sh', ['-c', 'exit 0']).status === 0;

@@ -27,7 +27,7 @@ import { appBundleOf, macSelfUpdater, settleMacUpdate, type FeedFile } from './u
 import { UpdateService } from './updates/update-service.ts';
 import type { Updater } from './updates/update-service.ts';
 import { allowInstallerRetry } from './updates/install-retry.ts';
-import { HELPER_LOG, QUIT_MS, installWithHelper, linuxHelper, spawnHelper, windowsHelper } from './updates/install-helper.ts';
+import { HELPER_LOG, installWithHelper, linuxHelper, spawnHelper, windowsHelper, type HelperLaunch } from './updates/install-helper.ts';
 
 export interface DesktopUpdatesDeps {
   updater: Updater;
@@ -49,7 +49,7 @@ export interface DesktopUpdatesDeps {
     bye?(reason: 'update'): Promise<unknown>;
   };
   /** B-080 (installFile): this app's process, executable, AppImage (Linux) and logs folder, and its quit; absent: no install from a file. */
-  install?: { pid: number; exe: string; appImage?: string; logs: string; quit(): void; exit?(): void; spawn?: typeof spawnHelper; exists?(file: string): boolean; args?: readonly string[] }; // F25: args – this company's start arguments
+  install?: { pid: number; exe: string; appImage?: string; logs: string; quit(launch: HelperLaunch): void; spawn?: typeof spawnHelper; exists?(file: string): boolean; args?: readonly string[] }; // F25: args – this company's start arguments
   publish(state: UpdateState): void;
   /** The system browser for the manual download (desktop.ts passes electron's shell; default: loaded on first use). Only https reaches it. */
   openExternal?(url: string): Promise<void>;
@@ -70,18 +70,18 @@ export const ANSWER_FIRST_MS = 3_000;
  * electron-updater's autoUpdater (loaded only for packaged builds). Its export is a getter that
  * Node's CJS export detection misses, so read it from the namespace or the default export.
  */
-export async function loadUpdater(log?: (line: string) => void, args: readonly string[] = []): Promise<Updater> {
+export async function loadUpdater(quit: (launch: HelperLaunch) => void, log?: (line: string) => void, args: readonly string[] = []): Promise<Updater> {
   const loaded = await import('electron-updater') as unknown as { autoUpdater?: Updater; default?: { autoUpdater?: Updater } };
   const updater = loaded.autoUpdater ?? loaded.default?.autoUpdater;
   if (!updater) throw new Error('The updater is not available.');
   if (process.platform === 'win32') allowInstallerRetry(updater);
   if (process.platform === 'darwin') return selfUpdatingMac(updater, log, args);
-  if (process.platform === 'win32' || process.platform === 'linux') await relaunchingHelper(updater, log, args);
+  if (process.platform === 'win32' || process.platform === 'linux') await relaunchingHelper(updater, quit, log, args);
   return updater;
 }
 
 /** Windows and Linux: quitAndInstall starts the relaunch helper and quits; without it the library's own way runs. F25: `args` – this company's (it starts again). */
-async function relaunchingHelper(updater: Updater, log: ((line: string) => void) | undefined, args: readonly string[]): Promise<void> {
+async function relaunchingHelper(updater: Updater, quit: (launch: HelperLaunch) => void, log: ((line: string) => void) | undefined, args: readonly string[]): Promise<void> {
   const { app } = await electronMain();
   const logs = path.join(app.getPath('userData'), 'logs');
   installWithHelper(updater, {
@@ -92,15 +92,14 @@ async function relaunchingHelper(updater: Updater, log: ((line: string) => void)
     appImage: process.env.APPIMAGE,
     logFile: path.join(logs, HELPER_LOG),
     spawn: (launch, events) => spawnHelper(launch, logs, events),
-    quit: () => app.quit(),
-    exit: () => app.exit(0),
+    quit,
     log,
   });
 }
 
 /** What this needs of electron's main module (its exports sit on the namespace or the default export, as for shell below). */
 interface ElectronMain {
-  app: { getVersion(): string; getPath(name: 'userData'): string; quit(): void; exit(code?: number): void };
+  app: { getVersion(): string; getPath(name: 'userData'): string; quit(): void };
   net: { fetch(url: string): Promise<Response> };
   shell: { trashItem(target: string): Promise<void> };
 }
@@ -222,6 +221,7 @@ export function inactiveUpdater(): Updater {
 export class DesktopUpdates {
   readonly service: UpdateService;
   private readonly deps: DesktopUpdatesDeps;
+  private quitCommitted = false; // before-quit reached with a drained runtime; do not resume work
   private drained = false; // runtime already stopped for the installer
   private paused = false; // runtime paused by system.prepareRestart
   private updateQuitPending = false; // native before-quit-for-update precedes the library's queued app.quit
@@ -250,6 +250,14 @@ export class DesktopUpdates {
 
   /** True between the drain and the installer taking over (quit must not drain again). */
   get draining(): boolean { return this.drained; }
+
+  /** A helper may be allowed to force this quit now. The runtime must stay stopped from here on. */
+  commitDrainedQuit(): boolean {
+    if (!this.drained) return false;
+    this.quitCommitted = true;
+    this.dispose(); // clears the self-update recovery timer
+    return true;
+  }
 
   markUpdateQuit(): void { this.updateQuitPending = true; }
 
@@ -337,8 +345,8 @@ export class DesktopUpdates {
       await this.prepareInstall();
       this.deps.log?.('installing a build from a file');
       (own.spawn ?? spawnHelper)(launch, own.logs, {
-        // Arm before quit: a synchronous exception in quit must not leave a drained runtime without a watchdog.
-        started: () => { this.watchInstall(); this.endHard(own); own.quit(); },
+        // Recover if the quit request never reaches before-quit.
+        started: () => { this.watchInstall(); own.quit(launch); },
         failed: () => { this.deps.log?.('install helper did not start; resuming'); this.cancelInstall(); },
         ended: () => {},
       });
@@ -351,26 +359,13 @@ export class DesktopUpdates {
   }
 
   /**
-   * 23.11.2026: app.install from 0.3.16 drained the runtime, closed its log and called app.quit at 12:30:33 – and the process
-   * lived on past the helper's 45 s, so nothing installed and nothing started again until a person opened the app at 15:53.
-   * The update's own path (install-helper.ts installWithHelper) ends a quit that has not ended the app within QUIT_MS with
-   * app.exit; a build from a file does the same now, armed before the quit so a throwing quit is covered too.
-   */
-  private endHard(own: NonNullable<DesktopUpdatesDeps['install']>): void {
-    if (!own.exit) return;
-    const fire = (): void => { this.deps.log?.('the quit did not end the app; ending it for the install'); own.exit?.(); };
-    if (this.deps.setTimer) this.deps.setTimer(fire, QUIT_MS);
-    else setTimeout(fire, QUIT_MS).unref?.();
-  }
-
-  /**
    * An app that was asked to quit for an install and is still running when the helper has given up did not quit (18.11.2026:
    * an exception in the quit left it up with the runtime stopped from 13:06 to 22:35 – nobody worked and nobody noticed). It takes
    * its work back after INSTALL_FILE_WATCHDOG_MS and says so; a quit that works ends this process before the timer fires.
    */
   private watchInstall(): void {
     const fire = (): void => {
-      if (!this.drained && !this.paused) return;
+      if (this.quitCommitted || (!this.drained && !this.paused)) return;
       this.deps.log?.(`INSTALL FAILED: the app did not end within ${INSTALL_FILE_WATCHDOG_MS / 1000} s; the runtime resumes`);
       this.cancelInstall();
     };
@@ -379,6 +374,7 @@ export class DesktopUpdates {
   }
 
   private async prepareInstall(to?: string): Promise<void> {
+    if (this.quitCommitted) throw new Error('The app is already quitting for an install.');
     if (!(await this.deps.renderer.prepareRestart(DRAFT_FLUSH_TIMEOUT_MS))) {
       throw new Error('The window did not confirm that its drafts are saved.');
     }
@@ -401,6 +397,7 @@ export class DesktopUpdates {
    * install record it kept; a drained one starts again and answers it at its start (the same app process: no install).
    */
   private cancelInstall(): void {
+    if (this.quitCommitted) return;
     if (this.drained) {
       this.drained = false;
       this.deps.runtime.start();

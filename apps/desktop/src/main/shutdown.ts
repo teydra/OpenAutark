@@ -2,11 +2,26 @@
 // bounded by a timeout so a hung part can never keep the app alive. Sicher-Runde 19.11.2026: before the runtime stops it
 // says goodbye to the linked PCs (devices.bye – "App closed · 14:02" there instead of "Not reachable"), and after it
 // stopped the wake helper starts when the person quit and the runtime wrote its file (main/sleeper.ts).
-// Owns: the quit order, running the steps and the overall cap. Never: calls app.quit itself
-// or touches Electron (the actions are passed in).
+// Owns: the desktop quit request, step order and deadlines. Never imports Electron (the actions are injected).
 
 import type { QuitBy } from '../shared/model/launch.ts';
 import { sleeperAtQuit } from './sleeper.ts';
+
+/** A normally exiting process needs no extra time; only a drained quit may be ended hard. */
+export const QUIT_MS = 10_000;
+
+export function armQuitWatchdog(
+  drained: boolean,
+  logNow: (line: string) => void,
+  exit: () => void,
+  setTimer: (fn: () => void, ms: number) => { unref(): unknown } = setTimeout,
+): void {
+  if (!drained) return;
+  setTimer(() => {
+    logNow('drained quit did not end the app; forcing exit');
+    exit();
+  }, QUIT_MS).unref();
+}
 
 export interface ShutdownStep {
   name: string;
@@ -82,4 +97,67 @@ export function quitSteps(actions: QuitActions): ShutdownStep[] {
     ...(startSleeper ? [{ name: 'wake helper', run: () => (sleeperAtQuit(actions.by, bye) ? startSleeper() : undefined) }] : []),
     ...final,
   ];
+}
+
+interface DesktopQuit {
+  blockFailedUpdateQuit(): boolean;
+  begin(): void;
+  cleanup: readonly (() => void)[];
+  commitDrainedQuit(): boolean;
+  quitReadyLine(): string | undefined;
+  actions(): Omit<QuitActions, 'drained' | 'flushDrafts' | 'stopRuntime'> & {
+    flushDrafts(): Promise<boolean>;
+    stopRuntime(): Promise<void>;
+  };
+  armDueStart(): Promise<void>;
+  quit(): void;
+  exit(): void;
+  setTimer?: Parameters<typeof armQuitWatchdog>[3];
+  log: { line(message: string): void; lineNow(message: string): void; close(): void };
+}
+
+/** The first before-quit drains; the final app.quit is allowed through. */
+export function beforeDesktopQuit(deps: DesktopQuit): (event: { preventDefault(): void }) => void {
+  let quitting = false;
+  let quitDone = false;
+  const { log } = deps;
+  const armWatchdog = (safe: boolean) => armQuitWatchdog(safe, line => log.lineNow(line), deps.exit, deps.setTimer);
+  return (event) => {
+    if (deps.blockFailedUpdateQuit()) {
+      event.preventDefault();
+      log.line('update quit cancelled: installer did not start');
+      return;
+    }
+    if (quitDone) return;
+    event.preventDefault();
+    if (quitting) return;
+    quitting = true;
+    deps.begin();
+    for (const step of deps.cleanup) {
+      try { step(); } catch (error) { log.line('quit step failed: ' + (error as Error).message); }
+    }
+    log.line('quitting');
+    const drained = deps.commitDrainedQuit();
+    if (drained) {
+      // The helper can read this even if the main thread hangs in native teardown.
+      const readyLine = deps.quitReadyLine();
+      if (readyLine) log.lineNow(readyLine);
+      armWatchdog(true);
+    }
+    let draftsSaved = false;
+    let runtimeStopped = false;
+    const actions = deps.actions();
+    const steps = quitSteps({
+      ...actions,
+      drained,
+      flushDrafts: async () => { draftsSaved = await actions.flushDrafts(); },
+      stopRuntime: async () => { await actions.stopRuntime(); runtimeStopped = true; },
+    });
+    void runShutdown(steps, { log: line => log.line(line) }).then(deps.armDueStart).finally(() => {
+      quitDone = true;
+      if (!drained) armWatchdog(draftsSaved && runtimeStopped);
+      log.close();
+      deps.quit();
+    });
+  };
 }
