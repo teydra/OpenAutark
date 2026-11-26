@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Owns: what only the website APK (flavor site, full and lite) has: Android's install permission for its own update and
      for adding phone use (SelfUpdate, PhoneUseUpgrade; the person still allows "Install unknown apps" for Autark once),
-     UpdateReceiver for the install session's status and the "installed" notification after MY_PACKAGE_REPLACED, and the
-     photo access of the pairing scanner's strip of the newest photos (asked only when the scanner opens; Android 14+
-     may grant only the photos the person picks). Never: part of the Play build (it uses the system photo picker). -->
+     UpdateReceiver for the install session's status and the "installed" notification after MY_PACKAGE_REPLACED.
+     Never: a photo permission (26.11.2026: the scanner's "Choose QR image" uses the system chooser) or part of the Play build. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <application>
         <receiver android:name=".UpdateReceiver" android:exported="false">
             <intent-filter>
