@@ -119,7 +119,7 @@ public final class AppNotices {
 
     /** The route a tapped notification or shortcut carries, or null. */
     public static String route(Intent intent) {
-        return intent == null ? null : PhoneRoutes.valid(intent.getStringExtra(PhoneRoutes.EXTRA));
+        return intent == null ? null : PhoneRoutes.valid(PhoneRoutes.migrate(intent.getStringExtra(PhoneRoutes.EXTRA)));
     }
 
     /** The app came on screen: its message notifications and a ringing call's notice have done their job. */
