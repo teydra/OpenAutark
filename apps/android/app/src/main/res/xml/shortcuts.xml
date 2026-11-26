@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Owns: the three home-screen shortcuts (long press on the app icon): Chats, Work and My day open MainActivity with the
-     extra "route" (#/chats, #/tasks, #/day; PhoneRoutes). The package is a string so the preview build (package ...preview,
+<!-- Owns: the two home-screen shortcuts (long press on the app icon): Chats and Tasks open MainActivity with the
+     extra "route" (#/chats, #/tasks; PhoneRoutes). The package is a string so the preview build (package ...preview,
      src/debug) points at itself. Never: a route the phone UI does not have. -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut android:shortcutId="chats" android:enabled="true" android:icon="@mipmap/autark_launcher"
@@ -10,18 +10,11 @@
             <extra android:name="route" android:value="#/chats" />
         </intent>
     </shortcut>
-    <shortcut android:shortcutId="work" android:enabled="true" android:icon="@mipmap/autark_launcher"
-        android:shortcutShortLabel="@string/shortcut_work" android:shortcutLongLabel="@string/shortcut_work">
+    <shortcut android:shortcutId="tasks" android:enabled="true" android:icon="@mipmap/autark_launcher"
+        android:shortcutShortLabel="@string/shortcut_tasks" android:shortcutLongLabel="@string/shortcut_tasks">
         <intent android:action="android.intent.action.VIEW" android:targetPackage="@string/shortcut_package"
             android:targetClass="com.teydralab.autark.android.MainActivity">
             <extra android:name="route" android:value="#/tasks" />
-        </intent>
-    </shortcut>
-    <shortcut android:shortcutId="day" android:enabled="true" android:icon="@mipmap/autark_launcher"
-        android:shortcutShortLabel="@string/shortcut_day" android:shortcutLongLabel="@string/shortcut_day">
-        <intent android:action="android.intent.action.VIEW" android:targetPackage="@string/shortcut_package"
-            android:targetClass="com.teydralab.autark.android.MainActivity">
-            <extra android:name="route" android:value="#/day" />
         </intent>
     </shortcut>
 </shortcuts>

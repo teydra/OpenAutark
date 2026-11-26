@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Owns: launcher, the home-screen shortcuts (Chats, Work, My day: res/xml/shortcuts.xml), "Share to Autark" (SEND and
+<!-- Owns: launcher, the home-screen shortcuts (Chats, Tasks: res/xml/shortcuts.xml), "Share to Autark" (SEND and
      SEND_MULTIPLE of text, images and any file: ShareIn), the pair link (App Links: https://openautark.com/pair/#<Remote ID>
      opens the app), foreground media permissions, network-change wake-ups (ACCESS_NETWORK_STATE), light haptics (VIBRATE),
      the small foreground service while paired (KeepAlive, type remoteMessaging), the camera app's files for a capture the
