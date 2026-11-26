@@ -4,7 +4,7 @@ import { agent } from '../chat/harness.ts';
 import { flush, setup } from '../dispatcher/fakes.ts';
 import { DispatcherImpl } from '../../../src/runtime/agents/dispatcher.ts';
 import type { SplitService } from '../../../src/runtime/contracts.ts';
-import { MAX_MEMORY_WAIT_MS, START_HEADROOM, TurnMemoryGate } from '../../../src/runtime/agents/dispatch-memory.ts';
+import { MAX_MEMORY_WAIT_MS, START_HEADROOM, TurnMemoryGate, availableMemory, parseVmStat } from '../../../src/runtime/agents/dispatch-memory.ts';
 
 function fixture(free = START_HEADROOM) {
   let now = 0;
@@ -98,4 +98,31 @@ test('the dispatcher delays main and split executors; stopping a waiting split s
   h.executor.calls[0]?.finish();
   await flush();
   await dispatcher.stop();
+});
+
+// A Mac with 8 GB and nothing running: only 237 MiB are never-used pages, the rest is cache (the GitHub macOS runner, 26.11.2026).
+const VM_STAT = [
+  'Mach Virtual Memory Statistics: (page size of 16384 bytes)',
+  'Pages free:                               15168.',
+  'Pages active:                            112340.',
+  'Pages inactive:                          101500.',
+  'Pages speculative:                         3000.',
+  'Pages throttled:                              0.',
+  'Pages wired down:                         70000.',
+].join('\n');
+
+test('macOS: free, inactive and speculative pages count as available memory, not only the free ones', () => {
+  const available = parseVmStat(VM_STAT);
+  assert.equal(available, (15168 + 101500 + 3000) * 16384);
+  assert.ok(available! >= START_HEADROOM, 'a Mac with ~1.8 GiB reclaimable memory starts its turn at once');
+  assert.ok(15168 * 16384 < START_HEADROOM, 'the free pages alone were below the target');
+});
+
+test('vm_stat output in another format is not trusted', () => {
+  assert.equal(parseVmStat(''), undefined);
+  assert.equal(parseVmStat('Pages free: lots'), undefined);
+});
+
+test('the default memory reading is a positive number on this host', () => {
+  assert.ok(availableMemory() > 0);
 });

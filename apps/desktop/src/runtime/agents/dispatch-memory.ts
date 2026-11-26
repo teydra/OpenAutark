@@ -1,6 +1,7 @@
 // Admission for main turns and splits.
 // Owns: deciding when a new dispatched turn may start based on RAM headroom.
 // Never: changes which engine is selected or the lifetime of a running turn.
+import { execFileSync } from 'node:child_process';
 import { freemem } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -12,6 +13,28 @@ const START_COST = 300 * MIB;
 const START_WINDOW_MS = 5000;
 const RETRY_MS = 1000;
 export const MAX_MEMORY_WAIT_MS = 30_000;
+
+/**
+ * Memory a new turn can use now, in bytes. os.freemem() is MemAvailable on Linux and the available physical memory on Windows,
+ * but on macOS it counts only never-used pages: a Mac with 8 GB and nothing running reports a few hundred MiB "free" because the
+ * rest is cache and inactive pages the system hands out on demand. 26.11.2026 (Felix): with that number every turn on a Mac
+ * waited the full 30 s (the 0.3.20 Mac release check timed out on its demo chat). On macOS free + inactive + speculative pages
+ * from vm_stat are the memory that is available without swapping; any failure falls back to freemem().
+ */
+export function availableMemory(): number {
+  if (process.platform !== 'darwin') return freemem();
+  try {
+    return parseVmStat(execFileSync('/usr/bin/vm_stat', { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] })) ?? freemem();
+  } catch { return freemem(); }
+}
+
+/** Bytes that are free, inactive or speculative in `vm_stat` output; undefined when the output is not in that format. */
+export function parseVmStat(text: string): number | undefined {
+  const size = /page size of (\d+) bytes/.exec(text)?.[1];
+  const pages = (name: string) => Number(new RegExp(`^Pages ${name}:\\s+(\\d+)\\.`, 'm').exec(text)?.[1]);
+  const total = pages('free') + pages('inactive') + pages('speculative');
+  return size && Number.isFinite(total) ? total * Number(size) : undefined;
+}
 
 interface MemoryDeps {
   free: () => number;
@@ -31,7 +54,7 @@ export class TurnMemoryGate {
   private starts: number[] = [];
   private readonly deps: MemoryDeps;
   constructor(deps: MemoryDeps = {
-    free: freemem,
+    free: availableMemory,
     now: () => performance.now(),
     sleep: (ms, signal) => delay(ms, undefined, { signal, ref: false }),
   }) {
