@@ -320,11 +320,11 @@ function modelLabel(ctx: RenderContext, id: string): string {
 }
 
 /**
- * PLACEHOLDER (26.11.2026) – the words Stanislaus asked for ("this model might be good, for example for a part that executes
- * the work, or for you yourself if a switch pays off"); Noah's final wording replaces this sentence. It rides on the person's
- * line behind what they picked, so the model, effort or temperature reads as a hint, never as an order.
+ * 26.11.2026 – the words Stanislaus asked for ("this model might be good, for example for a part that executes the work, or
+ * for you yourself if a switch pays off"), worded by Noah. It rides on the person's line behind what they picked, so the
+ * model, effort or temperature reads as a hint for this one message that switched nothing, never as an order.
  */
-export const PICK_HINT = 'a hint for this message only, not an order: it may suit a part you split off for the work, or you yourself if a switch is worth the full re-read';
+export const PICK_HINT = 'a suggestion for this one message only, nothing was switched by the pick; weigh it for a part you split off, or for yourself if the change is worth the full re-read of your context';
 
 /**
  * 13.11.2026: the person's pick for me on this line (the composer chip) as a label part of their line; '' on other lines, in
