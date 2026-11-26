@@ -26,7 +26,7 @@ import { commandAction, ENV_SCHEMA, runCommand } from './command.ts';
 import { searchTool } from './files-search.ts';
 import { missText } from './file-miss.ts'; // B-080: a miss shows what is there
 import { LINE_READ_BYTES, lineWindow } from './file-window.ts';
-import { shellJobArgs, shellJobBroker } from '../../system/shell-job.ts';
+import { drainJobOutput, shellJobArgs, shellJobBroker } from '../../system/shell-job.ts';
 import { pwshDir } from '../../engines/wf-shim.ts'; // B-080 wave 3: the engines' PowerShell 7
 
 const MAX_READ = 256 * 1024;
@@ -175,6 +175,7 @@ export const defaultShell = (command: string, options: Parameters<ShellSpawn>[1]
     ? broker ? nodeSpawn(broker, shellJobArgs(powershell.file, powershell.args), { ...spawnOptions, stdio: ['pipe', 'pipe', 'pipe'] })
       : nodeSpawn(powershell.file, powershell.args, spawnOptions)
     : nodeSpawn(command, { ...spawnOptions, shell: true });
+  if (broker) drainJobOutput(child);
   const kill = () => {
     if (broker) {
       // Kill only the handle-owning process. On timeout/cancel the kernel takes down its job.

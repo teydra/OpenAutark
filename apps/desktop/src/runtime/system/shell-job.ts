@@ -1,7 +1,7 @@
 // Windows shell ownership via the app's signed desktop broker, launched directly (never through its service).
 // The broker's stdin is a lifetime pipe: the OS closes it if this runtime dies. The shell itself gets NUL.
-// Owns: discovering the bundled wrapper and negotiating its version. Never: touches the installed broker service.
-import { spawnSync } from 'node:child_process';
+// Owns: discovering the wrapper, negotiating its version and bounding pipe drain. Never: touches the installed broker service.
+import { spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,4 +40,20 @@ function hasShellJobRole(file: string): boolean {
     supported.set(file, probe.status === 0 && probe.stdout?.trim() === CAPABILITY);
   }
   return supported.get(file) === true;
+}
+
+/**
+ * Even a redirected Start-Process can inherit copies of the shell's pipes. Once the owning wrapper
+ * exits, give the streams 1.5 s to deliver buffered output; then close our readers so Node emits
+ * 'close' with the wrapper's exit code. Later output from deliberately detached work is not collected.
+ */
+export function drainJobOutput(child: ChildProcess): void {
+  child.once('exit', () => {
+    const drain = setTimeout(() => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    }, 1500);
+    drain.unref?.();
+    child.once('close', () => clearTimeout(drain));
+  });
 }
