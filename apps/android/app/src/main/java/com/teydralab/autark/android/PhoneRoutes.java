@@ -1,8 +1,8 @@
 // Owns: the few places of the phone UI that a notification, a home-screen shortcut or a share may open (#/chats,
-// #/tasks, #/day, #/chat/<id>, #/settings/<page>, the router's own hashes; the to-do button's call #/chat/<id>?call=1 and
+// #/tasks, #/chat/<id>, #/settings/<page>, the router's own hashes; the to-do button's call #/chat/<id>?call=1 and
 // its task #/tasks?task=<id>, phoneuse/TodoButton), and which 'notify' event becomes a phone
 // notification (every kind but 'info', unless its chat is quiet: toast false) with its route (the notice's own place,
-// e.g. a connect request's #/settings/devices, else its chat, else #/day), tag and count (chat messages accumulate;
+// e.g. a connect request's #/settings/devices, else its chat, else #/tasks), tag and count (chat messages accumulate;
 // a task remains one outstanding notice; a notice's own route never carries a query). A task's own tag takes precedence
 // over the chat it belongs to.
 // Pure, so a host test pins it. Never: Android classes, or a route with characters a script string could break out of.
@@ -17,7 +17,7 @@ public final class PhoneRoutes {
     /** The route when it is one of the phone UI's places, else null. */
     static String valid(String route) {
         if (route == null) return null;
-        if (route.equals("#/chats") || route.equals("#/tasks") || route.equals("#/day")) return route;
+        if (route.equals("#/chats") || route.equals("#/tasks")) return route;
         return route.matches("#/chat/[A-Za-z0-9._~-]{1,200}(\\?call=1)?") || route.matches("#/tasks\\?task=[A-Za-z0-9._~-]{1,200}")
                 || route.matches("#/settings/[a-z-]{1,40}") ? route : null;
     }
@@ -75,14 +75,14 @@ public final class PhoneRoutes {
         if (kind == null || kind.equals("info") || Boolean.FALSE.equals(toast)) return null;
         if (valid(route) != null && route.indexOf('?') < 0) return route; // a notice's tap never starts a call by itself
         String chat = chat(conversationId);
-        return chat != null ? chat : "#/day";
+        return chat != null ? chat : "#/tasks";
     }
 
     /** One notification per chat (or task); a newer one replaces it. */
     static String tag(String conversationId, String taskId) {
         if (taskId != null && !taskId.isEmpty()) return "task:" + taskId;
         if (conversationId != null && !conversationId.isEmpty()) return "chat:" + conversationId;
-        return "day";
+        return "notice";
     }
 
     /** Number represented by one bundled notification; null is a newly opened notice, zero an older uncounted one. */

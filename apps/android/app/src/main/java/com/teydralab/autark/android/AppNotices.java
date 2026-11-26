@@ -76,7 +76,7 @@ public final class AppNotices {
 
     /**
      * A to-do that fell due: ONE notification for all of them (tag "due", a newer replaces the older and names what is due now – "3 to-dos due" with their titles),
-     * opening My day, removed by Android itself after PhoneRoutes.DUE_SHOW_MS (17.11.2026, the owner: three stacked cards that stay far too long).
+     * opening the Tasks page, removed by Android itself after PhoneRoutes.DUE_SHOW_MS (17.11.2026, the owner: three stacked cards that stay far too long).
      */
     static void notifyDue(Context context, String title, String text) {
         if (resumed) return;
@@ -88,7 +88,7 @@ public final class AppNotices {
             if (shown.getId() == ID && PhoneRoutes.DUE_TAG.equals(shown.getTag())) open = shown.getNotification().extras.getString("autark.due");
         }
         String[] group = PhoneRoutes.dueGroup(open, title, text);
-        Intent tapIntent = new Intent(app, MainActivity.class).putExtra(PhoneRoutes.EXTRA, "#/day").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Intent tapIntent = new Intent(app, MainActivity.class).putExtra(PhoneRoutes.EXTRA, "#/tasks").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent tap = PendingIntent.getActivity(app, PhoneRoutes.DUE_TAG.hashCode(), tapIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         NotificationChannel channel = new NotificationChannel(CHANNEL, "Messages", NotificationManager.IMPORTANCE_HIGH);
         channel.setShowBadge(true);

@@ -3,8 +3,7 @@
      shortcuts open (src/debug overrides it for the preview build). Never: app_name / app_label (styles.xml). -->
 <resources>
     <string name="shortcut_chats">Chats</string>
-    <string name="shortcut_work">Work</string>
-    <string name="shortcut_day">My day</string>
+    <string name="shortcut_tasks">Tasks</string>
     <string name="share_label">Autark</string>
     <string name="shortcut_package" translatable="false">com.teydralab.autark.android</string>
 </resources>
