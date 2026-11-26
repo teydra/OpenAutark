@@ -103,6 +103,9 @@ async function releaseFacts() {
 const vienna = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' });
 const rel = await releaseFacts();
 console.log('release', rel.windows, rel.mac, rel.linux, `${rel.history.length} releases`);
+// What the build found is what every page shows before the browser's own live check answers: the big download
+// button (layout.mjs) and window.__REL read release.fallback, so it follows the facts instead of the typed-in values.
+for (const os of ['windows', 'mac', 'linux', 'android']) release.fallback[os] = { ...release.fallback[os], ...rel[os] };
 // Empty dist/ but keep .vercel (the link to the Vercel project).
 await mkdir(dist, { recursive: true });
 for (const e of await readdir(dist)) if (e !== '.vercel') await rm(join(dist, e), { recursive: true, force: true });

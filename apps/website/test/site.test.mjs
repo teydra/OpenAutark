@@ -228,3 +228,14 @@ test('Android page: big button is Lite, small link to the full version; no page 
   const worker = readFileSync(join(root, 'worker/worker.mjs'), 'utf8');
   assert.ok(worker.includes("'android-lite': 'autark-android-lite.apk'") && worker.includes("android: 'autark-android-lite.apk'") && worker.includes("'android-full': 'autark-android.apk'"));
 });
+
+test('the typed-in release values (shown before the live check, and to crawlers) are the version of this repository, and the big button shows them', async () => {
+  const app = JSON.parse(readFileSync(join(root, '../desktop/package.json'), 'utf8')).version;
+  assert.equal(release.fallback.windows.version, app, 'config.mjs fallback.windows is not the version of apps/desktop: update the fallback with the release (sizes from the release assets)');
+  assert.equal(release.fallback.linux.version, app);
+  const gradle = readFileSync(join(root, '../android/app/build.gradle'), 'utf8').match(/versionName\s*=\s*'([^']+)'/)?.[1];
+  assert.equal(release.fallback.android.version, gradle);
+  const html = await home(rel);
+  assert.ok(html.includes(`v${app} · ${release.fallback.windows.sizeMb} MB`), 'the big button names the current version and size');
+  assert.ok(!html.includes('0.3.19'));
+});
