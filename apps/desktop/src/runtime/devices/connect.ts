@@ -178,7 +178,13 @@ function welcomeEmployee(s: RuntimeServices, personId: string): void {
 export function createDevices(input: DevicesInput): Devices {
   const { s, mesh, identity } = input;
   let vapid: Promise<VapidKeys> | undefined;
-  const push = new PushService({ db: s.db, clock: s.clock, log: s.log, vapid: () => (vapid ??= VapidKeys.load({ db: s.db, host: s.host, clock: s.clock })) });
+  const push = new PushService({
+    db: s.db, clock: s.clock, log: s.log,
+    vapid: () => (vapid ??= VapidKeys.load({ db: s.db, host: s.host, clock: s.clock, log: s.log }).catch((error: unknown) => {
+      s.log.warn('web-push key unavailable');
+      throw error;
+    })),
+  });
   const pwa = new PwaService({ db: s.db, clock: s.clock, bus: s.bus, log: s.log, settings: s.settings, push, port: input.port, qr: qrDataUrl });
   s.notifications.addChannel?.((message) => { void pwa.pushNotify(message).catch((error) => s.log.warn('web push failed', { error: String(error) })); });
   const offPeoplePush = pushPeopleMessages(s, push); // employees' devices: a new message in a chat they are in

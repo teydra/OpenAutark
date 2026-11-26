@@ -145,6 +145,11 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   // A large database takes longer to copy than main waits for ready: ask for the long boot wait (as for a restore).
   if (upgradePending(databasePath(paths))) await host.extendBoot?.('restore').catch(() => undefined);
   const db = openDatabase({ file: databasePath(paths), dataDir: paths.data, version: options.version, now: () => clock.now(), log });
+  // Check the required OS-protected key before starting watchers or any service.
+  const identity = await DeviceIdentity.load({ db, host, clock, log }).catch((error: unknown) => {
+    db.close();
+    throw error;
+  });
   const bus = new Bus((error, event) => log.warn('bus listener failed', { event, error: String(error) }));
 
   // The shared record every module sees. Filled below; getters read it lazily.
@@ -304,7 +309,6 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   apps.start();
 
   // Every PC is home of its own data; linked PCs are peers (the mesh keeps them connected).
-  const identity = await DeviceIdentity.load({ db, host, clock });
   // A ping answers this PC's load: free memory and the turns at work (devices/load.ts; the dispatcher exists by then), and its security mode (Umzug 21.11.2026).
   const mesh = new DeviceMesh({ db, identity, clock, log, bus, dial: dialPeer, load: () => deviceLoad(dispatcher.activity().length, s.security.current()) });
   s.devices = mesh;

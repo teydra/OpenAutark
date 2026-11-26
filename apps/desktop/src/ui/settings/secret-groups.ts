@@ -33,6 +33,7 @@ export interface FieldDraft {
   value: string;
   /** From the kind's template (fixed name and type). */
   template?: boolean;
+  unreadable?: true;
 }
 
 export const fieldLabel = (field: string): string => FORM_LABELS[field] ?? field;
@@ -61,10 +62,10 @@ export function addField(fields: readonly FieldDraft[]): FieldDraft[] | undefine
 export function draftFields(kind: SecretGroupKind, stored: readonly SecretInfo[] = []): FieldDraft[] {
   const template: FieldDraft[] = SECRET_GROUP_TEMPLATES[kind].map((entry) => {
     const found = stored.find((info) => info.field === entry.field);
-    return { ...(found ? { id: found.id } : {}), field: entry.field, kind: found?.kind ?? entry.kind, value: '', template: true };
+    return { ...(found ? { id: found.id, unreadable: found.unreadable } : {}), field: entry.field, kind: found?.kind ?? entry.kind, value: '', template: true };
   });
   const rest = stored.filter((info) => !template.some((entry) => entry.field === info.field))
-    .map((info): FieldDraft => ({ id: info.id, field: info.field ?? '', kind: info.kind, value: '' }));
+    .map((info): FieldDraft => ({ id: info.id, unreadable: info.unreadable, field: info.field ?? '', kind: info.kind, value: '' }));
   const fields = [...template, ...rest];
   return fields.length ? fields : addField(fields)!;
 }

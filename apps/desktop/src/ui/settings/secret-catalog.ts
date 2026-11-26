@@ -24,14 +24,15 @@ const routeOrder = (route: string) => { const at = (SECRET_ROUTES as readonly st
 
 export type CatalogEntry =
   | { type: 'single'; id: string; name: string; route: string; info: SecretInfo }
-  | { type: 'group'; id: string; name: string; route: string; group: SecretGroup }
+  | { type: 'group'; id: string; name: string; route: string; group: SecretGroup; unreadable?: boolean }
   | { type: 'missing'; id: string; name: string; route: string; file: SecretFileEntry };
 
 /** The catalog in list order (pure). A secret the app keeps for itself (createdBy SYSTEM_ID) is not listed. */
 export function catalogEntries(secrets: readonly SecretInfo[], groups: readonly SecretGroup[], missing: readonly SecretFileEntry[]): CatalogEntry[] {
+  const unreadableGroups = new Set(secrets.filter((secret) => secret.unreadable && secret.group).map((secret) => secret.group!.id));
   return [
     ...secrets.filter((secret) => !secret.group && secret.createdBy !== SYSTEM_ID).map((info): CatalogEntry => ({ type: 'single', id: info.id, name: info.label, route: info.route ?? 'notes', info })),
-    ...groups.map((group): CatalogEntry => ({ type: 'group', id: group.id, name: group.label, route: group.route ?? 'notes', group })),
+    ...groups.map((group): CatalogEntry => ({ type: 'group', id: group.id, name: group.label, route: group.route ?? 'notes', group, ...(unreadableGroups.has(group.id) ? { unreadable: true } : {}) })),
     ...missing.map((file): CatalogEntry => ({ type: 'missing', id: file.id, name: file.name, route: file.route, file })),
   ].sort((a, b) => routeOrder(a.route).localeCompare(routeOrder(b.route)) || a.name.localeCompare(b.name));
 }
@@ -41,7 +42,7 @@ export function entryLine(entry: CatalogEntry): string {
   const source = entry.type === 'single' ? entry.info : entry.type === 'group' ? entry.group : entry.file;
   const purpose = (entry.type === 'missing' ? entry.file.purpose : (source as SecretInfo | SecretGroup).description)?.split('\n')[0].trim();
   const from = entry.type === 'missing' ? undefined : (source as SecretInfo | SecretGroup).source; // provenance only: it works everywhere
-  return [purpose, KIND_LABELS[source.kind] ?? source.kind, source.tags?.join(', '), entry.type === 'missing' ? 'Value missing' : undefined, usedByApp(entry) ? 'Used by the app' : undefined, from && `Saved from ${from}`].filter(Boolean).join(' · ');
+  return [purpose, KIND_LABELS[source.kind] ?? source.kind, source.tags?.join(', '), entry.type === 'missing' ? 'Value missing' : entry.type === 'single' ? (entry.info.unreadable ? 'Re-enter value' : undefined) : (entry.unreadable ? 'Re-enter unreadable fields' : undefined), usedByApp(entry) ? 'Used by the app' : undefined, from && `Saved from ${from}`].filter(Boolean).join(' · ');
 }
 
 /** The app itself works with this entry (an account's key, a bridge, a calendar). */

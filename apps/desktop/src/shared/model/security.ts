@@ -20,6 +20,8 @@ export interface SecretInfo {
   label: string; // "Company Visa", "YouTube login"
   kind: 'api_key' | 'password' | 'card' | 'token' | 'note' | 'totp' | 'text'; // X05: totp = a 2FA setup key (fills the current code), text = a group's non-secret part
   hint?: string; // e.g. last 4 digits
+  /** Local status only: this PC cannot open the stored value. Its ciphertext is kept until replaced. */
+  unreadable?: true;
   /** 29.10.2026: the site it was saved from ("Saved from example.com") – provenance only, never a restriction; X05: a group's field shows the GROUP's. */
   source?: string;
   /** Owner 29.10.2026 (a catalog like a skill): the route (area) whose file <data>/secrets/<route>.md lists it – always set by the vault (optional for simple fakes); X05: a group's field shows the GROUP's. */

@@ -18,6 +18,10 @@ function loadKey(dataDir: string): Buffer {
     const key = Buffer.from(readFileSync(file, 'utf8').trim(), 'base64');
     if (key.length === 32) return key;
   }
+  // Desktop safeStorage is not a headless key. Never generate a competing file key next to it.
+  if (existsSync(path.join(dataDir, 'Local State'))) {
+    throw new Error('The desktop app and the headless runtime use different secure storage. Use a separate --data folder for the headless runtime.');
+  }
   const key = randomBytes(32);
   mkdirSync(dataDir, { recursive: true }); // a fresh --data folder (new worker PC, first run)
   writeFileSync(file, key.toString('base64'), { mode: 0o600 });

@@ -73,7 +73,7 @@ function GroupFields(props: { draft: GroupDraft; onChange: (next: Partial<GroupD
                 : !named && draft.fields.length > 1 && <button type="button" class="button ghost small danger" aria-label={`Remove field ${index + 1}`} onClick={() => onChange({ fields: draft.fields.filter((_, at) => at !== index) })}>Remove</button>}
             </div>
             <input class="input" type={masked(field.kind) ? 'password' : 'text'} autocomplete="off" aria-label={named ? title : `Field ${index + 1} value`} disabled={gone}
-              placeholder={gone ? 'Removed on save' : field.id ? 'Empty keeps the stored value' : ''} value={field.value} onInput={(event) => setField(index, { value: valueOf(event) })} />
+              placeholder={gone ? 'Removed on save' : field.unreadable ? 'Re-enter the value' : field.id ? 'Empty keeps the stored value' : ''} value={field.value} onInput={(event) => setField(index, { value: valueOf(event) })} />
             {hint && <p class="secret-field-hint">{hint}</p>}
           </div>
         );
@@ -135,7 +135,7 @@ export function SecretForm(props: { target?: SecretTarget; onDone: () => void; o
           ? <GroupFields draft={draft} onChange={(next) => { if (next.fields) setFields(next.fields); if (next.removed) setRemoved(next.removed); }} />
           : (
             <>
-              <label class="field-label" for="secret-value">{single ? 'New value (empty keeps the stored one)' : 'Value'}</label>
+              <label class="field-label" for="secret-value">{single?.unreadable ? 'Re-enter the value' : single ? 'New value (empty keeps the stored one)' : 'Value'}</label>
               <input id="secret-value" class="input" type="password" autocomplete="off" value={value} onInput={(event) => setValue(valueOf(event))} />
             </>
           )}

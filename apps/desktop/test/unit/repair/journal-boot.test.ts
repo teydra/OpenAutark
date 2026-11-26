@@ -121,3 +121,14 @@ test('an unavailable Linux keyring shows setup without opening data or marking a
   assert.equal(starts, 1);
   assert.equal(stableTimers, 1);
 });
+test('an essential device key failure shows its own repair state on the first attempt', async (t) => {
+  const journal = journalIn(t);
+  const { DeviceKeyUnavailable } = await import('../../../src/runtime/devices/identity.ts');
+  const result = await guardedBoot({ journal, version: '1.0.0',
+    start: async () => { throw new DeviceKeyUnavailable(); },
+    repair: (problem) => problem,
+  });
+  assert.equal(result.kind, 'repair');
+  assert.equal(journal.problem('1.0.0')?.code, 'device_key_unavailable');
+  assert.equal(journal.read()?.attempts, 1);
+});

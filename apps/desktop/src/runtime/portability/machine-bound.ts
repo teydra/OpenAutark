@@ -12,7 +12,9 @@ import type { DatabaseSync } from 'node:sqlite';
 /** kv rows whose value holds a ciphertext of the OS key (devices/identity.ts, pwa/vapid.ts). */
 export const BOUND_KV: ReadonlyArray<readonly [ns: string, key: string]> = [
   ['device', 'identity'],
+  ['device', 'identity-before-recovery'],
   ['pwa', 'vapid'],
+  ['pwa', 'vapid-before-recovery'],
 ];
 
 const DEVICE_COLUMNS = 'id, name, kind, role, fingerprint, public_key, addresses, caps, status, self, paired_at, last_seen_at, revoked_at';

@@ -15,6 +15,7 @@
 // "on" at each of them and never re-subscribes under this PC's key (that would cut off the PC where it was made).
 // Never: starts the HTTP server itself or exposes owner scope (an employee's phone never gets a device token).
 
+import { VapidKeyUnavailable } from './vapid.ts';
 import type { Bus } from '../bus.ts';
 import type { Clock, Logger, SettingsService } from '../contracts.ts';
 import type { Db } from '../db/database.ts';
@@ -142,8 +143,7 @@ export class PwaService {
     try {
       return { ready: true, publicKey: await this.deps.push.publicKey() };
     } catch (error) {
-      this.deps.log.warn('vapid key unavailable', { error: String((error as Error)?.message ?? error) });
-      return { ready: false, reason: 'The PC could not prepare notifications.' };
+      return { ready: false, reason: error instanceof VapidKeyUnavailable ? error.message : 'The PC could not prepare notifications.' };
     }
   }
 

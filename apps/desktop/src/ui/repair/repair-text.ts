@@ -34,6 +34,14 @@ export function problemText(problem: StartProblem, backups: readonly UpgradeBack
         title: 'Your data could not be read',
         body: [kept ? 'Restore a copy from before an update, or export diagnostics.' : 'Export diagnostics to find out more.'],
       };
+    case 'device_key_unavailable':
+      return {
+        title: 'Autark could not open this device’s identity key',
+        body: problem.detail ? [] : [
+          'Open Autark under the original OS account with its secure storage unlocked, then try again. This key cannot be re-entered like a password.',
+          'If that secure storage is no longer available, contact support before reconnecting this device. Restoring a data copy will not unlock it.',
+        ],
+      };
     case 'keyring_unavailable':
       return {
         title: 'Autark needs an unlocked system keyring',

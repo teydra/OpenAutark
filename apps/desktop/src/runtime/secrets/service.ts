@@ -155,6 +155,7 @@ export type SecretObserver = (id: string) => void;
 export class SecretVault implements SecretService {
   private options: SecretServiceOptions;
   private redactor = new Redactor();
+  private readonly unreadable = new Set<string>();
   private readonly observers = new Set<SecretObserver>();
   private readonly printKey = randomBytes(32);
 
@@ -179,21 +180,19 @@ export class SecretVault implements SecretService {
   /** Decrypts every stored value once into the in-memory redaction matcher (call at startup); a text field's older hint becomes the text. */
   async init(): Promise<void> {
     for (const row of this.options.db.all<SecretRow>('SELECT * FROM secrets WHERE cipher IS NOT NULL')) {
-      try {
-        const value = await this.options.host.decrypt(row.cipher!);
-        this.teach(row.id, row.kind, value);
-        const hint = row.kind === 'text' ? textHint(value) ?? null : row.hint;
-        if (hint !== row.hint) this.options.db.run('UPDATE secrets SET hint = ? WHERE id = ?', [hint, row.id]);
-      } catch {
-        this.options.log?.warn('secret could not be decrypted for redaction', { id: row.id });
-      }
+      let value: string;
+      try { value = await this.options.host.decrypt(row.cipher!); }
+      catch { this.markUnreadable(row.id); continue; }
+      this.teach(row.id, row.kind, value);
+      const hint = row.kind === 'text' ? textHint(value) ?? null : row.hint;
+      if (hint !== row.hint) this.options.db.run('UPDATE secrets SET hint = ? WHERE id = ?', [hint, row.id]);
     }
   }
 
   list(): SecretInfo[] {
     const groups = new Map(groupList(this.options.db).map((group) => [group.id, group]));
     return this.options.db.all<SecretRow>('SELECT * FROM secrets ORDER BY label COLLATE NOCASE, id')
-      .map((row) => toInfo(row, row.group_id ? groups.get(row.group_id) : undefined));
+      .map((row) => this.info(row, row.group_id ? groups.get(row.group_id) : undefined));
   }
 
   /** X05: a grouped row (or `groupId` + `field`) is saved through its group – route and tags go to the GROUP. */
@@ -222,7 +221,6 @@ export class SecretVault implements SecretService {
     const source = input.source ?? existing?.source ?? null;
     const route = cleanRoute(input.route) ?? existing?.route ?? autoSecretRoute(input.kind, `${label} ${description}`);
     const tags = cleanTags(input.tags) ?? (existing ? json<string[]>(existing.tags ?? '[]', []) : []);
-    if (form) this.teach(id, input.kind, form.stored);
     const safe = (text: string) => this.redact(input.value ? text.split(input.value).join(`secret://${id}`) : text);
     if (existing) {
       db.run(`UPDATE secrets SET label = ?, kind = ?, cipher = ?, hint = ?, domains = '[]', description = ?, source = ?, route = ?, tags = ? WHERE id = ?`,
@@ -231,8 +229,9 @@ export class SecretVault implements SecretService {
       db.run(`INSERT INTO secrets (id, label, kind, cipher, hint, agents, domains, created_at, description, conversation_id, created_by, source, route, tags) VALUES (?, ?, ?, ?, ?, '["*"]', '[]', ?, ?, ?, ?, ?, ?, ?)`,
         [id, safe(label), input.kind, cipher, hint, this.options.clock.now(), safe(description), input.conversationId ?? null, input.createdBy ?? null, source, route, toJson(tags.map(safe))]);
     }
+    if (form) this.teach(id, input.kind, form.stored);
     this.changed(id);
-    return toInfo(db.get<SecretRow>('SELECT * FROM secrets WHERE id = ?', [id])!);
+    return this.info(db.get<SecretRow>('SELECT * FROM secrets WHERE id = ?', [id])!);
   }
 
   /** X05: the groups (metadata only). */
@@ -252,23 +251,23 @@ export class SecretVault implements SecretService {
     const ciphers = new Map<string, Uint8Array>();
     for (const field of plan.fields) if (field.stored !== undefined) ciphers.set(field.id, await this.options.host.encrypt(field.stored));
     writeGroup(this.options.db, plan, ciphers, now);
-    for (const id of plan.remove) this.redactor.remove(id);
+    for (const id of plan.remove) this.forget(id);
     for (const field of plan.fields) if (field.stored !== undefined) this.teach(field.id, field.kind, field.stored);
     this.options.log?.info('secret group saved', { id: plan.id, fields: plan.fields.length, removed: plan.remove.length }); // never a value
     const group = groupRow(this.options.db, plan.id)!;
     this.changed(plan.id, ...plan.fields.map((field) => field.id)); // a single secret moved in loses its own file
-    return { group: toGroup(group), fields: fieldRows(this.options.db, plan.id).map((row) => toInfo(row, group)) };
+    return { group: toGroup(group), fields: fieldRows(this.options.db, plan.id).map((row) => this.info(row, group)) };
   }
 
   /** X05: deletes a group, its fields and their redaction. */
   removeGroup(id: string): void {
-    for (const field of deleteGroup(this.options.db, id)) this.redactor.remove(field);
+    for (const field of deleteGroup(this.options.db, id)) this.forget(field);
     this.changed(id);
   }
 
   remove(id: string): void {
     this.options.db.run('DELETE FROM secrets WHERE id = ?', [id]);
-    this.redactor.remove(id);
+    this.forget(id);
     this.changed(id);
   }
 
@@ -282,7 +281,12 @@ export class SecretVault implements SecretService {
     const refused = this.options.refuse?.({ kind: row.kind, groupKind: group?.kind, route: group ? group.route : row.route }, agentId);
     if (refused) throw new WorkforceError('forbidden', refused); // Sicher-Runde: card data in Secure mode
     const now = this.options.clock.now();
-    const value = await this.options.host.decrypt(row.cipher);
+    let value: string;
+    try { value = await this.options.host.decrypt(row.cipher); }
+    catch {
+      this.markUnreadable(id);
+      throw new WorkforceError('unavailable', `The secret '${name}' cannot be read on this PC. Re-enter its value in Settings › Secrets or in the app that uses it.`);
+    }
     this.options.db.run('UPDATE secrets SET last_used_at = ?, uses = uses + 1 WHERE id = ?', [now, id]);
     if (group) this.options.db.run('UPDATE secret_groups SET last_used_at = ?, uses = uses + 1 WHERE id = ?', [now, group.id]);
     this.teach(id, row.kind, value);
@@ -349,8 +353,26 @@ export class SecretVault implements SecretService {
     return row ? { row, group: row.group_id ? groupRow(this.options.db, row.group_id) : undefined } : undefined;
   }
 
+  private info(row: SecretRow, group?: GroupRow): SecretInfo {
+    const info = toInfo(row, group);
+    return this.unreadable.has(row.id) ? { ...info, hint: undefined, unreadable: true } : info;
+  }
+
+  private markUnreadable(id: string): void {
+    if (!this.unreadable.has(id)) {
+      this.unreadable.add(id);
+      this.options.log?.warn('secret unreadable on this PC', { id });
+    }
+  }
+
+  private forget(id: string): void {
+    this.unreadable.delete(id);
+    this.redactor.remove(id);
+  }
+
   /** The redactor learns a stored value by its kind (groups.ts redactionOf: never a 'text' field, a 2FA key in every spelling). */
   private teach(id: string, kind: string, stored: string): void {
+    this.unreadable.delete(id);
     const forms = redactionOf(kind, stored);
     if (forms) this.redactor.set(id, forms.value, forms.pattern); else this.redactor.remove(id);
   }

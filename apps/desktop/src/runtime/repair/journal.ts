@@ -13,6 +13,7 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { StartProblem, StartProblemCode } from '../../shared/model/repair.ts';
 import { redactText } from '../../shared/secrets/redact-text.ts';
+import { DeviceKeyUnavailable } from '../devices/identity.ts';
 import { isUpgradeError } from '../db/upgrade.ts';
 
 /** Failed or crashed starts in a row before the next one shows the repair screen. */
@@ -105,6 +106,8 @@ export class BootJournal {
     if (isUpgradeError(error)) {
       code = error.stage;
       schema = { ...(error.dataSchema !== undefined ? { dataSchema: error.dataSchema } : {}), appSchema: error.appSchema };
+    } else if (error instanceof DeviceKeyUnavailable) {
+      code = 'device_key_unavailable';
     } else if (attempts >= MAX_ATTEMPTS) {
       code = 'crash_loop';
     }
@@ -112,7 +115,7 @@ export class BootJournal {
       this.write({ version, attempts, phase: 'starting', lastError: detail, at });
       return undefined;
     }
-    const problem: StartProblem = { code, version, detail, at, ...schema, ...(code === 'crash_loop' ? { attempts } : {}) };
+    const problem: StartProblem = { code, version, ...(code !== 'device_key_unavailable' || (error instanceof DeviceKeyUnavailable && error.wrongHost) ? { detail } : {}), at, ...schema, ...(code === 'crash_loop' ? { attempts } : {}) };
     this.write({ version, attempts, phase: 'repair', repair: problem, lastError: detail, at });
     return problem;
   }

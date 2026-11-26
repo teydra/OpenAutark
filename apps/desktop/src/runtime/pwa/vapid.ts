@@ -4,7 +4,7 @@
 // devices/sync/held-push.ts). Never: sends anything.
 
 import { createECDH, createPrivateKey, sign } from 'node:crypto';
-import type { Clock } from '../contracts.ts';
+import type { Clock, Logger } from '../contracts.ts';
 import type { Db } from '../db/database.ts';
 import type { Host } from '../host.ts';
 import { KvRepo } from '../store/kv.ts';
@@ -18,6 +18,10 @@ export interface KeyPair { pub: string; priv: string }
 interface StoredVapid {
   publicKey: string; // base64url, 65-byte uncompressed point
   privateCipher: string; // base64 of host.encrypt(raw private scalar base64url)
+}
+
+export class VapidKeyUnavailable extends Error {
+  constructor() { super('This PC cannot open the web-push key. Open Autark under the original OS account with its secure storage unlocked.'); }
 }
 
 const b64 = (data: Uint8Array | string) => Buffer.from(data).toString('base64url');
@@ -41,15 +45,33 @@ export class VapidKeys {
     this.pair = pair;
   }
 
-  static async load(input: { db: Db; host: Host; clock: Clock }): Promise<VapidKeys> {
+  static async load(input: { db: Db; host: Host; clock: Clock; log?: Logger }): Promise<VapidKeys> {
     const kv = new KvRepo(input.db);
     const stored = kv.get<StoredVapid>('pwa', 'vapid');
-    if (stored) return new VapidKeys({ pub: stored.publicKey, priv: await input.host.decrypt(Buffer.from(stored.privateCipher, 'base64')) });
+    if (stored) {
+      try { return new VapidKeys({ pub: stored.publicKey, priv: await input.host.decrypt(Buffer.from(stored.privateCipher, 'base64')) }); }
+      catch {
+        // Existing subscriptions depend on this public key, including those synchronized to a linked PC.
+        if (input.db.get('SELECT 1 FROM push_subscriptions LIMIT 1') ||
+            input.db.get("SELECT 1 FROM devices WHERE self = 0 AND kind = 'pc' LIMIT 1")) throw new VapidKeyUnavailable();
+      }
+    }
     const ecdh = createECDH('prime256v1');
     ecdh.generateKeys();
     const pair = { pub: b64(ecdh.getPublicKey()), priv: b64(ecdh.getPrivateKey()) };
-    const cipher = await input.host.encrypt(pair.priv);
-    kv.set('pwa', 'vapid', { publicKey: pair.pub, privateCipher: Buffer.from(cipher).toString('base64') } satisfies StoredVapid, input.clock.now());
+    let cipher: Uint8Array;
+    try {
+      cipher = await input.host.encrypt(pair.priv);
+      if (stored && await input.host.decrypt(cipher) !== pair.priv) throw new VapidKeyUnavailable();
+    } catch { throw new VapidKeyUnavailable(); }
+    input.db.tx(() => {
+      if (stored) {
+        const previous = kv.get<StoredVapid[]>('pwa', 'vapid-before-recovery') ?? [];
+        kv.set('pwa', 'vapid-before-recovery', [...previous, stored], input.clock.now());
+      }
+      kv.set('pwa', 'vapid', { publicKey: pair.pub, privateCipher: Buffer.from(cipher).toString('base64') } satisfies StoredVapid, input.clock.now());
+    });
+    if (stored) input.log?.warn('web-push key replaced; no existing subscriptions or linked PCs');
     return new VapidKeys(pair);
   }
 

@@ -1,7 +1,8 @@
 // Guarded start of the runtime utility process (23.10.2026): asks the start guard first; with a
 // problem pinned for this version (or the crash loop earlier starts made) it starts the repair
 // runtime instead of the real one. A start that fails with an UpgradeError goes to the repair
-// runtime in the same process (the database is closed, nothing else ran); any other failure is
+// runtime in the same process (the database is closed, nothing else ran), as does an unavailable
+// device identity key; any other failure is
 // recorded and rethrown, so the process exits and main starts it again with backoff – the start
 // after MAX_ATTEMPTS failures shows the repair screen in a fresh process. A runtime that answered
 // ready is marked up, and stable STABLE_MS later (one unref'd timer, no polling).
@@ -44,7 +45,7 @@ export async function guardedBoot<R, P>(deps: GuardedBootDeps<R, P>): Promise<Bo
     runtime = await deps.start();
   } catch (error) {
     const problem = deps.journal.failed(error, deps.version);
-    if (problem && isUpgradeError(error)) return { kind: 'repair', repair: deps.repair(problem), problem };
+    if (problem && (isUpgradeError(error) || problem.code === 'device_key_unavailable')) return { kind: 'repair', repair: deps.repair(problem), problem };
     throw error;
   }
   deps.journal.up();

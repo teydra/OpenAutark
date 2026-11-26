@@ -106,6 +106,7 @@ export class RepairService {
     return this.once(async () => {
       this.assertActive();
       if (this.deps.problem?.code === 'keyring_unavailable') throw new WorkforceError('conflict', 'Set up the system keyring before restoring data.');
+      if (this.deps.problem?.code === 'device_key_unavailable') throw new WorkforceError('conflict', 'Restoring a copy does not recover the device identity key.');
       const source = typeof id === 'string' ? upgradeBackupFile(this.deps.dataDir, id) : undefined;
       if (!source) throw new WorkforceError('not_found', 'This copy is no longer there.', { details: { id } });
       const copy = listUpgradeBackups(this.deps.dataDir).find((info) => info.id === id);

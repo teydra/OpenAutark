@@ -11,6 +11,7 @@ export type StartProblemCode =
   | 'schema_newer' // the data was written by a newer app version
   | 'backup_failed' // the safety copy before the update could not be made (nothing was migrated)
   | 'data_unreadable' // the database file is damaged or not a database
+  | 'device_key_unavailable' // the PC's essential identity key could not be read or created safely
   | 'keyring_unavailable' // Linux has no usable OS keyring
   | 'crash_loop'; // several starts in a row ended before the runtime was stable
 
