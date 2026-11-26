@@ -69,12 +69,13 @@ function fileFacts(p, rel) {
   if (!p.file) return '';
   const v = rel[p.id] || {};
   return `<dl class="plat-facts" data-reveal style="--d:3">
-    <div><dt>Version</dt><dd>${esc(v.version || 'latest')}</dd></div>
+    <div><dt>Version</dt><dd>${esc(v.version || 'latest')}${p.versionLabel ? ` (${esc(p.versionLabel)})` : ''}</dd></div>
     <div><dt>Released</dt><dd>${esc(v.date || '–')}</dd></div>
     <div><dt>Size</dt><dd>${v.sizeMb ? `about ${v.sizeMb} MB` : '–'}</dd></div>
     <div><dt>File</dt><dd><code>${esc(p.file)}</code></dd></div>
     ${rel.sums?.[p.file] ? `<div><dt>SHA-256</dt><dd><code class="plat-hash">${esc(rel.sums[p.file])}</code></dd></div>` : ''}
   </dl>
+  ${p.versionNote ? `<p class="small" style="margin:12px 0 0"><strong>${esc(p.versionNote)}</strong></p>` : ''}
   <p class="small muted" style="margin:14px 0 0">The download button opens the release page on GitHub: take <code>${esc(p.file)}</code> from its Assets list${rel.sums?.[p.file] ? ' and compare it with the SHA-256 above' : ''}.</p>`;
 }
 

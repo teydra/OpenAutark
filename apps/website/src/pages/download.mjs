@@ -71,7 +71,7 @@ ${pageHero({
       <h2 id="verify">Check the file</h2>
 ${rel.sums && Object.keys(rel.sums).length ? `      <table>
         <thead><tr><th>File</th><th>Version</th><th>SHA-256</th></tr></thead>
-        <tbody>${platforms.filter((p) => p.file && rel.sums[p.file]).map((p) => `<tr><td>${p.os}<br><span class="small muted"><code>${esc(p.file)}</code></span></td><td>${esc(rel[p.id]?.version || 'latest')}</td><td><code class="plat-hash">${esc(rel.sums[p.file])}</code></td></tr>`).join('')}</tbody>
+        <tbody>${platforms.filter((p) => p.file && rel.sums[p.file]).map((p) => `<tr><td>${p.os}<br><span class="small muted"><code>${esc(p.file)}</code></span></td><td>${esc(rel[p.id]?.version || 'latest')}${p.versionLabel ? ` (${esc(p.versionLabel)})` : ''}</td><td><code class="plat-hash">${esc(rel.sums[p.file])}</code></td></tr>`).join('')}</tbody>
       </table>
 ` : ''}      <p>Every release publishes <a href="${release.asset('SHA256SUMS.txt')}" rel="nofollow">SHA256SUMS.txt</a> with the SHA-256 hash of each file. In PowerShell, in your Downloads folder:</p>
       <p><code>Get-FileHash .\\${files.windows} -Algorithm SHA256</code> <button class="btn btn--sm btn--ghost" type="button" data-copy="Get-FileHash .\\${files.windows} -Algorithm SHA256" style="margin-left:8px;vertical-align:middle">Copy</button></p>

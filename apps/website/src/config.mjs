@@ -87,7 +87,9 @@ export const release = {
 // `file` is the release asset behind the button; the iPhone has none (the web app at /app/, added to the Home Screen).
 export const platforms = [
   { id: 'windows', kind: 'pc', os: 'Windows', icon: 'windows', detail: 'Windows 10/11 · x64 installer', file: NAMES.files.windows },
-  { id: 'mac', kind: 'pc', os: 'macOS', short: 'Mac', icon: 'apple', detail: 'Universal · Apple silicon + Intel · DMG', file: NAMES.files.macDmg, alt: { label: 'ZIP', file: NAMES.files.macZip } },
+  { id: 'mac', kind: 'pc', os: 'macOS', short: 'Mac', icon: 'apple', detail: 'Universal · Apple silicon + Intel · DMG', file: NAMES.files.macDmg, alt: { label: 'ZIP', file: NAMES.files.macZip },
+    // Hangs on the Mac entry, not on a number: the version itself comes from latest-mac.yml of the release, so this follows 0.3.21 on its own (Felix/Juri 26.11.2026).
+    versionLabel: 'macOS preview', versionNote: 'Not notarized: on the first start, open System Settings › Privacy & Security › Open Anyway.' },
   { id: 'linux', kind: 'pc', os: 'Linux', icon: 'linux', detail: 'x64 · AppImage', file: NAMES.files.linux },
   { id: 'android', kind: 'phone', os: 'Android', icon: 'android', detail: 'Android 8 or newer · APK', file: NAMES.files.android },
   { id: 'iphone', kind: 'phone', os: 'iPhone', icon: 'phone', detail: 'Web app · Home Screen · iOS 17 or newer', file: null },

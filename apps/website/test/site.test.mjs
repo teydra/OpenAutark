@@ -251,3 +251,19 @@ test('no text names "My day" or the old Work section, and Secure is described on
     assert.ok(!/\(Work\)|tasks into Work|01 — Work|Work: one inbox/.test(t), `${f}: the Work section is gone from the app`);
   }
 });
+
+test('Mac page: the version reads "<version> (macOS preview)" with the not-notarized line below it; the label follows the version from the release, other platforms have none (Felix and Juri 26.11.2026)', async () => {
+  for (const version of [rel.mac.version, '0.3.21']) {
+    const macFile = platforms.find((p) => p.id === 'mac').file;
+    const r = { ...rel, mac: { ...rel.mac, version }, sums: { ...rel.sums, [macFile]: 'a'.repeat(64) } }; // the overview table lists only files with a published SHA-256
+    const pages = Object.fromEntries(platformPages(r).map((p) => [p.slug, p.html]));
+    assert.ok(pages['download/mac'].includes(`<dd>${version} (macOS preview)</dd>`), `Mac version row for ${version}`);
+    assert.match(pages['download/mac'], /<\/dl>\s*<p[^>]*><strong>Not notarized: on the first start, open System Settings › Privacy &amp; Security › Open Anyway\.<\/strong><\/p>/);
+    const dl = await download(r);
+    assert.ok(dl.includes(`<td>${version} (macOS preview)</td>`), 'download overview table');
+  }
+  for (const id of ['windows', 'linux', 'android']) {
+    const html = platformPages(rel).find((p) => p.slug === `download/${id}`).html;
+    assert.ok(!html.includes('macOS preview') && !html.includes('Not notarized'), id);
+  }
+});
