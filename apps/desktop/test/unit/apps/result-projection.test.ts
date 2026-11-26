@@ -6,6 +6,7 @@ import { Apps } from '../../../src/runtime/apps/service.ts';
 import { appsKv } from '../../../src/runtime/apps/index.ts';
 import { connectMcp } from '../../../src/runtime/apps/client/index.ts';
 import { parseResultProjections } from '../../../src/runtime/apps/result-projection.ts';
+import { appToolNames } from '../../../src/runtime/apps/tools.ts';
 import { Journal } from '../../../src/runtime/runs/journal.ts';
 import { Registry } from '../../../src/runtime/tools/registry.ts';
 import { ctxFor, setup } from '../tools/helpers.ts';
@@ -40,11 +41,13 @@ async function fixture(t: TestContext) {
   const kv = appsKv(h);
   let next: () => unknown | Promise<unknown> = () => ({ result: response() });
   let providerCalls = 0;
+  let listFails: (() => Response) | undefined;
   const fetch: typeof globalThis.fetch = async (_url, init) => {
     const msg = JSON.parse(String(init?.body)) as { id?: string; method: string };
     if (msg.id === undefined) return new Response(null, { status: 202 });
+    if (msg.method === 'tools/list' && listFails) return listFails();
     const answer = msg.method === 'initialize' ? { result: { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'Synthetic', version: '1' } } }
-      : msg.method === 'tools/list' ? { result: { tools: [tool, { ...tool, name: 'other' }] } }
+      : msg.method === 'tools/list' ? { result: { tools: [tool, { ...tool, name: 'other' }, { ...tool, name: 'Search' }] } }
       : (++providerCalls, await next());
     return Response.json({ jsonrpc: '2.0', id: msg.id, ...(answer as object) });
   };
@@ -59,6 +62,7 @@ async function fixture(t: TestContext) {
   apps.start();
   await apps.idle();
   const call = (id: string, name = 'search') => registry.call('app.example.' + name, {}, ctx, id);
+  const callAs = (full: string) => registry.call(full, {}, ctx, 'exact');
   const noLeaks = (outputs: unknown[]) => {
     const rows = journal.items(ctx.runId);
     assert.ok(rows.some((item) => item.kind === 'tool_result'));
@@ -66,7 +70,7 @@ async function fixture(t: TestContext) {
     assert.deepEqual(blobs, []);
     assert.deepEqual(readdirSync(f.data.dir), ['connectors']);
   };
-  return { h, apps, kv, call, noLeaks, write, calls: () => providerCalls,
+  return { h, apps, kv, log, call, callAs, noLeaks, failList: (make: () => Response) => { listFails = make; }, write, calls: () => providerCalls,
     answer: (answer: typeof next) => { next = answer; }, enable: () => h.settings.update({ apps: { resultProjection: true } }) };
 }
 
@@ -101,6 +105,12 @@ test('transport, protocol, provider, projection and storage errors do not echo o
     () => ({ result: { content: [{ type: 'text', text: RAW }], structuredContent: { matches: [{ company: COMPANY }, { company: { nested: PERSON } }] } } }),
     () => ({ result: { ...response(), structuredContent: { matches: [{ person: PERSON }] } } }),
     () => ({ result: response(10_001) }),
+    // no rowsField, no structuredContent (text only), a non-array rowsField, a non-object body: nothing falls back to content
+    () => ({ result: { content: [{ type: 'text', text: RAW }], structuredContent: { ignored: RAW, other: [{ company: COMPANY }] } } }),
+    () => ({ result: { content: [{ type: 'text', text: JSON.stringify({ matches: [{ company: COMPANY }] }) + RAW }] } }),
+    () => ({ result: { content: [], structuredContent: { matches: { company: COMPANY } } } }),
+    () => ({ result: { content: [{ type: 'text', text: RAW }], structuredContent: [{ company: COMPANY }] } }),
+    () => ({ result: { content: [], structuredContent: { matches: [{ company: COMPANY }, PERSON] } } }),
   ].entries()) {
     f.answer(answer);
     const result = await f.call('err-' + index);
@@ -175,4 +185,31 @@ test('a protected call cannot persist under a replaced connector policy', async 
   assert.deepEqual(output.structured, { status: 'error' });
   assert.deepEqual(f.kv.keys('projection:'), []);
   f.noLeaks([output]);
+});
+
+test('a policy applies to the exact MCP name, not to a tool that only shares its registered name', async (t) => {
+  const f = await fixture(t);
+  f.enable();
+  const names = appToolNames('example', ['search', 'Search']);
+  assert.notEqual(names.get('Search'), names.get('search'));
+  const calls = f.calls();
+  const sibling = await f.callAs(names.get('Search')!);
+  assert.deepEqual(sibling.structured, { status: 'blocked' });
+  assert.equal(f.calls(), calls, 'a tool without its own policy never reaches the provider');
+  f.noLeaks([sibling]);
+});
+
+test('a protected connector that fails to connect shows no provider text in its status or the log', async (t) => {
+  const f = await fixture(t);
+  f.enable();
+  for (const make of [
+    () => new Response(ERROR + RAW, { status: 500, headers: { 'content-type': 'text/plain' } }),
+    () => Response.json({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: ERROR, data: response() } }),
+  ]) {
+    f.failList(make);
+    const app = await f.apps.reconnect('example');
+    assert.equal(app.status, 'error');
+    assert.doesNotMatch(JSON.stringify([app, f.apps.list()]), leak);
+  }
+  assert.doesNotMatch(JSON.stringify(f.log), leak);
 });
