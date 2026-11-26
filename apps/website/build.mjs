@@ -95,7 +95,12 @@ async function releaseFacts() {
   for (let attempt = 0; attempt < 3 && !sums; attempt++) sums = await fetchText(release.asset('SHA256SUMS.txt'), 25000); // a missing list would drop the hashes from the pages (18.11.2026: a slow answer did)
   rel.sums = {};
   for (const line of (sums || '').split(/\r?\n/)) { const m = /^([0-9a-f]{64})\s+\*?(\S+)\s*$/i.exec(line); if (m) rel.sums[m[2]] = m[1].toLowerCase(); }
-  if (!Object.keys(rel.sums).length) console.warn('WARNING: SHA256SUMS.txt of the newest release could not be read: the pages carry no SHA-256 values. Run again before deploying.');
+  // Twice (18.11. and 26.11.2026) a deploy went out whose pages had lost every SHA-256 because this list did not arrive and the
+  // build only warned. A build that is going to be deployed stops instead; ALLOW_NO_SHA256=1 is for tests and for a deliberate build without it.
+  if (!Object.keys(rel.sums).length) {
+    const msg = 'SHA256SUMS.txt of the newest release could not be read: the pages would carry no SHA-256 values. Run again before deploying.';
+    if (process.env.ALLOW_NO_SHA256) console.warn('WARNING: ' + msg); else { console.error('ERROR: ' + msg + ' (ALLOW_NO_SHA256=1 builds without them)'); process.exit(1); }
+  }
   return rel;
 }
 

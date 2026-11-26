@@ -154,7 +154,7 @@ test('the PC version comes from GitHub\'s releases/latest, not a newer phone-onl
     [release.asset('latest-android-lite.json')]: { versionName: '0.3.7' },
   };
   const mock = `const answers = ${JSON.stringify(answers)}; globalThis.fetch = async (url) => (String(url) in answers ? new Response(JSON.stringify(answers[String(url)])) : new Response('', { status: 404 }));`;
-  const env = { ...process.env }; delete env.OFFLINE;
+  const env = { ...process.env, ALLOW_NO_SHA256: '1' }; delete env.OFFLINE; // this mock serves no SHA256SUMS.txt
   execFileSync(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(mock)}`, join(root, 'build.mjs')], { cwd: root, env, stdio: 'pipe' });
   const siteDir = join(root, 'dist', ...BASE.split('/').filter(Boolean));
   const facts = JSON.parse(readFileSync(join(siteDir, 'facts.json'), 'utf8'));
@@ -266,4 +266,13 @@ test('Mac page: the version reads "<version> (macOS preview)" with the not-notar
     const html = platformPages(rel).find((p) => p.slug === `download/${id}`).html;
     assert.ok(!html.includes('macOS preview') && !html.includes('Not notarized'), id);
   }
+});
+
+test('a build with network that cannot read SHA256SUMS.txt stops instead of shipping pages without SHA-256 (18.11. and 26.11.2026)', () => {
+  const mock = "globalThis.fetch = async () => new Response('', { status: 404 });";
+  const env = { ...process.env }; delete env.OFFLINE; delete env.ALLOW_NO_SHA256;
+  let err = null;
+  try { execFileSync(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(mock)}`, join(root, 'build.mjs')], { cwd: root, env, stdio: 'pipe' }); } catch (e) { err = e; }
+  assert.ok(err, 'the build must fail');
+  assert.match(String(err.stderr), /SHA256SUMS\.txt[^]*could not be read/);
 });
