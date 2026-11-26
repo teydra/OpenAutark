@@ -7,11 +7,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { brokerLease, sealLine, type BrokerAccess } from '../../../src/runtime/computer/broker.ts';
-import { brokerCall, LOCK_WINDOW_MS, RestartSignIn, secretIdOf, shouldLock, signInTool, SIGNIN_NS, type SignInStatus } from '../../../src/runtime/computer/signin.ts';
+import { brokerCall, claimSignInLock, LOCK_WINDOW_MS, RestartSignIn, secretIdOf, shouldLock, signInTool, SIGNIN_NS, type SignInStatus } from '../../../src/runtime/computer/signin.ts';
 import { MemoryLogger } from '../fakes.ts';
 import { WorkforceError } from '../../../src/shared/errors.ts';
 
@@ -38,7 +39,7 @@ async function fakeSignInBroker(vault: Partial<FakeSignIn['vault']> = {}): Promi
   const ops: string[] = [];
   const pipe = pipeName();
   const status = (): SignInStatus => ({
-    account: 'PC\\user', stored: state.password !== undefined, suspended: false, reason: '', failures: 0, lastResult: '', lastAttemptAt: 0,
+    account: 'PC\\user', stored: state.password !== undefined, suspended: false, reason: '', failures: 0, lastResult: state.lastSignInAt ? 'signed_in' : '', lastAttemptAt: 0,
     lastSignInAt: state.lastSignInAt, lockAfter: state.lockAfter, pendingLock: state.pendingLock,
   });
   const server = net.createServer((socket) => {
@@ -166,7 +167,7 @@ test('the broker\'s copy follows the catalog: a changed value is handed over aga
   const fake = await fakeSignInBroker();
   const secrets = fakeSecrets({ sec_win: WINDOWS_PASSWORD, sec_other: 'x' });
   const kv = new MemoryKv();
-  const signIn = new RestartSignIn({ broker: () => accessTo(fake), secrets, kv, log: new MemoryLogger(), now: () => 1000 });
+  const signIn = new RestartSignIn({ waitForDesktop: async () => {}, broker: () => accessTo(fake), secrets, kv, log: new MemoryLogger(), now: () => 1000 });
   try {
     await signIn.enable({ secretId: 'sec_win', agentId: 'ag_1' });
     assert.equal(fake.vault.lockAfter, true, 'locking right after the sign-in is the default');
@@ -187,27 +188,47 @@ test('the broker\'s copy follows the catalog: a changed value is handed over aga
   } finally { signIn.stop(); await fake.close(); }
 });
 
-test('after an automatic sign-in the app locks once when wished, then tells the broker it is handled', { skip: process.platform !== 'win32' }, async () => {
-  const now = 10_000_000;
+test('two apps starting after an automatic sign-in issue one lock, even when their broker requests overlap', { skip: process.platform !== 'win32' }, async () => {
+  const now = Date.now();
   const fake = await fakeSignInBroker({ password: WINDOWS_PASSWORD, lockAfter: true, pendingLock: true, lastSignInAt: now - 60_000 });
   let locks = 0;
-  const signIn = new RestartSignIn({ broker: () => accessTo(fake), secrets: fakeSecrets({}), kv: new MemoryKv(), log: new MemoryLogger(), now: () => now, lock: async () => { locks++; } });
+  const start = () => new RestartSignIn({
+    broker: () => accessTo(fake), secrets: fakeSecrets({}), kv: new MemoryKv(), log: new MemoryLogger(), now: () => now,
+    waitForDesktop: async () => {}, bootAt: () => now - 120_000, lock: async () => { locks++; },
+  });
+  const first = start(), second = start(), restarted = start();
   try {
-    await signIn.start();
+    await Promise.all([first.start(), second.start()]);
     assert.equal(locks, 1);
-    assert.deepEqual(fake.ops, ['signin_status', 'signin_handled']);
-    await signIn.start(); // an app restart in the same session
+    assert.equal(fake.ops.filter(op => op === 'signin_handled').length, 1);
+    await restarted.start();
     assert.equal(locks, 1);
-  } finally { signIn.stop(); await fake.close(); }
+  } finally { first.stop(); second.stop(); restarted.stop(); await fake.close(); }
 });
 
-test('shouldLock: only a recent automatic sign-in with the wish', () => {
-  const now = 50_000_000;
-  assert.equal(shouldLock({ lockAfter: true, pendingLock: true, lastSignInAt: now - 1000 }, now), true);
-  assert.equal(shouldLock({ lockAfter: false, pendingLock: true, lastSignInAt: now - 1000 }, now), false);
-  assert.equal(shouldLock({ lockAfter: true, pendingLock: false, lastSignInAt: now - 1000 }, now), false);
-  assert.equal(shouldLock({ lockAfter: true, pendingLock: true, lastSignInAt: now - LOCK_WINDOW_MS - 1 }, now), false);
-  assert.equal(shouldLock({ lockAfter: true, pendingLock: true, lastSignInAt: 0 }, now), false);
+test('the same sign-in event can be claimed by only one company at a time', async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'wf-signin-claim-'));
+  try {
+    const claims = (await Promise.all([claimSignInLock(123, directory), claimSignInLock(123, directory)])).filter(Boolean);
+    assert.equal(claims.length, 1);
+    await claims[0]?.();
+    assert.ok(await claimSignInLock(123, directory));
+    assert.ok(await claimSignInLock(456, directory), 'a stale claim cannot affect a later logon');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('shouldLock: only the current boot’s recent successful Autark sign-in with the wish and feature still enabled', () => {
+  const now = 50_000_000, bootAt = now - LOCK_WINDOW_MS - 100;
+  const status: SignInStatus = {
+    account: 'PC\\user', stored: true, suspended: false, reason: '', failures: 0, lastResult: 'signed_in',
+    lastAttemptAt: now - 1000, lastSignInAt: now - 1000, lockAfter: true, pendingLock: true,
+  };
+  assert.equal(shouldLock(status, now, bootAt), true);
+  for (const update of [
+    { lockAfter: false }, { pendingLock: false }, { stored: false }, { suspended: true }, { lastResult: 'user_present' },
+    { lastSignInAt: now - LOCK_WINDOW_MS - 1 }, { lastSignInAt: 0 }, { lastSignInAt: now + 1 },
+  ]) assert.equal(shouldLock({ ...status, ...update }, now, bootAt), false);
+  assert.equal(shouldLock(status, now, now - 500), false, 'a previous boot’s marker cannot lock a later manual sign-in');
 });
 
 test('without the broker it says so instead of pretending', async () => {

@@ -20,6 +20,8 @@ import {
   type CompanyOpenDeps,
 } from '../../../src/main/companies.ts';
 import { HostServices, type HostServicesDeps } from '../../../src/main/host-services.ts';
+import { launchWindowsCompanies } from '../../../src/main/launcher-companies.ts';
+import { writeRunState } from '../../../src/main/launcher.ts';
 import { launcherArgs } from '../../../src/main/launcher-windows.ts';
 import { WorkforceError } from '../../../src/shared/errors.ts';
 import { nextCompanyId, REMOVED_FILE } from '../../../src/shared/model/companies.ts';
@@ -243,4 +245,51 @@ test('the emergency stop reaches every other running company through its runtime
     await new Promise((resolve) => server.close(resolve));
   }
   assert.equal(await callCompany(path.join(dir, 'company-3'), 'work.stop'), false, 'nothing listens: false, no throw');
+});
+
+test('a Windows launcher recovers only opted-in profiles not yet started this boot, even with no own task', () => {
+  const first = path.join(tmp, 'logon', 'Autark'), dir = companiesDir(first);
+  function profile(folder: string, settings: string, state?: 'old-system-quit' | 'this-boot-quit') {
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(path.join(folder, 'settings.json'), settings);
+    if (state) writeRunState(folder, { state: 'quit', by: state === 'old-system-quit' ? 'system' : 'person', at: state === 'old-system-quit' ? 500 : 1500 });
+    return folder;
+  }
+  const on = '{/* comment */"preferences": {"openAtLogin": true,},}', off = '{"preferences": {"openAtLogin": false}}';
+  profile(first, on, 'old-system-quit');
+  profile(path.join(dir, 'company-2'), on, 'old-system-quit');
+  profile(path.join(dir, 'company-3'), off, 'old-system-quit');
+  profile(path.join(dir, 'company-4'), on, 'old-system-quit');
+  profile(path.join(dir, 'company-5'), on, 'this-boot-quit');
+  profile(path.join(dir, 'company-6'), '{"preferences": {"openAtLogin": "true"}}');
+  profile(path.join(dir, 'company-7'), '{ malformed');
+  const removed = profile(path.join(dir, 'company-8'), on);
+  writeFileSync(path.join(removed, REMOVED_FILE), '');
+  const calls: string[][] = [];
+  assert.equal(launchWindowsCompanies({
+    companies: { first, dir }, current: 'company-2', dataDir: path.join(dir, 'company-2'), bootAt: 1000,
+    start: args => calls.push(args),
+  }), true);
+  assert.deepEqual(calls, [
+    ['--background', '--launcher', '--launcher-peer'],
+    ['--background', '--launcher', '--launcher-peer', '--company=company-4'],
+  ]);
+});
+
+test('a company is the only start when First and all siblings opted out; isolated test profiles never start', () => {
+  const first = path.join(tmp, 'single-logon', 'Autark'), dir = companiesDir(first), dataDir = path.join(dir, 'company-2');
+  const later = path.join(dir, 'company-3');
+  for (const folder of [first, dataDir, later]) mkdirSync(folder, { recursive: true });
+  writeFileSync(path.join(first, 'settings.json'), '{}'); // default First company: false
+  writeFileSync(path.join(dataDir, 'settings.json'), '{"preferences": {"openAtLogin": true}}');
+  writeFileSync(path.join(later, 'settings.json'), '{"preferences": {"openAtLogin": false}}');
+  const calls: string[][] = [];
+  const invokes = {
+    current: 'company-2', dataDir, bootAt: 1000,
+    start: (args: string[]) => calls.push(args),
+  };
+  assert.equal(launchWindowsCompanies({ ...invokes, companies: { first, dir } }), true);
+  assert.equal(launchWindowsCompanies({ ...invokes, companies: null }), false, 'WORKFORCE_TEST_DATA cannot start despite its opted-in settings');
+  assert.equal(launchWindowsCompanies({ ...invokes, current: null, dataDir: first, companies: { first, dir }, peer: true }), false, 'First also cannot be started by an old task');
+  assert.deepEqual(calls, [], 'no extra processes started');
 });

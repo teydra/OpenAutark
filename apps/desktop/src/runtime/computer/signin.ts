@@ -16,6 +16,10 @@
 // after an automatic sign-in and the tool. Never: logs, returns or keeps the password; sets Windows autologon.
 
 import { spawn } from 'node:child_process';
+import { open, rm } from 'node:fs/promises';
+import { tmpdir, uptime } from 'node:os';
+import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { Logger } from '../contracts.ts';
 import type { SecretService } from '../contracts/safety.ts';
 import type { ToolDef } from '../tools/types.ts';
@@ -51,7 +55,7 @@ export interface SignInConfig {
 
 export const SIGNIN_NS = 'computer.signin';
 /** A sign-in older than this is not locked any more when the app starts late (the person may be at the PC by then). */
-export const LOCK_WINDOW_MS = 30 * 60_000;
+export const LOCK_WINDOW_MS = 5 * 60_000;
 const SIGNIN_OPS = new Set(['signin_status', 'signin_store', 'signin_clear', 'signin_options', 'signin_handled']);
 const ERROR_CODES: ReadonlySet<string> = new Set(['bad_request', 'not_found', 'conflict', 'forbidden', 'unavailable', 'timeout', 'internal']);
 
@@ -107,8 +111,23 @@ export function brokerCall<T = unknown>(access: BrokerAccess, log: Logger, op: s
 }
 
 /** True when this app should lock the screen now: the broker signed in recently and the person wished a lock after it. */
-export function shouldLock(status: Pick<SignInStatus, 'pendingLock' | 'lockAfter' | 'lastSignInAt'>, now: number): boolean {
-  return status.lockAfter && status.pendingLock && status.lastSignInAt > 0 && now - status.lastSignInAt <= LOCK_WINDOW_MS;
+export function shouldLock(status: SignInStatus, now: number, bootAt: number): boolean {
+  const age = now - status.lastSignInAt;
+  return status.stored && !status.suspended && status.lastResult === 'signed_in' &&
+    status.lockAfter && status.pendingLock && status.lastSignInAt > 0 && status.lastSignInAt >= bootAt &&
+    age >= 0 && age <= LOCK_WINDOW_MS;
+}
+
+/** An atomic claim shared by the user's companies (each has a separate runtime and data folder). */
+export async function claimSignInLock(at: number, directory = tmpdir()): Promise<(() => Promise<void>) | undefined> {
+  const file = path.join(directory, `autark-signin-lock-${at}`);
+  try {
+    await (await open(file, 'wx')).close();
+    return () => rm(file, { force: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    return undefined;
+  }
 }
 
 /** The secret id of a handle or a bare id. */
@@ -132,6 +151,8 @@ export interface RestartSignInDeps {
   now(): number;
   /** Locks this Windows session (LockWorkStation). */
   lock?(): Promise<void>;
+  waitForDesktop?(): Promise<void>;
+  bootAt?(): number;
 }
 
 /** The app's half of the sign-in after a restart (see the header). */
@@ -139,6 +160,7 @@ export class RestartSignIn {
   private readonly deps: RestartSignInDeps;
   private stopObserving?: () => void;
   private syncing: Promise<unknown> = Promise.resolve();
+  private started = false;
 
   constructor(deps: RestartSignInDeps) { this.deps = deps; }
 
@@ -184,28 +206,47 @@ export class RestartSignIn {
 
   /** At the app's start: follow the catalog entry, and lock once after an automatic sign-in when wished. */
   async start(): Promise<void> {
+    if (this.started) return;
+    this.started = true;
     this.stopObserving = this.deps.secrets.observe?.((id) => {
       const config = this.config();
       if (!config || (id !== config.secretId && id !== config.groupId)) return;
       this.syncing = this.syncing.then(() => this.follow(config)).catch((error) => this.deps.log.warn('sign-in after restart: catalog change not handed to the broker', { error: String((error as Error)?.message ?? error) }));
     });
+    // Let the desktop start and the signer publish its successful result before checking the broker.
+    const wait = this.deps.waitForDesktop ?? (() => delay(5000, undefined, { ref: false }));
+    await wait();
+    if (!this.started) return;
     const access = this.deps.broker();
     if (!access || !access.reachable()) return;
     try {
       const status = await brokerCall<SignInStatus>(access, this.deps.log, 'signin_status');
       if (status.suspended) this.deps.log.warn('sign-in after restart is suspended', { reason: status.reason });
-      if (!status.pendingLock) return;
-      if (shouldLock(status, this.deps.now())) {
+      const now = this.deps.now();
+      const bootAt = this.deps.bootAt?.() ?? now - uptime() * 1000;
+      if (!shouldLock(status, now, bootAt)) return;
+      const release = await claimSignInLock(status.lastSignInAt);
+      if (!release) return;
+      let requested = false, acknowledged = false;
+      try {
+        // Other companies may have read the old status before the claim was released; check again inside it.
+        const current = await brokerCall<SignInStatus>(access, this.deps.log, 'signin_status');
+        if (!this.started || current.lastSignInAt !== status.lastSignInAt || !shouldLock(current, this.deps.now(), bootAt)) return;
         await (this.deps.lock ?? lockWorkstation)();
-        this.deps.log.info('screen locked after the automatic sign-in');
+        requested = true;
+        this.deps.log.info('screen lock requested after the automatic sign-in');
+        await brokerCall(access, this.deps.log, 'signin_handled');
+        acknowledged = true;
+      } finally {
+        // If the lock request went out but the broker did not acknowledge it, retain the claim for this event only.
+        if (!requested || acknowledged) await release();
       }
-      await brokerCall(access, this.deps.log, 'signin_handled');
     } catch (error) {
-      this.deps.log.warn('sign-in after restart: status not read', { error: String((error as Error)?.message ?? error) });
+      this.deps.log.warn('sign-in after restart: lock not confirmed', { error: String((error as Error)?.message ?? error) });
     }
   }
 
-  stop(): void { this.stopObserving?.(); this.stopObserving = undefined; }
+  stop(): void { this.started = false; this.stopObserving?.(); this.stopObserving = undefined; }
 
   /** The catalog entry changed: its new value goes to the broker; gone, the broker forgets. */
   private async follow(config: SignInConfig): Promise<void> {
@@ -220,7 +261,7 @@ export function lockWorkstation(): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn('rundll32.exe', ['user32.dll,LockWorkStation'], { windowsHide: true, stdio: 'ignore' });
     child.on('error', reject);
-    child.on('exit', () => resolve());
+    child.on('exit', (code, signal) => code === 0 ? resolve() : reject(new Error(`LockWorkStation helper exited with ${signal ?? code}`)));
   });
 }
 

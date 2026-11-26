@@ -20,6 +20,7 @@ import { companiesDir, companyArgs, companyDir, companyFlag, spawnApp, startingC
 import type { Desktop } from './desktop.ts';
 import { applyKeyringName } from './keyring-name.ts';
 import { BACKGROUND_FLAG, NOTICES, RESTARTED_FLAG, beginLaunch, launchSource, readRunState, type LaunchNotice } from './launcher.ts';
+import { LAUNCHER_PEER_FLAG, launchWindowsCompanies } from './launcher-companies.ts';
 import { PRIVILEGED_SCHEMES } from './protocols/handlers.ts';
 import { WAKE_FILE, sleeperAtLaunch, sleeperScript, startSleeper } from './sleeper.ts';
 
@@ -38,6 +39,9 @@ if (process.platform !== 'darwin') Menu.setApplicationMenu(null); // macOS gets 
 protocol.registerSchemesAsPrivileged(PRIVILEGED_SCHEMES);
 
 const flags = launchFlags(process.argv);
+const now = Date.now();
+const bootAt = now - os.uptime() * 1000;
+const windowsTask = flags.launcher && process.platform === 'win32' && app.isPackaged;
 let notice: Notification | null = null; // kept until the next one: a collected Notification loses its click handler
 
 /** One quiet system notice of the launcher (no sound; a click opens the window when there is one). */
@@ -60,10 +64,15 @@ function handOff(kind: LaunchNotice | undefined): void {
 }
 
 // B-072: the update install ended every company; F25: its relaunch is the company that pressed Update – any company,
-// told by its own run-state (read before beginLaunch writes the state)
-const updated = companies !== null && readRunState(app.getPath('userData'))?.by === 'update';
-const launch = picked !== undefined && app.requestSingleInstanceLock()
-  ? beginLaunch({ dataDir: app.getPath('userData'), source: launchSource(process.platform, flags.launcher), now: Date.now(), bootAt: Date.now() - os.uptime() * 1000, pid: process.pid })
+// told by its own run-state (read before beginLaunch writes the state). On Windows the install helper
+// always passes --updated; a later launcher handoff must not also wake companies that did not opt into login.
+const updated = companies !== null && (process.platform !== 'win32' || process.argv.includes('--updated')) &&
+  readRunState(app.getPath('userData'))?.by === 'update';
+const allowLauncher = !flags.launcher || (windowsTask
+  ? launchWindowsCompanies({ companies, current: picked, dataDir: app.getPath('userData'), bootAt, peer: process.argv.includes(LAUNCHER_PEER_FLAG) })
+  : !testData);
+const launch = allowLauncher && picked !== undefined && app.requestSingleInstanceLock()
+  ? beginLaunch({ dataDir: app.getPath('userData'), source: launchSource(process.platform, flags.launcher), now, bootAt, pid: process.pid })
   : null;
 
 if (!launch) {
