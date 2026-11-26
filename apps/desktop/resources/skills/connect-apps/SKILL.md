@@ -108,11 +108,11 @@ I declare the allowlist locally in the connector entry, keyed by the exact MCP t
 }
 ```
 
-The server returns `structuredContent.matches` as an array of objects (an empty array is zero hits).
+The server returns `structuredContent.matches` (or, without structuredContent, one text block holding that JSON) as an array of objects (an empty array is zero hits).
 The runtime keeps only named, own scalar fields (strings, finite numbers, booleans, or null) and rejects
 rows without an approved field. The operator approves the **values** those columns contain; this
 is not automatic detection of personal data in an approved column. Text, images and resource blocks
-are never used as fallback. Oversized projections (over 10,000 rows, 16,384 characters per string, or
+are never read; a present but invalid `structuredContent` is not replaced by the text block. Oversized projections (over 10,000 rows, 16,384 characters per string, or
 2 MiB serialized) fail as a whole rather than returning partial results.
 
 When enabled, undeclared tools on a connector with this policy are blocked. Invalid policies fail

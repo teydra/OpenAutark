@@ -30,10 +30,19 @@ export function parseResultProjections(value: unknown): ResultProjections | null
   return policies;
 }
 
-/** Only own, explicitly named scalar fields enter a fresh object. Never inspect MCP content blocks. */
+/** structuredContent when present (never mixed with text, never a fallback when invalid), else the one JSON text block. No other block is read. */
+function bodyOf(result: McpCallResult): unknown {
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  const only = Array.isArray(result.content) && result.content.length === 1 ? result.content[0] : undefined;
+  if (!record(only) || only.type !== 'text' || typeof only.text !== 'string' || only.text.length > MAX_BYTES) return undefined;
+  try { return JSON.parse(only.text) as unknown; } catch { return undefined; }
+}
+
+/** Only own, explicitly named scalar fields enter a fresh object. */
 export function projectRows(result: McpCallResult, policy: ResultProjection, scrub: (s: string) => string): ProjectedRow[] | undefined {
-  if (result?.isError || !record(result?.structuredContent) || !Object.hasOwn(result.structuredContent, policy.rowsField)) return undefined;
-  const rows = result.structuredContent[policy.rowsField];
+  const body = result?.isError ? undefined : bodyOf(result);
+  if (!record(body) || !Object.hasOwn(body, policy.rowsField)) return undefined;
+  const rows = body[policy.rowsField];
   if (!Array.isArray(rows) || rows.length > MAX_ROWS) return undefined;
   const projected: ProjectedRow[] = [];
   let bytes = 2;

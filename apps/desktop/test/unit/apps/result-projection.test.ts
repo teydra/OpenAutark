@@ -213,3 +213,30 @@ test('a protected connector that fails to connect shows no provider text in its 
   }
   assert.doesNotMatch(JSON.stringify(f.log), leak);
 });
+
+test('a provider that answers with one JSON text block is projected like structuredContent; nothing else of it is kept', async (t) => {
+  const f = await fixture(t);
+  f.enable();
+  const body = { ignored: RAW, matches: [{ company: COMPANY, active: false, person: PERSON, details: { other: RAW } }] };
+  f.answer(() => ({ result: { content: [{ type: 'text', text: JSON.stringify(body) }] } }));
+  const ok = (await f.call('text-only')).structured as { status: string; count: number; reference: string };
+  assert.deepEqual({ status: ok.status, count: ok.count }, { status: 'ok', count: 1 });
+  assert.deepEqual(f.kv.get('projection:' + ok.reference), [{ company: COMPANY, active: false }]);
+  // a present but invalid structuredContent never falls back to the text, nor does a second block or a broken JSON
+  const bad = [
+    { content: [{ type: 'text', text: JSON.stringify(body) }], structuredContent: { matches: [{ person: PERSON }] } },
+    { content: [{ type: 'text', text: JSON.stringify(body) }, { type: 'text', text: RAW }] },
+    { content: [{ type: 'image', mimeType: 'image/png', data: Buffer.from(JSON.stringify(body)).toString('base64') }] },
+    { content: [{ type: 'text', text: JSON.stringify(body).slice(0, -2) }] },
+    { content: [{ type: 'text', text: JSON.stringify(body) }], isError: true },
+  ];
+  const results = [];
+  for (const [index, result] of bad.entries()) {
+    f.answer(() => ({ result }));
+    const out = await f.call('text-bad-' + index);
+    assert.deepEqual(out.structured, { status: 'error' }, 'case ' + index);
+    results.push(out);
+  }
+  assert.equal(f.kv.keys('projection:').length, 1);
+  f.noLeaks([ok, results]);
+});
