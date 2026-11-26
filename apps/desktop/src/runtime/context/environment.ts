@@ -28,7 +28,7 @@ import { ROOT_README } from '../root/layout.ts';
 import { MEMORY_ENTRY } from '../knowledge/memory-tree.ts';
 import { whereHint } from '../browser/place.ts'; // B-080: the person's own Chrome only beside computer.*
 import { cleanLabel, linkedPcs } from './setup-facts.ts';
-import { CALL_TOOL, FIND_TOOL } from '../tools/core-sets.ts';
+import { CALL_TOOL, FIND_TOOL, nativeWebSearchName } from '../tools/core-sets.ts';
 import { listCompanies } from '../root/companies.ts'; // B-075
 import { linkedPhones, type LinkedPhone } from '../phone/linked.ts';
 import '../contracts/apps.ts'; // B-052: RuntimeServices.apps (the connected-apps line)
@@ -72,9 +72,6 @@ export function osName(system: SystemFacts): string {
   return `${system.version.trim() || system.platform} ${system.release}`.trim();
 }
 
-/** E1 (01.11.2026): the engine's own web search an agent turn keeps (engines/codex/helper-thread.ts AGENT_WEB_SEARCH, engines/claude/lean.ts CORE_TOOLS). */
-const OWN_SEARCH: Readonly<Record<string, string>> = { codex: 'web_search', claude: 'WebSearch' };
-
 /** Whether the turn's engine reads, searches and browses with tools of its own (caps.ownTools: Claude Code, Codex, ACP agents). */
 export function ownFileTools(services: RuntimeServices, engine?: EngineId): boolean {
   if (!engine) return false;
@@ -82,14 +79,14 @@ export function ownFileTools(services: RuntimeServices, engine?: EngineId): bool
 }
 
 /**
- * How the agent searches the web: the engine's own search where it has one (Codex, Claude Code – web.search is then
- * only in the prompt's tool list), else web.search (`own`: an engine with tools of its own reaches it through tools.call).
+ * How the agent searches the web: native search on Codex and Claude Code, otherwise web.search
+ * (`own`: an engine with its own file and shell tools reaches web.search through tools.call).
  */
 function webLine(offered: ReadonlySet<string>, engine?: string, own = false): string {
   const fetch = offered.has('web.fetch');
-  const search = engine ? OWN_SEARCH[engine] : undefined;
+  const search = nativeWebSearchName(engine);
   if (search) return `Web: ${search} (my engine's own search) finds current pages${fetch ? ', web.fetch reads one' : ''}.`;
-  if (own && offered.has('web.search')) return `Web: my engine's own search, or web.search through tools.call, finds pages${fetch ? ', web.fetch reads one' : ''}.`;
+  if (own && offered.has('web.search')) return `Web: web.search through tools.call finds pages${fetch ? ', web.fetch reads one' : ''}.`;
   if (offered.has('web.search')) return `Web: web.search finds pages (title, link, snippet)${fetch ? ', web.fetch reads one' : ''}.`;
   if (fetch) return 'Web: web.fetch reads a page whose address I know.';
   return '';

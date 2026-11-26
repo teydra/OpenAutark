@@ -1,7 +1,7 @@
 // The STABLE system prompt, in reading order: (1) "# Who I am" (identity.md: facts of me and my place); (2) "# My SYSTEM.md"
 // (one line on its folder, then the file without its comments: my whole standing text – how I work, my role, what I have
 // here; org/standard.ts keeps the team's standard as a comment at its end); (3) "## My environment" (environment.ts);
-// (4) "## Skills" (skills.md and my main skills); (5) "## More tools": every tool my mode offers beyond the engine's
+// (4) "## Skills" (skills.md and my main skills); (5) "## More tools": a shortlist of tools my mode offers beyond the engine's
 // direct ones, one line each (tools-meta.ts moreToolsSection); (6) "## Rich answers" (shared/blocks/prompt.ts); (7) the
 // mode; (8) "## What <the person> and I agreed": the security mode and its texts (owner 19.11.2026,
 // security/agreements.ts – the texts are files, security/topics.ts); (9) last, "## From <the person>": the agent's
@@ -120,7 +120,7 @@ export function skillsSection(services: RuntimeServices, templates: PromptTempla
 }
 
 /**
- * "## More tools": what the mode offers beyond the direct tools – the turn's own offer (agents/session-key.ts), or `direct`,
+ * "## More tools": a shortlist beyond the direct tools – the turn's own offer (agents/session-key.ts), or `direct`,
  * the names a resumed session holds from its start.
  */
 export function moreToolsFor(services: RuntimeServices, input: { agent: Agent; mode: ModeInfo; route: RouteDecision; direct?: readonly string[] }): string {

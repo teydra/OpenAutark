@@ -120,6 +120,13 @@ const FAMILY_CORE: Readonly<Record<string, Reasons>> = {
   media: { 'media.search': 'finding stored media', 'media.look': 'watching a stored video', 'media.view': 'B-058 G10: every image line not attached to the turn names media.view' },
 };
 
+/** Native search enabled for agent turns (engines/codex/helper-thread.ts, engines/claude/lean.ts). */
+export function nativeWebSearchName(engine?: string): string | undefined {
+  if (engine === 'codex') return 'web_search';
+  if (engine === 'claude') return 'WebSearch';
+  return undefined;
+}
+
 export const NO_OWN_TOOLS_CORE: Reasons = {
   'files.read': 'an engine without its own file tools reads files with ours',
   'files.search': 'an engine without its own file tools searches files with ours',

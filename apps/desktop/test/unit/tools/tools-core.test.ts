@@ -102,7 +102,7 @@ test('offerFor: the engine decides the execution core (every engine reaches the 
 });
 
 
-test('tools reachable through tools.call count as offered; the prompt names each of those tools in one line', () => {
+test('tools reachable through tools.call count as offered; the prompt lists the usual tools in one line', () => {
   const { registry, modes, agentIn, services } = rig();
   Object.assign(services, { tools: registry, paths: { workspace: 'C:/ws' }, permissions: { settings: () => ({ quarantine: 'never' }) } });
   const tom = agentIn('general');
@@ -117,16 +117,41 @@ test('tools reachable through tools.call count as offered; the prompt names each
   const list = moreToolsSection(usable, direct);
   assert.ok(list.startsWith(`${MORE_TOOLS_HEADER}\n`), list.slice(0, 100));
   const listed = (name: string) => new RegExp(`(^|\n|· )${name.replace(/\./g, '\.')} – `).test(list);
-  for (const spec of usable) assert.equal(listed(spec.name), !direct.has(spec.name) && spec.name !== FIND_TOOL && spec.name !== CALL_TOOL, spec.name);
-  assert.ok(listed('files.read') && listed('web.search') && listed('decide'), 'reachable tools stand in the list');
+  assert.ok(listed('files.read') && listed('web.search') && listed('calendar.connect'), 'usual reachable tools stand in the list');
+  assert.ok(!listed(FIND_TOOL) && !listed(CALL_TOOL) && !listed('web.fetch'), 'meta and direct tools are not repeated');
+  assert.ok(!listed('decide'), 'rare tools stay reachable but do not stand in the list');
   for (const entry of list.split('\n').slice(1).flatMap((line) => line.split(' · '))) assert.ok(entry.split(' – ').slice(1).join(' – ').length <= 101, entry);
-  const learned = new Set(names(registry.offerFor(tom, general, CODEX, ['decide'])));
-  assert.ok(!moreToolsSection(usable, learned).includes('decide – '), 'a learned tool that became direct leaves the list');
+  const learned = new Set(names(registry.offerFor(tom, general, CODEX, ['calendar.connect'])));
+  assert.ok(!moreToolsSection(usable, learned).includes('calendar.connect – '), 'a learned tool that became direct leaves the list');
   assert.equal(moreToolsSection(usable, new Set(['chat.read'])), '', 'no list without tools.call');
   assert.equal(moreToolsSection(usable, direct), list, 'the same tools give the same text');
   const section = environmentSection(services, { agent: tom, mode: general, route: { engine: 'codex' } as never }, offered, { platform: 'linux', version: '', release: '6.8', hostname: 'pc' });
   assert.ok(!section.includes('web.search'), 'Codex searches with its own: no second search named');
   assert.ok(!/\d+ tools/.test(section), 'no counts in the stable part');
+});
+
+test('the default shortlist hides the 15 on-demand tools and only deduplicates known native web search', () => {
+  const onDemand = [
+    'vector.search', 'vector.embed', 'library.find', 'library.open', 'library.publish', 'library.rate',
+    'patterns.find', 'patterns.load', 'decide', 'telegram.connect', 'media.segments', 'media.describe',
+    'spaces.list', 'spaces.save', 'browser.save_secret',
+  ];
+  const tools = [...onDemand, 'chat.call', 'people.list', 'web.search', 'web.fetch'].map((name) => ({
+    name, description: 'Does something useful.', inputSchema: {},
+  }));
+  const viaCall = new Set([CALL_TOOL, FIND_TOOL]);
+  for (const engine of ['codex', 'claude', 'acp', 'openai', undefined]) {
+    const list = moreToolsSection(tools, viaCall, engine);
+    for (const name of onDemand) assert.ok(!list.includes(`${name} –`), name);
+    assert.match(list, /^I can find other tools .* with tools\.find\.$/m);
+    assert.match(list, /^chat\.call –/m, 'live calls stay visible');
+    assert.match(list, /^people\.list –/m, 'the once-used tool stays visible');
+    assert.match(list, /web\.fetch –/);
+    assert.equal(list.includes('web.search –'), engine !== 'codex' && engine !== 'claude', engine);
+  }
+  const onlyHidden = moreToolsSection(tools.slice(0, onDemand.length), viaCall, 'claude');
+  assert.match(onlyHidden, /^I can find other tools .* with tools\.find\.$/m, 'a hint even when none of the listed tools qualify');
+  assert.equal(moreToolsSection(tools.slice(0, 1), new Set([...viaCall, onDemand[0]]), 'claude'), '', 'a learned on-demand tool is already directly offered');
 });
 
 test('B-050 K10: chat.read and chat.direct join the base core for less than 600 tokens of spec (chars / 4)', () => {

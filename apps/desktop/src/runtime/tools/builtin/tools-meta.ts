@@ -21,7 +21,7 @@
 import type { ModeInfo } from '../../../shared/model/knowledge.ts';
 import type { ToolContext, ToolDef, ToolSpec } from '../types.ts';
 import { failure, text } from '../types.ts';
-import { CALL_TOOL, FIND_TOOL, META_TOOLS, coreNames } from '../core-sets.ts';
+import { CALL_TOOL, FIND_TOOL, META_TOOLS, coreNames, nativeWebSearchName } from '../core-sets.ts';
 import { learnedTools } from '../learned.ts';
 import { COMPANY_ARG, isRecord } from '../placement.ts';
 import { companyTools } from './companies.ts';
@@ -256,22 +256,38 @@ export function howToCall(engine?: string): string {
 /** A connected app's tool (app.<id>.<tool>): it comes and goes with the app, so the volatile apps line names it. */
 const appTool = (name: string): boolean => name.startsWith(APP_TOOL_PREFIX) && name.split('.').length > 2;
 
+// No calls in the 26.11.2026 audit. Leave registered, findable and learnable; chat.call stays visible for live calls.
+const ON_DEMAND = new Set([
+  'vector.search', 'vector.embed',
+  'library.find', 'library.open', 'library.publish', 'library.rate',
+  'patterns.find', 'patterns.load', 'decide', 'telegram.connect',
+  'media.segments', 'media.describe', 'spaces.list', 'spaces.save', 'browser.save_secret',
+]);
+const MORE_TOOLS_HINT = 'I can find other tools (e.g. media annotations and team patterns) with tools.find.';
+
 /**
- * The prompt's list of every tool `usable` holds beyond the `direct` offer: one line per tool family, each tool by
- * name and its description's first sentence (brief), so the agent knows what exists without a search. '' where tools.call is
- * not offered or nothing is left. Sorted, so the same tools give the same text.
+ * The prompt's shortlist from `usable` beyond the `direct` offer: one line per tool family, with a hint if more
+ * tools are discoverable on demand. No duplicate search when the engine already brings one. Sorted for caching.
  */
 export function moreToolsSection(usable: readonly ToolSpec[], direct: ReadonlySet<string>, engine?: string): string {
   if (!direct.has(CALL_TOOL)) return '';
-  const more = usable.filter((spec) => !direct.has(spec.name) && !META_TOOLS.includes(spec.name) && !appTool(spec.name))
+  const candidates = usable.filter((spec) => !direct.has(spec.name) && !META_TOOLS.includes(spec.name) && !appTool(spec.name));
+  const hasOnDemand = candidates.some((spec) => ON_DEMAND.has(spec.name));
+  const nativeSearch = nativeWebSearchName(engine);
+  const more = candidates.filter((spec) => !ON_DEMAND.has(spec.name) && !(nativeSearch && spec.name === 'web.search'))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  if (!more.length) return '';
+  if (!more.length && !hasOnDemand) return '';
   const byFamily = new Map<string, string[]>();
   for (const spec of more) {
     const family = spec.name.split('.')[0];
     byFamily.set(family, [...(byFamily.get(family) ?? []), `${spec.name} – ${brief(spec.description)}`]);
   }
-  return [MORE_TOOLS_HEADER, howToCall(engine), ...[...byFamily.values()].map((tools) => tools.join(' · '))].join('\n');
+  return [
+    MORE_TOOLS_HEADER,
+    ...(more.length ? [howToCall(engine)] : []),
+    ...(hasOnDemand ? [MORE_TOOLS_HINT] : []),
+    ...[...byFamily.values()].map((tools) => tools.join(' · ')),
+  ].join('\n');
 }
 
 const find = defineTool<{ query: string; limit?: number }>({
@@ -314,7 +330,7 @@ const find = defineTool<{ query: string; limit?: number }>({
 
 const call = defineTool<{ name: string; args?: Record<string, unknown>; company?: string }>({
   name: CALL_TOOL,
-  description: 'Runs a tool from my More tools list, just as a direct call.',
+  description: 'Runs a tool from More tools or tools.find, just as a direct call.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -56,7 +56,7 @@ test('both tools are on demand, in every mode, with a short spec, and work witho
   }
 });
 
-test('without a chosen model both are offered and listed; vector.search answers with the word hits and one line saying so', async () => {
+test('without a chosen model both are offered on demand; vector.search answers with the word hits and one line saying so', async () => {
   const h = setup();
   const base = h.services as RuntimeServices;
   base.modes = new ModeLibrary({ resources: path.resolve('resources'), clock: h.clock }) as unknown as RuntimeServices['modes'];
@@ -70,8 +70,16 @@ test('without a chosen model both are offered and listed; vector.search answers 
   const mode = base.modes.get('general');
   const offered = registry.specsFor(h.tom, mode).map((spec) => spec.name);
   assert.ok(offered.includes('vector.search') && offered.includes('vector.embed'));
-  assert.match(moreToolsSection(registry.specsFor(h.tom, mode), new Set(['tools.call'])), /vector\.embed – .* · vector\.search – /);
-  const ran = await registry.call('vector.search', { query: 'invoice', in: ['memory'] }, { agent: h.tom, runId: 'run_1', mode: 'general', signal: new AbortController().signal, status: () => {} }, 'c1');
+  const list = moreToolsSection(registry.specsFor(h.tom, mode), new Set(['tools.call']));
+  assert.doesNotMatch(list, /vector\.(embed|search) –/);
+  assert.match(list, /other tools .* with tools\.find/);
+  const baseCtx = { agent: h.tom, runId: 'run_1', mode: 'general', signal: new AbortController().signal, status: () => {} };
+  for (const name of ['vector.search', 'vector.embed']) {
+    const found = await registry.call('tools.find', { query: name }, baseCtx, 'find-' + name);
+    assert.ok(textOf(found).startsWith(name + ' – '), textOf(found));
+    assert.match(textOf(found), /Arguments: .*tools\.call/s);
+  }
+  const ran = await registry.call('tools.call', { name: 'vector.search', args: { query: 'invoice', in: ['memory'] } }, baseCtx, 'c1');
   assert.equal(ran.isError, undefined, textOf(ran));
   const body = textOf(ran);
   assert.ok(body.startsWith(NO_MODEL), body);
