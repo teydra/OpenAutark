@@ -248,6 +248,7 @@ test('no text names "My day" or the old Work section, and Secure is described on
     const t = readFileSync(f, 'utf8');
     assert.ok(!/My day|my-day/i.test(t), `${f}: My day is gone from the app`);
     assert.ok(!/own folders|outside its|files elsewhere|files outside/i.test(t), `${f}: Secure asks before every command; the folder claim is not proven for every engine`);
+    assert.ok(!/counts as harmless|without a question/i.test(t), `${f}: in Secure every command asks, also read-only ones (Konrad's measurement 25.11.2026)`);
     assert.ok(!/\(Work\)|tasks into Work|01 — Work|Work: one inbox/.test(t), `${f}: the Work section is gone from the app`);
   }
 });

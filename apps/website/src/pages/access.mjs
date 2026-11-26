@@ -111,7 +111,7 @@ ${pageHero({
         <ul>
           <li><strong>The web is open by default.</strong> Agents browse and search without asking, also on sites where their browser is already signed in. A purchase or a post clicked through such a site is not stopped by code. You can set the web to Ask.</li>
           <li><strong>An allowed command is not checked for what it does.</strong> The app decides whether a command may run, not which files it touches. “Always” for commands opens every command.</li>
-          <li><strong>Codex reads through commands.</strong> Commands Codex counts as harmless, such as listing a folder or printing a file, run without a question, and its sandbox limits writing, not reading.</li>
+          <li><strong>Codex reads through commands.</strong> In Secure, with commands on Ask (the default), every command asks first, including read-only ones like listing a folder or printing a file. Its sandbox limits writing, not reading.</li>
           <li><strong>Hiring and changing agents</strong> is open by default.</li>
           <li><strong>Programs outside the app</strong>, such as a script an agent started earlier, are not checked (see <a href="#others">who else can reach it</a>).</li>
         </ul>
