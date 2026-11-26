@@ -104,7 +104,8 @@ export interface VoiceApi {
 export interface PolicyApi {
   /** Stored policy at a scope: agent, chat+agent (sticky composer choice) or global default. */
   get(scope: { agentId?: string; conversationId?: string }): ModelPolicy | null;
-  set(scope: { agentId?: string; conversationId?: string }, policy: ModelPolicy): void;
+  /** `options.now`: an agent's new start model also runs its next turn at once (the agent page's "Now"), else from its next context. */
+  set(scope: { agentId?: string; conversationId?: string }, policy: ModelPolicy, options?: { now?: boolean }): void;
 }
 
 // ------------------------------------------------------------------ added by R4 contracts

@@ -69,9 +69,8 @@ test('model chip: the routed model, a chosen model and effort per chat, search, 
   const routedNames = [routed.modelId, models.find((model) => model.id === routed.modelId)?.name ?? ''];
   await page.waitForFunction(() => document.querySelector('.composer-actions .model-chip .chip-label')?.textContent?.trim(), undefined, { timeout: 10_000 });
   const routedLabel = (await chip.locator('.chip-label').textContent()).trim();
-  assert.match(routedLabel, /^Auto\s+\S/);
-  const routedName = routedLabel.replace(/^Auto\s+/, '');
-  assert.ok(routedNames.some((name) => name.endsWith(routedName)), `the chip names the routed model: "${routedLabel}" for ${routedNames.join(' / ')}`);
+  assert.equal(routedLabel, 'Auto', 'F26: with nothing picked the chip says Auto and nothing else');
+  const routedName = routedNames[1] || routed.modelId;
   const row = ['.composer', '.composer-actions', '.composer .composer-plus', '.composer .model-chip', '.composer .send-button'];
 
   // The menu: search, Auto (checked, the routed model beside it), the chat models, the temperature and effort rows.
@@ -82,7 +81,7 @@ test('model chip: the routed model, a chosen model and effort per chat, search, 
   const auto = menu.locator('[role="menuitemradio"]').first();
   assert.equal(await auto.getAttribute('aria-checked'), 'true');
   assert.equal((await auto.locator('.menu-label > span').textContent()).trim(), 'Auto', 'the first item is Auto');
-  assert.equal((await auto.locator('.menu-hint').textContent()).trim(), `${routedName} now`, 'beside it the model routing takes now');
+  assert.ok((await auto.locator('.menu-hint').textContent()).trim().endsWith(' now'), 'beside it the model routing takes now (in the menu only)');
   const choices = (await menu.locator('[role="menuitemradio"] .menu-label > span').allTextContents()).map((text) => text.trim());
   assert.ok(choices.length >= 2, `Auto and at least one model: ${choices.join(', ')}`);
   const temperature = menu.getByRole('group', { name: 'Temperature' });

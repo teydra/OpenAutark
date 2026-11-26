@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { agent, setup } from '../models/harness.ts';
+import { clearNextModel, pendingRoute } from '../../../src/runtime/agents/next-route.ts';
 import { chatChoice, cleanPolicy, createPolicyApi, effectivePolicy, getPolicy, setPolicy } from '../../../src/runtime/routing/policies.ts';
 import { defaultEffortFor, inferCategory, resolveCategory } from '../../../src/runtime/routing/categories.ts';
 import { WorkforceError } from '../../../src/shared/errors.ts';
@@ -44,6 +45,29 @@ test('agent policy goes through org.update and comes back normalized', () => {
   setPolicy(h.services, { agentId: 'ag_1' }, { pin: 'auto' });
   assert.equal(getPolicy(h.services, { agentId: 'ag_1' }), null);
   assert.throws(() => setPolicy(h.services, { agentId: 'ag_missing' }, {}), (error: unknown) => error instanceof WorkforceError && error.code === 'not_found');
+});
+
+test('26.11.2026 agent page: a new start model applies from the next context; with now the next turn runs on it at once', () => {
+  const h = setup();
+  h.agents.set('ag_1', agent('ag_1'));
+  const pending = () => pendingRoute(h.db, 'ag_1', undefined, () => false);
+  // "From next context": the start model only – the router starts a context on it (settled-model.test.ts: off a boundary a
+  // start model set since waits, at a boundary it runs); no request for the next turn
+  setPolicy(h.services, { agentId: 'ag_1' }, { pin: 'claude:claude-opus-5-5' });
+  assert.equal(h.agents.get('ag_1')!.modelPolicy.pin, 'claude:claude-opus-5-5');
+  assert.equal(pending(), undefined);
+  // "Now": the same start model, and the next turn runs on it inside the live session too (agents/next-route.ts `now`)
+  setPolicy(h.services, { agentId: 'ag_1' }, { pin: 'codex:gpt-6.1-sol' }, { now: true });
+  assert.equal(h.agents.get('ag_1')!.modelPolicy.pin, 'codex:gpt-6.1-sol');
+  assert.deepEqual([pending()?.modelId, pending()?.now], ['codex:gpt-6.1-sol', true]);
+  // (a later start model without now ends the ask – org/service.ts startModelSet, tested with the real org service)
+  // Auto has nothing to switch to: no request, even with now
+  clearNextModel(h.db, 'ag_1');
+  setPolicy(h.services, { agentId: 'ag_1' }, {}, { now: true });
+  assert.equal(pending(), undefined);
+  // through the API the handler uses
+  createPolicyApi(() => h.services).set({ agentId: 'ag_1' }, { pin: 'codex:gpt-6.1-sol' }, { now: true });
+  assert.equal(pending()?.now, true);
 });
 
 test('validation rejects impossible bands and unknown values', () => {

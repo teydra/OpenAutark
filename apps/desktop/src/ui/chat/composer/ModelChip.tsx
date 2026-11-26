@@ -1,9 +1,10 @@
-// Model chip in the composer: the suggested model's short name ("Opus 5.5") + the suggested effort; with nothing
-// suggested "Auto" (owner F26, 16.11.2026: Auto is the visible default) and, muted after it, the model the app routes
-// the agent to now in this chat (routing.preview, lib/route-preview.ts; its last run here until the preview answers) –
-// all in one fixed width (nothing beside it moves when the model changes). A pick stays standing after sending (the
-// runtime tells a fresh pick from a standing one). Menu: first "Auto" (nothing suggested,
-// the AI decides; hint "<routed model> now", only the name while a suggestion runs), one searchable list of the chat
+// Model chip in the composer: the picked model's short name ("Opus 5.5") + the picked effort; with nothing picked just
+// "Auto" (owner F26, 16.11.2026: Auto is the visible default; 26.11.2026: never "Auto · <model>" – a group chat's agents
+// do not all run on one). 26.11.2026 (owner): a pick applies to the NEXT message only – the runtime stamps it on that line
+// and takes it off the chat when the line is sent (chat/service.ts, sticky-model.ts withoutChoice), so the chip is
+// "Auto" again; the pick reaches the agent as a hint on that line and never changes the agent's own model (its agent page
+// does). Menu: first "Auto" (nothing picked,
+// the AI decides; hint "<routed model> now", only the name while a pick is set), one searchable list of the chat
 // models in catalog order – each row's display name, source and full catalog ID (F05) – only the newest of
 // each family (owner 09.11.: "immer die aktuellen Modelle"); an older
 // version shows when the search names it, or while it is the chosen one, under "Older versions" – the temperature
@@ -141,8 +142,9 @@ export function ModelChip(props: { chat: ConversationSummary; agentId: string | 
   const temperature = typeof stored === 'number' ? stored : undefined;
   const chosenInfo = chosen ? models.value.find((model) => model.id === chosen) : undefined;
   const sub = effort ? EFFORT_LABEL[effort] : undefined;
-  // nothing suggested: "Auto", the routed model muted after it (with the suggested effort, if any)
-  const after = chosen ? sub : [routedName, sub].filter(Boolean).join(' · ') || undefined;
+  // 26.11.2026 (owner): nothing picked reads "Auto" and nothing else – no routed model after it (a group chat's agents do not
+  // all run on one); a picked effort stays beside it
+  const after = sub;
   const listed: readonly Effort[] = chosenInfo?.efforts.filter((value) => value !== 'none') ?? [];
   // a suggested effort the model lacks keeps its cell (lit, so a tap takes it back)
   const efforts = listed.length && (!effort || listed.includes(effort)) ? listed : EFFORTS;

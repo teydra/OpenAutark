@@ -385,6 +385,13 @@ test('B-083 models.setPolicy: an agent\'s start model names who set it; an uncha
   assert.deepEqual(stored()?.[1], { pin: 'codex:gpt-6.1-sol', effort: 'low', pinBy: { name: 'Manager', at: 5, self: true } }, 'getPolicy → one field edited → setPolicy keeps the stored origin');
   await call('models.setPolicy', { agentId: AGENT, policy: { pin: 'auto' } });
   assert.deepEqual(stored()?.[1], { pin: 'auto' }, "'auto' is no start model: no origin");
+  // 26.11.2026, the agent page's "Now": the same start model, also run by the next turn at once – only for an agent's start model
+  await call('models.setPolicy', { agentId: AGENT, policy: { pin: 'codex:gpt-6.1-sol' }, now: true });
+  assert.deepEqual(named('policies.set').at(-1)?.[3], { now: true });
+  await call('models.setPolicy', { agentId: AGENT, policy: { pin: 'codex:gpt-6.1-sol' } });
+  assert.equal(named('policies.set').at(-1)?.[3], undefined, '"From next context": no options');
+  await rejectsCode(call('models.setPolicy', { policy: { effort: 'high' }, now: true }), 'bad_request');
+  await rejectsCode(call('models.setPolicy', { agentId: AGENT, conversationId: 'cv_01jab3k9z7mx2c4q', policy: { pin: 'codex:gpt-6.1-sol' }, now: true }), 'bad_request');
 });
 
 test('DEV2: chat devices read usage and models without refreshing; manage refreshes and sets policies', async () => {

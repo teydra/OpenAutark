@@ -305,9 +305,11 @@ export function register(table: HandlerTable): void {
   }, CHAT);
   table.add('models.setPolicy', (params, ctx) => {
     const o = input(params);
-    onlyKeys(o, ['agentId', 'conversationId', 'policy']);
+    onlyKeys(o, ['agentId', 'conversationId', 'policy', 'now']);
     const scope = policyScope(o);
     const policy = policyOf(obj(o, 'policy'));
+    const now = optBool(o, 'now') === true;
+    if (now && (!scope.agentId || scope.conversationId)) bad('now', 'only with an agent\'s start model');
     // The global cost mode and default model are Settings.routing.costMode / routing.work (policies.ts): the same rule as
     // settings.update's routing section (B-084: the owner's phone with 'settings' on a secure transport may, every other
     // device not). Agent/chat choices stay 'manage'.
@@ -316,7 +318,9 @@ export function register(table: HandlerTable): void {
     if (global && (policy.costMode || policy.pin) && ctx.scope.kind !== 'owner' && !securePhone) {
       throw new WorkforceError('forbidden', 'The model choice for all agents can only be changed on the PC (Settings › Models).', { details: { key: policy.costMode ? 'costMode' : 'pin' } });
     }
-    ctx.extras.policies.set(scope, scope.agentId && !scope.conversationId ? withOrigin(ctx, scope.agentId, policy) : policy);
+    const stored = scope.agentId && !scope.conversationId ? withOrigin(ctx, scope.agentId, policy) : policy;
+    if (now) ctx.extras.policies.set(scope, stored, { now: true });
+    else ctx.extras.policies.set(scope, stored);
     return { ok: true };
   }, MANAGE);
   table.add('routing.preview', (params, ctx) => {

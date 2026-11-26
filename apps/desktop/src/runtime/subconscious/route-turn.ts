@@ -46,8 +46,7 @@ import { pendingRoute, setNextRoute, takeNextRoute } from '../agents/next-route.
 import { CACHE_COLD_MS } from '../agents/compaction-policy.ts';
 import { coreInstructions } from '../agent-core/prompt.ts';
 import { splitAtHave } from '../org/hire.ts';
-import { chatChoice } from '../routing/policies.ts';
-import { suggestionNow } from '../chat/suggestion-fresh.ts';
+import { newestLineChoice } from '../routing/policies.ts';
 import { priorFor } from '../models/catalog-merge.ts';
 import { cachePrices } from '../models/pricing.ts';
 import { Priors } from '../models/priors.ts';
@@ -140,8 +139,8 @@ export function routeSystem(services: RuntimeServices): string {
 
 /**
  * The line the call reads about how the coming turn runs – the model and effort of my last turn (any chat: one context) and
- * the effort the person suggested in this chat: picked for their newest message it is what they want now, one that stayed is
- * a hint from before (F22, chat/suggestion-fresh.ts); '' when nothing is known. Runde „Halb“ 21.11.2026: no floor for a
+ * the effort the person picked for their newest message (read off that line, routing/policies.ts newestLineChoice – a pick
+ * applies to one message); '' when nothing is known. Runde „Halb“ 21.11.2026: no floor for a
  * person's line – the weighing decides for every wake alike.
  */
 export function turnFacts(services: RuntimeServices, agent: Agent, conversationId: string | undefined): string {
@@ -149,12 +148,10 @@ export function turnFacts(services: RuntimeServices, agent: Agent, conversationI
     const last = services.runs.list(agent.id, RECENT_RUNS).find((item) => !item.splitId && item.model);
     const name = last?.model ? services.catalog.get(last.model)?.name ?? last.model : '';
     const parts = [name ? `its last turn ran on ${name}${last?.effort ? ` at effort ${last.effort}` : ''}` : 'no turn yet'];
-    const effort = chatChoice(services, conversationId, agent.id).effort;
+    const effort = newestLineChoice(services, conversationId, agent.id).effort;
     if (effort) {
       const person = services.settings.get().profile?.name?.trim() || 'the person';
-      const when = suggestionNow(services, conversationId, agent.id);
-      parts.push(when === 'earlier' ? `${person} suggested effort ${effort} in this chat earlier and left it standing – a hint from before, the work decides`
-        : `${person} picked effort ${effort} in this chat ${when === 'now' ? 'for their newest message' : 'after their newest message'} – what they want now`);
+      parts.push(`${person} picked effort ${effort} for their newest message – what they want now`);
     }
     return `The main AI's coming turn: ${parts.join('; ')}.`;
   } catch {

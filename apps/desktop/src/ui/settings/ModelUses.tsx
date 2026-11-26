@@ -1,4 +1,5 @@
-// Settings › Models, under the providers: one fixed row per use – state dot, label, hint, provider select, model select
+// Settings › Models, under the providers. 26.11.2026 (owner): up front only a status – whether models work; the rows
+// below are behind one "Advanced" disclosure (open while a settings search is running): one fixed row per use – state dot, label, hint, provider select, model select
 // and the action slot (Download or Use for a local model, "Set up with AI" where nothing or only a stand-in serves it) –
 // plus the model choice row (Best / Balanced / Cheaper). B-072: no fallback switch – when plans run out the app takes what
 // is left by itself, and routing.allowPaidFallback stays in settings.json for the AI. The selects show the model the use
@@ -22,7 +23,9 @@ import { openInTab } from './open-file.ts';
 import { localModels, pullModel, readLocalModels, speechChanges, speechPulls, useModel, watchSpeechPulls } from './speech-models.ts';
 import { running } from './speech-models-text.ts';
 import type { UseWrite } from '../../shared/model/models-uses.ts';
-import { namedValue, OTHER, setUpRequest, useRowView, writeModel, writeProvider } from './uses-view.ts';
+import { modelsStatus, namedValue, OTHER, setUpRequest, useRowView, writeModel, writeProvider } from './uses-view.ts';
+import { settingsSearch } from './SettingsNav.tsx';
+import { Icon } from '../lib/ui.tsx';
 
 const COST_MODES: Array<Option<RoutingSettings['costMode']>> = MODEL_CHOICES.map((value) => ({ value, label: MODEL_CHOICE_LABELS[value] }));
 const STATE_WORD: Readonly<Record<string, string>> = { ready: 'Ready', setup: 'Needs one step', off: 'Off', pending: '' };
@@ -124,12 +127,30 @@ export function ModelUses() {
   }, []);
   const byUse = new Map((list.data ?? []).map((now) => [now.use, now]));
   const setRouting = (patch: Partial<RoutingSettings>) => void act(() => updateSettings({ routing: patch }), 'Could not save');
+  const [advanced, setAdvanced] = useState(false);
+  const status = modelsStatus(list.data);
+  const shown = advanced || settingsSearch.value.trim() !== ''; // a search must find the rows behind "Advanced"
   return (
     <Group title="Uses" id="settings-uses" hint={list.error && !list.data ? list.error : undefined}>
-      {MODEL_USES.map((use) => <UseRow key={use} use={use} now={byUse.get(use)} />)}
-      <Row label="Model choice" hint="What counts when the app picks among several models" reserve>
-        <Segmented label="Model choice" value={current?.routing.costMode ?? 'balanced'} options={COST_MODES} onChange={(costMode) => setRouting({ costMode })} />
+      <Row label={(
+        <>
+          <span class={`dot use-dot ${status.state}`} aria-hidden="true" />
+          <span>{status.text || 'Checking models'}</span>
+        </>
+      )} hint="Which model each use takes is chosen automatically" reserve>
+        <button type="button" class="text-button" aria-expanded={shown} aria-controls="settings-uses-advanced" onClick={() => setAdvanced(!advanced)}>
+          <Icon name={shown ? 'caret-down' : 'caret-right'} size={12} />
+          <span>Advanced</span>
+        </button>
       </Row>
+      {shown && (
+        <div id="settings-uses-advanced" class="uses-advanced">
+          {MODEL_USES.map((use) => <UseRow key={use} use={use} now={byUse.get(use)} />)}
+          <Row label="Model choice" hint="What counts when the app picks among several models" reserve>
+            <Segmented label="Model choice" value={current?.routing.costMode ?? 'balanced'} options={COST_MODES} onChange={(costMode) => setRouting({ costMode })} />
+          </Row>
+        </div>
+      )}
     </Group>
   );
 }

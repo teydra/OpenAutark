@@ -8,10 +8,9 @@
 // "… · Name (quiet) · …" (sent without a notification); a text
 // message about a task ends with " [task <id>]"; 13.11.2026 (owner: the model the person picks in the chat is "einfach nur
 // da, wird der KI so erklärt"): a person's new line (renderMessages `suggestions`, the steered line) names their
-// suggestion for me in this chat in its label (routing/policies.ts chatChoice; information, never a route – skill chats says
-// how I read it); F22 (owner 16.11.2026): picked since their previous line, for this one – "[… #57 · picked <catalog name> ·
-// effort high · temperature 0.7 for this message]" –, changed after it "picked … after this message", else (a value that
-// stayed, or an older chat without a stamp) "earlier suggested …" (chat/suggestion-fresh.ts);
+// pick for me in its label (routing/policies.ts lineChoice; information, never a route – skill chats says how I read it);
+// 26.11.2026 (owner): the pick applies to ONE message and is read off that line (meta.modelHint) – "[… #57 · picked <catalog
+// name> · effort high · temperature 0.7 for this message – <PICK_HINT>]"; a pick that stayed does not exist any more;
 // recordings (audio/video) as "[Audio: name]" / "[Video: name]" with duration, the media
 // library's description and tags and the transcript, marked as data (addition MM1); B-058 G10: images as "[Image: name]"
 // with the library's description and tags, and – rendered without their image input (earlier lines, chat.read,
@@ -51,8 +50,7 @@ import { HELD, OWN_LABEL, quoteHeaders } from './projection.ts';
 import { isPersonId } from '../../shared/model/people.ts';
 import { HINT_ID } from '../../shared/model/model-guide.ts';
 import { resolvePin } from '../routing/pins.ts';
-import { chatChoice } from '../routing/policies.ts';
-import { suggestedAt, suggestionWhen } from '../chat/suggestion-fresh.ts';
+import { lineChoice } from '../routing/policies.ts';
 import { temperatureText } from '../../shared/model/runs.ts';
 import { ultraNote } from './split-section.ts'; // B-057 S17: the note of a message that suggested Ultra
 import { chatTitleFor } from '../chat/titles.ts';
@@ -322,22 +320,26 @@ function modelLabel(ctx: RenderContext, id: string): string {
 }
 
 /**
- * 13.11.2026: the person's suggestion for me in this chat (the composer chip, routing/policies.ts chatChoice) as a label
- * part of their line; '' on other lines or without a suggestion. F22 (16.11.2026): set for this line (since their
- * previous one) "picked GPT-6.1 Sol · effort high · temperature 0.7 for this message", set after it "picked … after this
- * message", else "earlier suggested …" – a value that stayed (chat/suggestion-fresh.ts suggestionWhen).
+ * PLACEHOLDER (26.11.2026) – the words Stanislaus asked for ("this model might be good, for example for a part that executes
+ * the work, or for you yourself if a switch pays off"); Noah's final wording replaces this sentence. It rides on the person's
+ * line behind what they picked, so the model, effort or temperature reads as a hint, never as an order.
  */
-export function suggestionTag(ctx: RenderContext, message: Pick<Message, 'conversationId' | 'authorKind' | 'authorId' | 'kind' | 'seq' | 'createdAt'>): string {
+export const PICK_HINT = 'a hint for this message only, not an order: it may suit a part you split off for the work, or you yourself if a switch is worth the full re-read';
+
+/**
+ * 13.11.2026: the person's pick for me on this line (the composer chip) as a label part of their line; '' on other lines, in
+ * Auto, and on a line that addresses another agent. 26.11.2026: the pick applies to ONE message – it is read off the line
+ * itself (meta.modelHint, stamped when the line was sent; the chat's chip is Auto again after it): "picked GPT-6.1 Sol ·
+ * effort high · temperature 0.7 for this message – <PICK_HINT>".
+ */
+export function suggestionTag(ctx: RenderContext, message: Pick<Message, 'conversationId' | 'authorKind' | 'authorId' | 'kind' | 'seq' | 'createdAt' | 'meta' | 'mentions'>): string {
   if (message.authorKind !== 'human' || !isLine(message)) return '';
-  let choice: ReturnType<typeof chatChoice>;
-  try { choice = chatChoice(ctx.services, message.conversationId, ctx.agentId); } catch { return ''; } // the line stands without it
+  let choice: ReturnType<typeof lineChoice>;
+  try { choice = lineChoice(ctx.services, message, ctx.agentId); } catch { return ''; } // the line stands without it
   const parts = [choice.pin ? modelLabel(ctx, choice.pin) : '', choice.effort ? `effort ${choice.effort}` : '',
     choice.temperature !== undefined ? `temperature ${temperatureText(choice.temperature)}` : ''].filter(Boolean);
   if (!parts.length) return '';
-  let when: ReturnType<typeof suggestionWhen> = 'earlier';
-  try { when = suggestionWhen(ctx.services, suggestedAt(ctx.services, message.conversationId, ctx.agentId), message); } catch { /* the weaker reading */ }
-  const text = parts.join(' · ');
-  return when === 'now' ? `picked ${text} for this message` : when === 'after' ? `picked ${text} after this message` : `earlier suggested ${text}`;
+  return `picked ${parts.join(' · ')} for this message – ${PICK_HINT}`;
 }
 
 /** One message's content without the author header ('' when there is nothing to show); `cap`: its body's (bodyText). */

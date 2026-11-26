@@ -65,8 +65,9 @@ test('B-083 (live 09.11.): the temperature row\'s title says where a temperature
   }
 });
 
-test('F26: with nothing suggested the chip says "Auto" and the routed model muted after it; a pick names itself', () => {
-  assert.match(chip, /const after = chosen \? sub : \[routedName, sub\]\.filter\(Boolean\)\.join\(' · '\) \|\| undefined;/);
+test('F26 (26.11.2026): with nothing picked the chip says "Auto" and nothing else – no routed model after it (group chats); a pick names itself', () => {
+  assert.match(chip, /const after = sub;/);
+  assert.doesNotMatch(chip, /routedName, sub/, 'never "Auto · <model>"');
   assert.match(chip, /\{chosen \? shortName\(chosen\) : AUTO\}\{after && <span class="sub">\{` \$\{after\}`\}<\/span>\}/);
   assert.doesNotMatch(chip, /shortName\(chosen \?\? routed\)/, 'the routed model never reads as a pick');
 });

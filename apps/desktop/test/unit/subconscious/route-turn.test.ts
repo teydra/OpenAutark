@@ -443,8 +443,10 @@ test("the person's standing words reach the call: What I have here whole, before
   assert.ok(prompt.indexOf('What the agent has here') < prompt.indexOf("The main AI's coming turn:"), 'the same each turn, so before what changes');
   assert.match(ROUTE_SYSTEM, /in this chat or in the agent's standing facts and agreements – outweighs my weighing/);
   const chat = w.h.chats.create({ agentIds: [ADA], createdBy: 'human' });
-  w.h.chats.update(chat.id, { settings: { efforts: { [ADA]: 'medium' } } }, 'human');
-  assert.match(turnFacts(w.h.services, w.ada, chat.id), /; Alex (picked|suggested) effort medium in this chat /);
+  w.h.chats.send({ conversationId: chat.id, body: 'Please look', authorId: 'human', effort: 'medium' }); // 26.11.2026: a pick applies to one message – read off that line
+  assert.match(turnFacts(w.h.services, w.ada, chat.id), /; Alex picked effort medium for their newest message /);
+  w.h.chats.send({ conversationId: chat.id, body: 'And now?', authorId: 'human' });
+  assert.doesNotMatch(turnFacts(w.h.services, w.ada, chat.id), /effort medium/, 'the next line is Auto: nothing stays'); 
   const plain = world();
   const bare = answering(pick('high'));
   await routeTurn(plain.h.services, bare.runner, { agent: plain.ada, said: SAID, deadlineMs: ROUTE_WAIT_MS });

@@ -20,8 +20,12 @@ import type { RuntimeServices } from '../contracts.ts';
 import type { PolicyApi } from '../rpc/extras.ts';
 import type { Agent } from '../../shared/model/org.ts';
 import type { Effort, ModelInfo, ModelPolicy } from '../../shared/model/providers.ts';
+import type { Message } from '../../shared/model/chat.ts';
+import { addressedAgents } from '../chat/sticky-model.ts';
+import { newestPersonLine } from '../chat/person-line.ts';
 import { WorkforceError } from '../../shared/errors.ts';
 import { KvRepo } from '../store/kv.ts';
+import { setNextRoute } from '../agents/next-route.ts';
 import { normalizeEffort } from '../models/efforts.ts';
 import { chosenFor, isProviderChoice } from '../../shared/model/models-uses.ts';
 
@@ -147,6 +151,29 @@ export function chatChoice(services: RuntimeServices, conversationId: string | u
   return { pin: typeof pin === 'string' && pin && pin !== 'auto' ? pin : undefined, effort, ...warmth };
 }
 
+type LineChoice = { pin?: string; effort?: Effort; temperature?: number };
+
+/**
+ * 26.11.2026: what the person picked in the composer for ONE message, read off that line (meta.modelHint, stamped when the
+ * line was sent – chat/sticky-model.ts; the chat's own pick is gone by then). Only for an agent the line addresses (a
+ * mention, a reply, else the lead); {} on any other line, in Auto and where the line cannot be read.
+ */
+export function lineChoice(services: RuntimeServices, line: Pick<Message, 'conversationId' | 'authorKind' | 'kind' | 'meta' | 'mentions'> | undefined, agentId: string): LineChoice {
+  const tag = line?.authorKind === 'human' && line.kind === 'text' ? line.meta?.modelHint : undefined;
+  if (!line || !tag) return {};
+  try {
+    if (!addressedAgents(line, services.chats.members(line.conversationId)).includes(agentId)) return {};
+  } catch { return {}; }
+  const effort = tag.effort && tag.effort !== 'auto' ? normalizeEffort(tag.effort) : undefined;
+  const warmth = typeof tag.temperature === 'number' && tag.temperature >= 0 && tag.temperature <= MAX_TEMPERATURE ? { temperature: tag.temperature } : {};
+  return { pin: typeof tag.modelId === 'string' && tag.modelId && tag.modelId !== 'auto' ? tag.modelId : undefined, effort, ...warmth };
+}
+
+/** `lineChoice` of the person's newest line in a chat – for a turn that has no line of its own in hand. */
+export function newestLineChoice(services: RuntimeServices, conversationId: string | undefined, agentId: string): LineChoice {
+  try { return lineChoice(services, newestPersonLine(services, conversationId), agentId); } catch { return {}; }
+}
+
 export function getPolicy(services: RuntimeServices, scope: PolicyScope): ModelPolicy | null {
   const target = resolveScope(services, scope);
   if (target.kind === 'global') {
@@ -167,7 +194,12 @@ export function getPolicy(services: RuntimeServices, scope: PolicyScope): ModelP
   return isEmpty(policy) ? null : policy;
 }
 
-export function setPolicy(services: RuntimeServices, scope: PolicyScope, policy: ModelPolicy): void {
+/**
+ * `options.now` (26.11.2026, the agent page's "Now"): with an agent's start model, its next turn runs on that model at once –
+ * the agent reads its whole conversation again on it (agents/next-route.ts `now`). Without it the start model applies from the
+ * agent's next context, where its context is rebuilt – "From next context".
+ */
+export function setPolicy(services: RuntimeServices, scope: PolicyScope, policy: ModelPolicy, options: { now?: boolean } = {}): void {
   const clean = cleanPolicy(policy);
   const target = resolveScope(services, scope);
   if (target.kind === 'global') {
@@ -182,6 +214,8 @@ export function setPolicy(services: RuntimeServices, scope: PolicyScope, policy:
   if (!services.org.get(target.agentId)) throw new WorkforceError('not_found', 'This agent does not exist.');
   if (target.kind === 'agent') {
     services.org.update(target.agentId, { modelPolicy: clean });
+    // after the update: a start model other than the one asked for ends the ask (next-route.ts startModelSet)
+    if (options.now && clean.pin && clean.pin !== 'auto') setNextRoute(services.db, target.agentId, { modelId: clean.pin, now: true, at: services.clock.now() });
     return;
   }
   // Chat scope stores only the composer choice; the maps are replaced whole (shallow settings merge).
@@ -203,7 +237,7 @@ export function setPolicy(services: RuntimeServices, scope: PolicyScope, policy:
 export function createPolicyApi(services: () => RuntimeServices): PolicyApi {
   return {
     get: (scope) => getPolicy(services(), scope ?? {}),
-    set: (scope, policy) => setPolicy(services(), scope ?? {}, policy),
+    set: (scope, policy, options) => setPolicy(services(), scope ?? {}, policy, options),
   };
 }
 

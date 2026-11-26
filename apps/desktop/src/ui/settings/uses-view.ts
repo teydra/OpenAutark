@@ -59,7 +59,19 @@ export const START_MODEL_HINT = 'The start model of agents without their own: th
 const PLAN_IMAGES: UseOption = { value: FREE_ROUTE_CHOICE.image, label: 'GPT Image', hint: 'On the ChatGPT plan' };
 
 /** What "Set up with AI" types into the Manager's chat. */
-export const setUpRequest = (use: ModelUse): string => `Set up ${USE_LABELS[use]}: connect a provider or choose a model for it.`;
+/**
+ * 26.11.2026 (owner): up front on Settings › Models only whether models work – the ten uses are behind "Advanced". Models work
+ * when the work use is ready; a use that is one step away (not off) is counted beside it.
+ */
+export function modelsStatus(list: readonly Pick<UseNow, 'use' | 'state'>[] | undefined): { state: 'ready' | 'setup' | 'pending'; text: string } {
+  if (!list) return { state: 'pending', text: '' };
+  const work = list.find((now) => now.use === 'work');
+  if (work?.state !== 'ready') return { state: 'setup', text: 'Models need one step' };
+  const open = list.filter((now) => now.use !== 'work' && now.state === 'setup').length;
+  return { state: 'ready', text: open ? `Models work · ${open} more ${open === 1 ? 'use needs' : 'uses need'} one step` : 'Models work' };
+}
+
+export const setUpRequest =(use: ModelUse): string => `Set up ${USE_LABELS[use]}: connect a provider or choose a model for it.`;
 
 const isPlan = (account: Account) => account.enabled && account.auth === 'cli' && accountCharge(account) === 'plan';
 

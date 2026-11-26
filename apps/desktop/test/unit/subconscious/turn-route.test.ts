@@ -199,7 +199,6 @@ test('the line about the coming turn: my last model and effort (any chat) and th
   const h = harness();
   h.org.add(agent(AGENT, 'Ada'));
   const chat = h.chats.create({ agentIds: [AGENT], createdBy: 'human' });
-  h.chats.update(chat.id, { settings: { modelHints: { [AGENT]: OPUS }, efforts: { [AGENT]: 'high' }, temperatures: { [AGENT]: 0.3 } } }, 'human');
   const runs: Array<Partial<Run>> = [
     { agentId: AGENT, conversationId: chat.id, model: OPUS, effort: 'medium', splitId: 'sp_1' },
     { agentId: AGENT, conversationId: 'ch_other', model: SOL, effort: 'low', route: { reason: 'x', by: 'rules', category: 'chat', temperature: 0.4, temperatureSent: false } },
@@ -211,15 +210,14 @@ test('the line about the coming turn: my last model and effort (any chat) and th
     settings: { get: () => ({ profile: { name: 'Alex', timezone: 'Europe/Berlin' } }) },
   });
   const ada = agent(AGENT, 'Ada', { modelPolicy: { pin: OPUS, pinBy: { name: 'Alex', at: Date.UTC(2026, 10, 8, 12) } } });
-  assert.equal(turnFacts(h.services, ada, chat.id),
-    "The main AI's coming turn: its last turn ran on GPT-6.1 Sol at effort low; Alex picked effort high in this chat after their newest message – what they want now.");
-  // F22 (16.11.2026): picked before their line – for it; their next line without a new pick – a value that stayed
+  // 26.11.2026: a pick applies to one message – it is read off the person's newest line; the next line without a pick leaves nothing
   h.clock.advance(60_000);
-  h.chats.send({ conversationId: chat.id, authorId: 'human', body: 'Schreib den Vertrag' });
-  assert.match(turnFacts(h.services, ada, chat.id), /; Alex picked effort high in this chat for their newest message – what they want now\.$/);
+  h.chats.send({ conversationId: chat.id, authorId: 'human', body: 'Schreib den Vertrag', model: OPUS, effort: 'high' });
+  assert.equal(turnFacts(h.services, ada, chat.id),
+    "The main AI's coming turn: its last turn ran on GPT-6.1 Sol at effort low; Alex picked effort high for their newest message – what they want now.");
   h.clock.advance(60_000);
   h.chats.send({ conversationId: chat.id, authorId: 'human', body: 'Und noch die Rechnung' });
-  assert.match(turnFacts(h.services, ada, chat.id), /; Alex suggested effort high in this chat earlier and left it standing – a hint from before, the work decides\.$/);
+  assert.equal(turnFacts(h.services, ada, chat.id), "The main AI's coming turn: its last turn ran on GPT-6.1 Sol at effort low.", 'the next line is Auto: nothing stays');
   const fresh = h.chats.create({ agentIds: [AGENT], createdBy: 'human' });
   // Runde „Halb“ 21.11.2026: no floor for a person's line – the line says nothing of who wrote (before: "a new message of the person runs at effort high at least")
   assert.equal(turnFacts(h.services, agent(AGENT, 'Ada'), fresh.id), "The main AI's coming turn: its last turn ran on GPT-6.1 Sol at effort low.", 'one context: a fresh chat continues on my last turn');

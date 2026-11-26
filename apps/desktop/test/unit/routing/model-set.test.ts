@@ -425,10 +425,10 @@ test('B-083: the person\'s suggestion is information – my effort is stored and
   const h = await rt2Setup();
   h.seed(SOL, 'low', 'coding');
   Object.assign(h.services.settings.get(), { profile: { ...h.services.settings.get().profile, name: 'Stanislaus' } });
-  h.chats.update(h.chat.id, { settings: { efforts: { [AGENT]: 'medium' } } }, 'human');
+  h.chats.send({ conversationId: h.chat.id, authorId: 'human', body: 'Think this through.', effort: 'medium' }); // 26.11.2026: a pick is on one line only
   const chip = ok(await h.ask({ effort: 'xhigh' })) as unknown as { effort: string; suggestion?: string };
   assert.equal(chip.effort, 'xhigh', 'the preview runs on my request');
-  assert.equal(chip.suggestion, 'Stanislaus suggested effort medium in this chat – I take effort xhigh for this step.');
+  assert.equal(chip.suggestion, 'Stanislaus picked effort medium for their newest message – I take effort xhigh for this step.');
   const says = (body: string) => h.chats.send({ conversationId: h.chat.id, authorId: 'human', body });
   says('Go on with the parser, please.');
   const mine = await h.turn();
@@ -441,16 +441,17 @@ test('B-083: the person\'s suggestion is information – my effort is stored and
   // A task whose chat has the suggestion, asked from another chat: that chat is named; my turns on the task run on my request.
   const elsewhere = h.tasks.create({ conversationId: h.chat.id, title: 'Port the parser', assigneeKind: 'agent', assigneeId: AGENT, createdBy: 'human' });
   const other = h.chats.create({ agentIds: [AGENT], createdBy: 'human' });
+  h.chats.send({ conversationId: h.chat.id, authorId: 'human', body: 'Port it carefully.', effort: 'medium' });
   const named = ok(await h.ask({ effort: 'xhigh', task: elsewhere.id }, undefined, other.id)) as unknown as { suggestion?: string };
-  assert.equal(named.suggestion, `Stanislaus suggested effort medium in the chat of task ${elsewhere.id} – I take effort xhigh for task ${elsewhere.id}.`);
+  assert.equal(named.suggestion, `Stanislaus picked effort medium for their newest message in the chat of task ${elsewhere.id} – I take effort xhigh for task ${elsewhere.id}.`);
   const onTask = await h.turn(elsewhere.id, 'go on', h.chat.id, 'task');
   assert.deepEqual([onTask.effort, onTask.by], ['xhigh', 'request'], 'in the task\'s own chat');
 
   // A suggested model: another one is stored and named; one that cannot run now is stored as asked (like with my start model).
   const tipped = h.chats.create({ agentIds: [AGENT], createdBy: 'human' });
-  h.chats.update(tipped.id, { settings: { modelHints: { [AGENT]: SOL } } }, 'human');
+  h.chats.send({ conversationId: tipped.id, authorId: 'human', body: 'Use Sol for this.', model: SOL });
   const opus = ok(await h.ask({ model: OPUS }, undefined, tipped.id)) as unknown as { modelId: string; suggestion?: string };
-  assert.deepEqual([opus.modelId, opus.suggestion], [OPUS, 'Stanislaus suggested GPT-6.1 Sol in this chat – I take Claude Opus 5.5 for this step.']);
+  assert.deepEqual([opus.modelId, opus.suggestion], [OPUS, 'Stanislaus picked GPT-6.1 Sol for their newest message – I take Claude Opus 5.5 for this step.']);
   (h.services.accounts as unknown as FakeAccounts).markLimited('acc_claude', h.clock.now() + 3600_000);
   const limited = ok(await h.ask({ model: OPUS }, undefined, tipped.id)) as unknown as { modelId: string; suggestion?: string; instead?: string };
   assert.deepEqual([limited.modelId, limited.suggestion], [SOL, undefined], 'the preview stays on the model I am on');

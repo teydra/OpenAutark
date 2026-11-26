@@ -3,9 +3,11 @@
 // where the model samples at its own setting – from
 // the activity feed, else its last turn's from agents.runs, read when shown and after every reconnect (lib/use-load.ts,
 // like the agent's folder below); a run that ends while
-// the page is open leaves its live values there), row "Start model" sets the model it starts its turns on ("Auto" =
-// chosen per task; chat models only, in catalog order – the catalog comes with the shell's load, store.loadAll) – a
-// start value it changes itself when the work needs another,
+// the page is open leaves its live values there). 26.11.2026: the one "Model" row shows that model and a click opens the
+// choice ("Auto" = chosen per task; chat models only, in catalog order – the catalog comes with the shell's load,
+// store.loadAll), then "From next context" (stored as the start model, applied when its context is next rebuilt) or
+// "Now" (asks "Switch model now?" first; the agent reads the whole conversation again) – a start value it changes
+// itself when the work needs another,
 // and the runtime tells it who set it (models.setPolicy stores pinBy). Then the agent's two files that open in
 // the pane's file tab (SYSTEM.md, last-prompt.md; B-081: a missing SYSTEM.md opens in the editor, a missing
 // last-prompt.md on the not-found page), the agent folder with its skills (the agent and the AI write
@@ -19,16 +21,16 @@
 // moves when a run starts or ends.
 // Owns: these sections. Never: invents data – the folder and skills come from the runtime; never polls.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import '../../shared/api/methods-agent-core.ts'; // agents.core (module augmentation)
 import type { Agent } from '../../shared/model/org.ts';
 import { HUMAN_FILE, MAX_HUMAN_MD, SYSTEM_FILE, type AgentCoreInfo } from '../../shared/model/agent-core.ts';
-import type { ModelPolicy } from '../../shared/model/providers.ts';
 import type { AgentActivity } from '../../shared/model/runs.ts';
 import type { Schedule } from '../../shared/model/tasks.ts';
-import { Icon, Select } from '../lib/ui.tsx';
-import type { SelectOption } from '../lib/ui.tsx';
+import { Icon, Popover } from '../lib/ui.tsx';
+import { confirm } from '../lib/dialog.tsx';
+import { pendingModel, SWITCH_HINT, SWITCH_LABEL, SWITCH_NOW_CONFIRM, switchRequest, type SwitchWhen } from './agent-model.ts';
 import { useContextMenu } from '../lib/context-menu.tsx';
 import { models } from '../lib/store.ts';
 import { useLoad } from '../lib/use-load.ts';
@@ -67,10 +69,19 @@ function Row(props: { label: string; hint?: string; children?: ComponentChildren
 
 type Route = Pick<AgentActivity, 'model' | 'modelName' | 'effort' | 'temperature' | 'temperatureSent'>;
 
-/** What the agent runs on: its live run's route, else its last turn's ("Opus 5.5 · High · T 0.3"). */
-function NowRow(props: { agentId: string }) {
-  const { agentId } = props;
+/**
+ * What the agent runs on: its live run's route, else its last turn's ("Opus 5.5 · High · T 0.3"). Owner 26.11.2026: a click
+ * opens the model list; a picked model comes with "From next context" and "Now" (agent-model.ts) – "Now" asks first. A start
+ * model that waits for the next context is named under the label.
+ */
+function NowRow(props: { agent: Agent; readOnly: boolean }) {
+  const { agent } = props;
+  const agentId = agent.id;
   const live = liveByAgent.value.get(agentId);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<string | undefined>(); // the model whose timing is being chosen ('' = Auto never gets here)
+  useEffect(() => { if (!open) setPicked(undefined); }, [open]);
   const [last, setLast] = useState<Route | undefined>();
   useEffect(() => setLast(undefined), [agentId]); // another agent: never the last one's turn
   useLoad(() => {
@@ -98,40 +109,70 @@ function NowRow(props: { agentId: string }) {
   const choosing = Boolean(live && !live.model); // the last turn's route stays out of the value and its title
   const value = choosing ? 'Choosing a model' : withTemperature(line, warmth) || '–';
   const stance = !choosing && line ? temperatureTitle(warmth) : '';
+  const pin = agent.modelPolicy?.pin;
+  const pending = pendingModel(pin, shown?.model);
+  const pendingName = pending ? models.value.find((model) => model.id === pending)?.name ?? modelShortName(pending) ?? pending : undefined;
+  const hint = pendingName ? `${pendingName} from its next context` : live ? 'Working now' : last ? 'Its last turn' : 'Not working now';
+  const locked = props.readOnly || !can('models.setPolicy');
+  const apply = async (model: string, when: SwitchWhen) => {
+    setOpen(false);
+    if (when === 'now' && model && !(await confirm(SWITCH_NOW_CONFIRM))) return;
+    try { await rpc.call('models.setPolicy', switchRequest(agentId, agent.modelPolicy, model, when)); } catch (error) { toastError(error, 'Could not save the model'); }
+  };
+  // the catalog's order (newest of each family first, older versions below)
+  const chat = models.value.filter((model) => (model.available && isChatModel(model)) || model.id === pin);
+  const title = stance ? `${line} · ${stance}` : value;
+  const name = (id: string) => models.value.find((model) => model.id === id)?.name ?? id;
   return (
-    <Row label="Now" hint={live ? 'Working now' : last ? 'Its last turn' : 'Not working now'}>
-      <span class="agent-row-label" title={stance ? `${line} · ${stance}` : value}>{value}</span>
+    <Row label="Model" hint={hint}>
+      {locked ? <span class="agent-row-label" title={title}>{value}</span> : (
+        <>
+          <button ref={anchor} type="button" class="chip model-chip agent-model" aria-haspopup="menu" aria-expanded={open} title={title} onClick={() => setOpen(!open)}>
+            <span class="chip-label">{value}</span>
+            <Icon name="caret-down" size={12} class="chip-caret" />
+          </button>
+          <Popover anchor={anchor.current} open={open} onClose={() => setOpen(false)} placement="bottom-end" width={300} class="menu model-menu" role="menu" label="Model">
+            {picked === undefined ? (
+              <div class="model-list">
+                <button type="button" class="menu-item" role="menuitemradio" aria-checked={!pin} onClick={() => void apply('', 'next')}>
+                  <span class="menu-label"><span>{`${AUTO} – chosen per task`}</span></span>
+                  {!pin && <Icon name="check" size={16} class="menu-check" />}
+                </button>
+                {chat.map((model) => (
+                  <button key={model.id} type="button" class={`menu-item model-option${model.available ? '' : ' unavailable'}`} role="menuitemradio" aria-checked={pin === model.id}
+                    title={model.id} onClick={() => setPicked(model.id)}>
+                    <span class="menu-label">
+                      <span>{model.available ? model.name : `${model.name} (unavailable)`}</span>
+                      {model.newer && <small class="model-option-details">Older version</small>}
+                    </span>
+                    {pin === model.id && <Icon name="check" size={16} class="menu-check" />}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div class="model-list">
+                <p class="menu-title" role="presentation">{name(picked)}</p>
+                {(['next', 'now'] as const).map((when) => (
+                  <button key={when} type="button" class="menu-item" role="menuitem" onClick={() => void apply(picked, when)}>
+                    <span class="menu-label"><span>{SWITCH_LABEL[when]}</span><small class="model-option-details">{SWITCH_HINT[when]}</small></span>
+                  </button>
+                ))}
+                <button type="button" class="menu-item" role="menuitem" onClick={() => setPicked(undefined)}>
+                  <span class="menu-label"><span>Back</span></span>
+                </button>
+              </div>
+            )}
+          </Popover>
+        </>
+      )}
     </Row>
   );
 }
 
-/** The "nothing chosen" option: Auto (lib/route-preview.ts) – the AI chooses per task. */
-const AUTO_OPTION = `${AUTO} – chosen per task`;
-
 function ModelSection(props: { agent: Agent; readOnly: boolean }) {
-  const [pin, setPin] = useState(props.agent.modelPolicy?.pin ?? '');
-  useEffect(() => setPin(props.agent.modelPolicy?.pin ?? ''), [props.agent.modelPolicy?.pin]);
-  const save = async (next: string) => {
-    const before = pin;
-    setPin(next);
-    // who set it (pinBy) is the runtime's to write
-    const { pin: _old, pinBy: _by, ...rest } = props.agent.modelPolicy ?? {};
-    const policy: ModelPolicy = next ? { ...rest, pin: next } : rest;
-    try { await rpc.call('models.setPolicy', { agentId: props.agent.id, policy }); } catch (error) { setPin(before); toastError(error, 'Could not save the start model'); }
-  };
-  // the catalog's order (newest of each family first, older versions below)
-  const chat = models.value.filter((model) => (model.available && isChatModel(model)) || model.id === pin);
-  const options: Array<SelectOption<string>> = [
-    { value: '', label: AUTO_OPTION },
-    ...chat.map((model) => ({ value: model.id, label: model.available ? model.name : `${model.name} (unavailable)`, ...(model.newer ? { hint: 'Older version' } : {}) })),
-  ];
-  if (pin && !chat.some((model) => model.id === pin)) options.push({ value: pin, label: pin });
   return (
     <Section title="Model">
-      <NowRow agentId={props.agent.id} />
-      <Row label="Start model" hint="It starts its turns on this and switches when the work needs another">
-        <Select label="Start model" value={pin} options={options} disabled={props.readOnly} onChange={(next) => void save(next)} />
-      </Row>
+      <NowRow agent={props.agent} readOnly={props.readOnly} />
     </Section>
   );
 }

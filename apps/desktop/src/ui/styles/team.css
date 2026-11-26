@@ -279,3 +279,6 @@ button.agent-link:hover { text-decoration: underline; text-underline-offset: 2px
 @media (pointer: coarse) { .agent-fold-toggle { min-height: 44px; } }
 /* the phone's Add: a quiet text button at the top of the team list (the side header has the plus on a computer) */
 .team-add { display: block; padding: 8px 20px; font-size: calc(14px * var(--ui-text, 1)); }
+
+/* 26.11.2026: the agent page's model button – wider than the composer's chip, it names model · where it runs · effort */
+.agent-row .model-chip.agent-model { width: auto; min-width: 148px; max-width: 280px; }

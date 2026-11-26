@@ -188,11 +188,11 @@ test('B-083 review: stronger on the best model leaves the person\'s effort sugge
   h.finish({ engine: 'claude', model: OPUS, effort: 'high', route: { reason: 'seed', by: 'rules', category: 'video-animation' } });
   h.org.add({ ...h.org.get(AGENT)!, mode: 'video-animation' });
   Object.assign(h.services.settings.get(), { profile: { ...h.services.settings.get().profile, name: 'Stanislaus' } });
-  h.chats.update(h.chat.id, { settings: { efforts: { [AGENT]: 'high' } } }, 'human');
+  h.chats.send({ conversationId: h.chat.id, authorId: 'human', body: 'Look again.', effort: 'high' }); // 26.11.2026: a pick is on one line only
   h.dispatcher.activity = () => [{ agentId: AGENT, runId: 'run_tool', note: '', startedAt: 0, model: OPUS, effort: 'high' }];
   const answer = ok(await h.ask({ need: 'stronger' }, { modelId: OPUS, mode: 'video-animation' })) as Answer & { suggestion?: string };
   assert.deepEqual([answer.modelId, answer.effort], [OPUS, 'xhigh']);
-  assert.equal(answer.suggestion, 'Stanislaus suggested effort high in this chat – I take effort xhigh for this step.');
+  assert.equal(answer.suggestion, 'Stanislaus picked effort high for their newest message – I take effort xhigh for this step.');
 });
 
 test('now: true continues at once through the dispatcher and says so; without it the next turn', async () => {

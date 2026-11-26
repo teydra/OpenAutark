@@ -252,8 +252,12 @@ export interface SendMessageInput {
   pin?: boolean; // with `model`: pin it for the addressed agent instead of a hint (K6)
 }
 
-/** K6: a model someone asked for – a recommendation for whoever takes the work; `pinned`: pinned for the addressed agent. */
-export interface ModelTag { modelId: string; effort?: string; pinned?: boolean }
+/**
+ * K6: what the person picked in the composer for this one message – a recommendation for whoever takes the work; `pinned`:
+ * pinned for the addressed agent. 0.3.21: the pick applies to this message only (chat/sticky-model.ts takes it off the chat
+ * when the message is sent), so the message carries all of it: a model and/or an effort and/or a temperature.
+ */
+export interface ModelTag { modelId?: string; effort?: string; temperature?: number; pinned?: boolean }
 export interface MessageMeta {
   modelHint?: ModelTag; // the model asked for with this message – a recommendation for whoever takes the work, shown small under it; absent = Auto
 }

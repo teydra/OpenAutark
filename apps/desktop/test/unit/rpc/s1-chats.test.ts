@@ -36,8 +36,8 @@ test('chats.create with a first message sends it as the human and remembers the 
 });
 
 // B-050 K6 (deliberate change): `model` is a hint for the addressed agent and the message's tag; pin: true pins it.
-// The chat settings are the one place (chat/sticky-model.ts) – routing reads the pin there (routing/policies.ts chatChoice).
-test('messages.send: model is the addressed agent\'s hint and the message\'s tag, pin: true pins it, auto clears', async (t) => {
+// 26.11.2026 (owner): it applies to that one message – the line carries it, the chat is on Auto again (chat/sticky-model.ts).
+test('messages.send: model is the addressed agent\'s hint and the message\'s tag for that message only, pin: true pins it for the tag, auto clears', async (t) => {
   const f = setup();
   t.after(f.cleanup);
   const chat = f.chats.create({ agentIds: ['ag_ava', 'ag_ben'], createdBy: 'human' });
@@ -46,16 +46,17 @@ test('messages.send: model is the addressed agent\'s hint and the message\'s tag
   const first = await f.owner.call<Message>('messages.send', { conversationId: chat.id, body: 'Draft the post', model: 'claude:claude-opus-5-5', effort: 'high' });
   assert.equal(first.authorKind, 'human');
   assert.deepEqual(first.meta.modelHint, { modelId: 'claude:claude-opus-5-5', effort: 'high' });
-  assert.deepEqual([settings().modelHints, settings().models, settings().efforts], [{ [lead]: 'claude:claude-opus-5-5' }, undefined, { [lead]: 'high' }]);
+  assert.deepEqual([settings().modelHints, settings().models, settings().efforts], [undefined, undefined, undefined], 'one message only: the chat is on Auto again');
   assert.equal(f.extras.policyStore.size, 0, 'no second writer (the policy store is untouched)');
-  await f.owner.call('messages.send', { conversationId: chat.id, body: '@Ben check this', effort: 'low' });
-  assert.deepEqual(settings().efforts, { [lead]: 'high', ag_ben: 'low' }, 'mentioned agent gets the choice');
+  const low = await f.owner.call<Message>('messages.send', { conversationId: chat.id, body: '@Ben check this', effort: 'low' });
+  assert.deepEqual(low.meta.modelHint, { effort: 'low' }, 'the mentioned agent gets the choice');
+  assert.equal(settings().efforts, undefined);
   const pinned = await f.owner.call<Message>('messages.send', { conversationId: chat.id, body: '@Ben always', model: 'codex:gpt-6-luna', pin: true });
-  assert.deepEqual(pinned.meta.modelHint, { modelId: 'codex:gpt-6-luna', effort: 'low', pinned: true });
-  assert.deepEqual(settings().models, { ag_ben: 'codex:gpt-6-luna' });
+  assert.deepEqual(pinned.meta.modelHint, { modelId: 'codex:gpt-6-luna', pinned: true });
+  assert.equal(settings().models, undefined, 'a pin does not stay either');
   assert.notEqual(lead, 'ag_ben');
-  await f.owner.call('messages.send', { conversationId: chat.id, body: 'back to auto', model: 'auto', effort: 'auto' });
-  assert.deepEqual([settings().modelHints, settings().efforts, settings().models], [undefined, { ag_ben: 'low' }, { ag_ben: 'codex:gpt-6-luna' }], 'only the lead\'s choice is cleared');
+  const auto = await f.owner.call<Message>('messages.send', { conversationId: chat.id, body: 'back to auto', model: 'auto', effort: 'auto' });
+  assert.equal(auto.meta.modelHint, undefined);
   assert.equal((await f.owner.request('messages.send', { conversationId: chat.id, body: 'x', model: 'use opus\nnow' })).error?.code, 'bad_request', 'a model id only (it reaches prompts)');
   assert.equal((await f.owner.request('messages.send', { conversationId: chat.id, body: 'x', pin: true })).error?.code, 'bad_request', 'pin: true needs a model');
   assert.equal((await f.owner.request('messages.send', { conversationId: chat.id, body: 'x', effort: 'turbo' })).error?.code, 'bad_request');

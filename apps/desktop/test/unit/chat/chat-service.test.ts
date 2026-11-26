@@ -182,21 +182,23 @@ test('drafts, pin, archive, remove, list search', () => {
 });
 
 // B-050 K6 (deliberate change): a message's model is the addressed agent's hint, only pin: true pins it.
-test('model per chat from a human message: a hint for the addressed agent, a pin only with pin: true; auto clears', () => {
+// 26.11.2026 (owner): whatever a message picks applies to that message only – its line carries it (meta.modelHint) and the
+// chat is on Auto again afterwards (the composer's chip reads the chat's settings).
+test('model per chat from a human message: the line carries a hint (a pin only with pin: true); the chat is Auto again after it', () => {
   const h = setup();
   const chat = h.chats.create({ agentIds: ['ag_tom', 'ag_lea'], createdBy: 'human' });
-  h.chats.send({ conversationId: chat.id, body: '@Tom do it', authorId: 'human', model: 'gpt-6.1', effort: 'high' });
-  assert.deepEqual(h.chats.get(chat.id)!.settings.modelHints, { ag_tom: 'gpt-6.1' });
-  assert.equal(h.chats.get(chat.id)!.settings.models, undefined, 'no pin without pin: true');
-  assert.deepEqual(h.chats.get(chat.id)!.settings.efforts, { ag_tom: 'high' });
-  h.chats.send({ conversationId: chat.id, body: '@Tom always', authorId: 'human', model: 'gpt-6.1', pin: true });
-  assert.deepEqual(h.chats.get(chat.id)!.settings.models, { ag_tom: 'gpt-6.1' });
-  assert.equal(h.chats.get(chat.id)!.settings.modelHints, undefined, 'the pin replaces the hint');
-  h.chats.send({ conversationId: chat.id, body: '@Tom again', authorId: 'human', model: 'auto' });
-  assert.equal(h.chats.get(chat.id)!.settings.models, undefined);
+  const hinted = h.chats.send({ conversationId: chat.id, body: '@Tom do it', authorId: 'human', model: 'gpt-6.1', effort: 'high' });
+  assert.deepEqual(hinted.meta.modelHint, { modelId: 'gpt-6.1', effort: 'high' }, 'a hint, no pin without pin: true');
+  const after = h.chats.get(chat.id)!.settings;
+  assert.deepEqual([after.modelHints, after.models, after.efforts, after.suggestedAt], [undefined, undefined, undefined, undefined], 'one message only: the chat is on Auto again');
+  const pinned = h.chats.send({ conversationId: chat.id, body: '@Tom always', authorId: 'human', model: 'gpt-6.1', pin: true });
+  assert.deepEqual(pinned.meta.modelHint, { modelId: 'gpt-6.1', pinned: true });
+  assert.equal(h.chats.get(chat.id)!.settings.models, undefined, 'a pin does not stay either');
+  const auto = h.chats.send({ conversationId: chat.id, body: '@Tom again', authorId: 'human', model: 'auto' });
+  assert.equal(auto.meta.modelHint, undefined);
   assert.equal(h.chats.get(chat.id)!.settings.modelHints, undefined);
+  assert.equal(h.of('conversation.upserted').length > 0, true, 'the chip is told: the chat was announced again');
 });
-
 test('summary: importantUnread counts the unread messages marked important (B-041 Home and briefing); left out when none', () => {
   const h = setup();
   const chat = h.chats.create({ agentIds: ['ag_tom'], createdBy: 'human' });

@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { agent, harness } from './harness.ts';
 import { findOrCreateDirect } from '../../../src/runtime/chat/direct.ts';
-import { addressedAgents, modelTag } from '../../../src/runtime/chat/sticky-model.ts';
+import { addressedAgents, modelTag, withoutChoice } from '../../../src/runtime/chat/sticky-model.ts';
 
 function setup() {
   const h = harness();
@@ -21,7 +21,7 @@ function setup() {
 const OPUS = 'claude:claude-opus-5-5';
 const LUNA = 'codex:gpt-6-luna';
 
-test('a human message carries the addressed agent\'s choice: hint, pin (pinned), effort; Auto carries nothing', () => {
+test('a human message carries the addressed agent\'s pick: hint, pin (pinned), effort; Auto carries nothing – and the pick is gone from the chat after it', () => {
   const h = setup();
   const chat = h.chats.create({ title: 'Launch', agentIds: ['ag_mara', 'ag_tom'], createdBy: 'human' });
   assert.equal(h.chats.lead(chat.id), 'ag_mara');
@@ -32,26 +32,39 @@ test('a human message carries the addressed agent\'s choice: hint, pin (pinned),
   assert.deepEqual(hinted.meta.modelHint, { modelId: LUNA, effort: 'high' }, 'the lead is addressed: its new hint');
   assert.deepEqual(h.chats.message(hinted.id)!.meta.modelHint, { modelId: LUNA, effort: 'high' }, 'stored with the message');
   const next = h.chats.send({ conversationId: chat.id, body: 'And the intro', authorId: 'human' });
-  assert.deepEqual(next.meta.modelHint, { modelId: LUNA, effort: 'high' }, 'the chat\'s choice stays until changed');
+  assert.equal(next.meta.modelHint, undefined, '26.11.2026: one message only – the next one is Auto');
 
-  h.chats.update(chat.id, { settings: { models: { ag_tom: OPUS } } }, 'human'); // "Always use this model" (chats.update)
+  h.chats.update(chat.id, { settings: { models: { ag_tom: OPUS } } }, 'human'); // a pick made in the chat settings, not yet sent
   const toTom = h.chats.send({ conversationId: chat.id, body: '@Tom check it', authorId: 'human' });
-  assert.deepEqual(toTom.meta.modelHint, { modelId: OPUS, pinned: true }, 'the first mention: Tom\'s pin');
+  assert.deepEqual(toTom.meta.modelHint, { modelId: OPUS, pinned: true }, 'the first mention: Tom\'s pick');
+  assert.equal(h.chats.get(chat.id)!.settings.models, undefined, 'taken off the chat by that message');
 
   const answer = h.chats.send({ conversationId: chat.id, body: 'Checked.', authorId: 'ag_tom' });
   assert.equal(answer.meta.modelHint, undefined, 'an agent\'s line carries no tag');
+  h.chats.update(chat.id, { settings: { models: { ag_tom: OPUS } } }, 'human');
   const reply = h.chats.send({ conversationId: chat.id, body: 'Thanks', authorId: 'human', replyTo: answer.id });
   assert.deepEqual(reply.meta.modelHint, { modelId: OPUS, pinned: true }, 'a reply addresses the agent replied to');
 
   const forged = h.chats.send({ conversationId: chat.id, body: 'x', authorId: 'human', meta: { modelHint: { modelId: 'evil' } } });
-  assert.deepEqual(forged.meta.modelHint, { modelId: LUNA, effort: 'high' }, 'the tag is always the server\'s');
-  h.chats.send({ conversationId: chat.id, body: 'back', authorId: 'human', model: 'auto', effort: 'auto' });
-  const auto = h.chats.send({ conversationId: chat.id, body: 'now', authorId: 'human' });
-  assert.equal(auto.meta.modelHint, undefined, 'Auto again: no tag');
+  assert.equal(forged.meta.modelHint, undefined, 'the tag is always the server\'s');
   assert.equal(h.chats.status(chat.id, { type: 'note', text: 'x' }).meta.modelHint, undefined);
 });
 
-test('the sent model is the tag at once: a hint, or with pin: true the pin', () => {
+test('a pick for another agent stays until a message addresses that agent; an effort or a temperature alone is a tag', () => {
+  const h = setup();
+  const chat = h.chats.create({ agentIds: ['ag_mara', 'ag_tom'], createdBy: 'human' });
+  h.chats.update(chat.id, { settings: { modelHints: { ag_tom: OPUS }, temperatures: { ag_tom: 0.4 } } }, 'human');
+  const toLead = h.chats.send({ conversationId: chat.id, body: 'Mara, hello', authorId: 'human' });
+  assert.equal(toLead.meta.modelHint, undefined, 'Mara is addressed: Tom\'s pick is not hers');
+  assert.deepEqual(h.chats.get(chat.id)!.settings.modelHints, { ag_tom: OPUS }, 'and it waits for Tom\'s message');
+  const toTom = h.chats.send({ conversationId: chat.id, body: '@Tom hello', authorId: 'human' });
+  assert.deepEqual(toTom.meta.modelHint, { modelId: OPUS, temperature: 0.4 });
+  const effortOnly = h.chats.send({ conversationId: chat.id, body: 'quick', authorId: 'human', effort: 'low' });
+  assert.deepEqual(effortOnly.meta.modelHint, { effort: 'low' });
+  assert.equal(h.chats.get(chat.id)!.settings.efforts, undefined);
+});
+
+test('the sent model is the tag at once: a hint, or with pin: true the pin – and none stays in the chat', () => {
   const h = setup();
   const chat = h.chats.create({ agentIds: ['ag_tom'], createdBy: 'human' });
   const hint = h.chats.send({ conversationId: chat.id, body: 'Plan it', authorId: 'human', model: OPUS });
@@ -61,6 +74,7 @@ test('the sent model is the tag at once: a hint, or with pin: true the pin', () 
   const back = h.chats.send({ conversationId: chat.id, body: 'Suggest', authorId: 'human', model: OPUS });
   assert.deepEqual(back.meta.modelHint, { modelId: OPUS }, 'a hint drops the pin');
   assert.equal(h.chats.get(chat.id)!.settings.models, undefined);
+  assert.equal(h.chats.get(chat.id)!.settings.modelHints, undefined);
 });
 
 test('addressedAgents and modelTag: mentions, else the lead, else the first agent; no agents, no tag', () => {
@@ -74,10 +88,20 @@ test('addressedAgents and modelTag: mentions, else the lead, else the first agen
   assert.deepEqual(addressedAgents({ mentions: [] }, [members[0], { ...members[1] }]), ['ag_a']);
   assert.deepEqual(addressedAgents({ mentions: [] }, [members[0]]), []);
   assert.equal(modelTag({ models: { ag_a: 'auto' }, modelHints: { ag_a: 'auto' } }, 'ag_a'), undefined);
-  assert.equal(modelTag({ efforts: { ag_a: 'high' } }, 'ag_a'), undefined, 'an effort alone is no tag');
+  assert.deepEqual(modelTag({ efforts: { ag_a: 'high' } }, 'ag_a'), { effort: 'high' }, 'an effort alone is a tag: the pick is gone from the chat after the line');
+  assert.deepEqual(modelTag({ temperatures: { ag_a: 0.7 } }, 'ag_a'), { temperature: 0.7 });
   assert.equal(modelTag({ modelHints: { ag_a: OPUS } }, undefined), undefined);
 });
 
+test('withoutChoice takes only the named agents\' pick off the settings and says whether anything went', () => {
+  const settings = { models: { ag_a: OPUS }, modelHints: { ag_a: LUNA, ag_b: OPUS }, efforts: { ag_a: 'high' }, temperatures: { ag_a: 0.2 }, suggestedAt: { ag_a: 1 }, notifications: 'all' } as const;
+  const taken = withoutChoice(settings as never, ['ag_a']);
+  assert.equal(taken.changed, true);
+  assert.deepEqual(taken.settings, { modelHints: { ag_b: OPUS }, notifications: 'all' });
+  const untouched = withoutChoice(settings as never, ['ag_c']);
+  assert.equal(untouched.changed, false);
+  assert.equal(untouched.settings, settings as never, 'nothing to take: the same object');
+});
 test('K2: the default 1:1 keeps its empty title after the first message; another unnamed chat still takes one', () => {
   const h = setup();
   const direct = findOrCreateDirect(h.services, 'human', 'ag_tom');

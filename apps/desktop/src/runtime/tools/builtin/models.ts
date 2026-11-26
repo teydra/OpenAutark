@@ -56,7 +56,7 @@ import type { Effort, RouteDecision } from '../../../shared/model/providers.ts';
 import { CATEGORIES } from '../../models/priors.ts';
 import { categoryLabel } from '../../routing/categories.ts';
 import { modelList } from '../../routing/model-list.ts';
-import { chatChoice, effectivePolicy } from '../../routing/policies.ts';
+import { effectivePolicy, newestLineChoice } from '../../routing/policies.ts';
 import { withinTiers } from '../../routing/score.ts';
 import { MODEL_NEEDS, NO_FIT_TEXT, needMet, type ModelNeed } from '../../routing/need.ts';
 import { catalogModel, clearNextModel, modelWord, returnChoice, setNextRoute, setTaskRoute, type NextRoute } from '../../agents/next-route.ts';
@@ -296,13 +296,14 @@ const setModel = defineTool<SetArgs>({
 });
 
 /**
- * B-083: the person's suggestion where the work runs (the composer chip: routing/policies.ts chatChoice) is information
+ * B-083: the person's pick where the work runs – on their newest line there (the composer chip, 26.11.2026: one message only;
+ * routing/policies.ts newestLineChoice) – is information
  * for me, never a route; a request that leaves it is stored like any other, and this one line names whose suggestion I
  * leave – undefined when the request keeps it or there is none. Where: this chat, else the chat of the task the request is for.
  */
 function leftTip(ctx: ToolContext, place: Place, taken: { modelId?: string; effort?: Effort; temperature?: number }, taskId: string | undefined): string | undefined {
-  let tip: ReturnType<typeof chatChoice>;
-  try { tip = chatChoice(ctx.services, place.conversationId, ctx.agent.id); } catch { return undefined; }
+  let tip: ReturnType<typeof newestLineChoice>;
+  try { tip = newestLineChoice(ctx.services, place.conversationId, ctx.agent.id); } catch { return undefined; }
   const named = (id: string) => ctx.services.catalog.get(id)?.name ?? id;
   const left: string[] = [];
   const took: string[] = [];
@@ -310,8 +311,8 @@ function leftTip(ctx: ToolContext, place: Place, taken: { modelId?: string; effo
   if (tip.effort && taken.effort && taken.effort !== tip.effort) { left.push(`effort ${tip.effort}`); took.push(`effort ${taken.effort}`); }
   if (tip.temperature !== undefined && taken.temperature !== undefined && taken.temperature !== tip.temperature) { left.push(`temperature ${tip.temperature}`); took.push(`temperature ${taken.temperature}`); }
   if (!left.length) return undefined;
-  const chat = place.conversationId === ctx.conversationId ? 'in this chat' : `in the chat of task ${place.taskId}`;
-  return `${capital(personName(ctx.services, HUMAN_ID) ?? 'the person')} suggested ${left.join(' · ')} ${chat} – I take ${took.join(' · ')} for ${taskId ? `task ${taskId}` : 'this step'}.`;
+  const chat = place.conversationId === ctx.conversationId ? '' : ` in the chat of task ${place.taskId}`;
+  return `${capital(personName(ctx.services, HUMAN_ID) ?? 'the person')} picked ${left.join(' · ')} for their newest message${chat} – I take ${took.join(' · ')} for ${taskId ? `task ${taskId}` : 'this step'}.`;
 }
 
 function capital(value: string): string {
