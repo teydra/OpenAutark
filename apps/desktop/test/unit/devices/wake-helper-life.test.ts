@@ -1,13 +1,12 @@
 // 0.3.19 (23.11.2026): the wake helper's own life (runtime/devices/sleeper-life.ts) and wake.json kept current while the
 // app runs (runtime/devices/wake-keeper.ts) – so a helper the broker starts after a Task Manager end finds a current file,
-// takes a dead app for a closed one, never runs twice, and starts the app only for work due after it began (not within
-// 5 minutes: closing still closes). Owns: these assertions. Never: a real helper, network or the broker.
+// takes a dead app for a closed one, never runs twice, and recovers recently due work missed during broker startup. Owns: these assertions. Never: a real helper, network or the broker.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { appRunning, dueDelay, dueStartAt, DUE_SETTLE_MS, DUE_TICK_MS, otherHelper } from '../../../src/runtime/devices/sleeper-life.ts';
+import { appRunning, dueDelay, dueStartAt, DUE_RECOVERY_MS, DUE_SETTLE_MS, DUE_TICK_MS, launchOnce, otherHelper } from '../../../src/runtime/devices/sleeper-life.ts';
 import { keepWakeFile, wakeHelperOn, WAKE_KEEP_DELAY_MS } from '../../../src/runtime/devices/wake-keeper.ts';
 import { DevicesRepo } from '../../../src/runtime/devices/repo.ts';
 import { b64url, fingerprintOf, generateEd25519, rawPublic } from '../../../src/runtime/devices/keys.ts';
@@ -33,7 +32,7 @@ test('otherHelper: a second helper for the same data folder ends at once; its ow
   assert.equal(otherHelper(undefined, 6, alive), false);
 });
 
-test('dueStartAt: only work due after the helper began, never within 5 minutes of it; dueDelay caps each timer', () => {
+test('dueStartAt without a previous mark: only work due after the helper began; dueDelay caps each timer', () => {
   const began = 1_000_000;
   assert.equal(dueStartAt(null, began), undefined);
   assert.equal(dueStartAt(undefined, began), undefined);
@@ -45,6 +44,35 @@ test('dueStartAt: only work due after the helper began, never within 5 minutes o
   assert.equal(dueDelay(began + 3_600_000, began), DUE_TICK_MS);
   assert.equal(dueDelay(began + 10_000, began), 10_000);
   assert.equal(dueDelay(began - 10, began), 0);
+});
+
+test('dueStartAt: a Task Manager close does not drop work due before the broker started the helper', () => {
+  const began = 1_000_000;
+  const killed = { state: 'running', at: began - 3 * DUE_RECOVERY_MS, pid: 7 } as const;
+  assert.equal(dueStartAt(began - 14_000, began, killed), began);
+  assert.equal(dueStartAt(began + 10_000, began, killed), began + 10_000);
+  assert.equal(dueStartAt(began - DUE_RECOVERY_MS - 1, began, killed), undefined);
+  assert.equal(dueStartAt(began - 500, began, { ...killed, at: began - 100 }), undefined, 'stale due file from before last app start');
+});
+
+test('dueStartAt: a deliberate quit preserves settle time and does not reopen for earlier work', () => {
+  const began = 1_000_000;
+  const quit = { state: 'quit', by: 'person', at: began - 15_000 } as const;
+  assert.equal(dueStartAt(quit.at - 1, began, quit), undefined);
+  assert.equal(dueStartAt(quit.at + 1, began, quit), quit.at + DUE_SETTLE_MS);
+  assert.equal(dueStartAt(began + 3_600_000, began, quit), began + 3_600_000);
+});
+
+test('launchOnce: neither a running app nor a second simultaneous wake starts another process', () => {
+  let running = true;
+  const launches: string[][] = [];
+  const launch = launchOnce(() => running, (args: string[]) => launches.push(args));
+  launch(['--company=company-2']);
+  assert.deepEqual(launches, []);
+  running = false;
+  launch(['--background', '--company=company-2']);
+  launch(['--company=company-2']);
+  assert.deepEqual(launches, [['--background', '--company=company-2']]);
 });
 
 const tower = () => {

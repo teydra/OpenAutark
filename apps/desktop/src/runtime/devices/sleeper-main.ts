@@ -5,7 +5,7 @@
 // sleeper-life.ts) or another helper holds this data folder (sleeper.json), and otherwise runs the helper (sleeper.ts)
 // until a wake starts the app, the app starts by itself (run-state.json turns 'running': a directory watch, no polling)
 // or another helper takes its key over. 0.3.19 (23.11.2026): it also starts the app for scheduled work – next-due.json,
-// only work due after it began and not within 5 minutes of that (sleeper-life.ts dueStartAt) – in the background.
+// keeps a short grace for work due around a forced exit (sleeper-life.ts dueStartAt) – in the background.
 // Its few lines go to <data>/logs/sleeper.log (never a key); <data>/sleeper.json carries its pid while it runs.
 // Owns: the helper process – its file, its mark, its app start (the Node switch removed, so the app starts as the app) and its end.
 // Never: loads the runtime, the database or a window, or starts the app for anything but a wake or work that came due.
@@ -16,7 +16,7 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { NEXT_DUE_FILE, RUN_STATE_FILE, SLEEPER_FILE, type RunState, type SleeperMark } from '../../shared/model/launch.ts';
 import { Sleeper } from './sleeper.ts';
-import { appRunning, dueDelay, dueStartAt, otherHelper } from './sleeper-life.ts';
+import { appRunning, dueDelay, dueStartAt, launchOnce, otherHelper } from './sleeper-life.ts';
 import { parseWakeFile } from './wake-sign.ts';
 
 const [file = '', ...rest] = process.argv.slice(2);
@@ -26,7 +26,8 @@ const startedAt = Date.now();
 const read = (target: string) => { try { return readFileSync(target, 'utf8'); } catch { return ''; } };
 const json = <T>(name: string): Partial<T> | undefined => { try { return JSON.parse(read(path.join(dir, name))) as Partial<T>; } catch { return undefined; } };
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException)?.code === 'EPERM'; } };
-const running = () => appRunning(json<RunState>(RUN_STATE_FILE), alive);
+const runState = () => json<RunState>(RUN_STATE_FILE);
+const running = () => appRunning(runState(), alive);
 const log = (line: string) => {
   try { mkdirSync(path.join(dir, 'logs'), { recursive: true }); appendFileSync(path.join(dir, 'logs', 'sleeper.log'), `${new Date().toISOString()} ${line}\n`); } catch { /* no log */ }
 };
@@ -43,7 +44,11 @@ try {
 
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE; // the app starts as the app
-const startApp = (args: string[]) => { spawn(process.execPath, args, { detached: true, stdio: 'ignore', env }).unref(); };
+const startApp = launchOnce(running, (args: string[]) => {
+  const child = spawn(process.execPath, args, { detached: true, stdio: 'ignore', env });
+  child.on('error', (error) => log(`app launch failed: ${error.name}`));
+  child.unref();
+});
 const sleeper = new Sleeper({
   file: wake!,
   socket: (url) => new WebSocket(url, { maxPayload: 70 * 1024, handshakeTimeout: 10_000, perMessageDeflate: false }),
@@ -53,7 +58,7 @@ const sleeper = new Sleeper({
 });
 
 // Scheduled work: next-due.json is the runtime's last word (it does not change while the app is closed)
-const dueAt = dueStartAt(json<{ at: number | null }>(NEXT_DUE_FILE)?.at, startedAt);
+const dueAt = dueStartAt(json<{ at: number | null }>(NEXT_DUE_FILE)?.at, startedAt, runState());
 const armDue = () => {
   if (dueAt === undefined) return;
   setTimeout(() => {
