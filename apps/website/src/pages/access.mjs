@@ -32,7 +32,7 @@ const h2 = (id) => `<h2 id="${id}">${sections.find((s) => s[0] === id)[2]}</h2>`
 // Rules inside .prose: keep the .rule heading size (the prose h3 rule would override it).
 const ruleH = 'style="margin-top:0;font-size:17.5px;line-height:1.3"';
 const short = [
-  ['bolt', 'You choose one of two modes', 'Trust AI, preselected: agents may do everything your user account can. Secure: the app asks you before commands and before anything outside its own folders, and spending stays closed. You can switch later in Settings › Security.'],
+  ['bolt', 'You choose one of two modes', 'Trust AI, preselected: agents may do everything your user account can. Secure: the app asks you before every command, and spending stays closed. You can switch later in Settings › Security.'],
   ['chat', 'In Trust AI mode, text steers', 'Agents follow the agreements you can read and change, their rules and skills, and what you say. That is guidance, not a technical barrier. Three switches can make the app ask first: spending, messages and publishing.'],
   ['key', 'Secret values stay out of prompts', 'Agents refer to a secret by its ID and the app fills the value in at the last moment. That protects against leaks, not against an agent set on getting a value.'],
   ['pc', 'Your data lives on your PC', `No ${site.name} server holds your data, and there is no account with us. Prompts go to the AI providers you connect.`],
@@ -64,7 +64,7 @@ ${pageHero({
   root,
   crumb: 'Access and data',
   title: 'It can do <em>a lot.</em> You choose how much.',
-  lead: `${site.name}’s agents work with your rights. In Trust AI mode text steers them; in Secure mode the app asks you before commands and before anything outside its own folders. This page says plainly what the app does and does not do on your PC, where your data lives, what you will see when you install it, and what is not proven yet.`,
+  lead: `${site.name}’s agents work with your rights. In Trust AI mode text steers them; in Secure mode the app asks you before every command. This page says plainly what the app does and does not do on your PC, where your data lives, what you will see when you install it, and what is not proven yet.`,
 })}
 
 <section class="section section--tight">
@@ -97,16 +97,15 @@ ${pageHero({
         <p>What you write in Settings › Security, one text per topic, tells the team when to check with you. Three switches can be set to Ask: spending money, messages to other people and publishing. Then the app asks you before its own tools take such a step, for example a stored card, a message through a connected app or a post. They do not catch a step an agent clicks through on a website. There is no guardian model and no money limit.</p>
 
         <h3>Secure mode</h3>
-        <p>Agents work freely in the company’s own folders: the workspace, each agent’s own folder, memory and the temp folders. Everything else goes through a gate in the app, for ${site.name}’s own tools and for the engines’ own tools alike: Claude Code runs in its default permission mode and Codex in its write sandbox, and both hand their permission requests to that gate. As set up for a new Secure company, the app asks you before an agent:</p>
+        <p>The steps of agents go through a gate in the app, for ${site.name}’s own tools and for the engines’ own tools alike: Claude Code runs in its default permission mode and Codex in its write sandbox, and both hand their permission requests to that gate. As set up for a new Secure company, the app asks you before an agent:</p>
         <ul>
-          <li>reads or changes files outside those folders (folders you add are open from then on);</li>
           <li>runs a command;</li>
           <li>operates an app on this PC, or your phone;</li>
           <li>writes to people outside the company or publishes;</li>
           <li>signs in or uses a stored password;</li>
           <li>changes ${site.name}’s own setup.</li>
         </ul>
-        <p>You answer once, always for this setting, always for this place, or decline. The request also lands in My day and on your phone. A declined step does not run: the agent reads “BLOCKED – not executed”, and the chat shows a short “Blocked: …” line.</p>
+        <p>You answer once, always for this setting, always for this place, or decline. The request also reaches your phone. A declined step does not run: the agent reads “BLOCKED – not executed”, and the chat shows a short “Blocked: …” line.</p>
         <p>Closed whatever a switch says: spending money (the app refuses stored cards and its spending tools), ${site.name}’s own window, its security settings, and the Windows lock screen and Windows prompts. Linking another PC is left to you in Settings › Devices.</p>
         <p><strong>What Secure mode does not cover:</strong></p>
         <ul>

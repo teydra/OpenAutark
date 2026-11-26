@@ -93,7 +93,7 @@ ${pageHero({
         <p>${site.name} does not compete with them. It uses them as engines. Every agent’s work runs through the official Codex or Claude Code tool, signed in with your own account, each account in its own folder. The app does not read or copy those tokens. Around them it adds what a single coding session lacks:</p>
         <ul>
           <li>a persistent team with names, roles and delegation, and not only for code: research, marketing, finance and a private secretary;</li>
-          <li>one inbox for tasks, My day for your own to-dos and calendar, and wake-ups on schedules and events;</li>
+          <li>one inbox for tasks, your own to-dos and a calendar, and wake-ups on schedules and events;</li>
           <li>routing per task (engine, account, model and effort) across as many accounts as you like, with live quota bars;</li>
           <li>settings, skills and memory as open files, and a browser for each chat and each agent${st('browser-spaces')}.</li>
         </ul>
@@ -105,14 +105,14 @@ ${pageHero({
         <h2 id="assistants">${site.name} vs. personal AI assistants</h2>
         <p>Hermes Agent, OpenClaw and Letta give you one persistent assistant that remembers you over time and can be shaped and extended by people who like to tinker. They have active communities and a head start on us.</p>
         <h3>Where ${site.name} is different</h3>
-        <p>${site.name} is not one assistant but a whole organisation: a manager that builds the team, specialist agents, a private secretary, and you. Work has owners and lands in one task inbox. Your own to-dos and calendar sit in My day, and colleagues can join the same chats and tasks. It is a finished desktop app with a tray icon, and it keeps its own settings, skills and memory as files an agent can change.</p>
+        <p>${site.name} is not one assistant but a whole organisation: a manager that builds the team, specialist agents, a private secretary, and you. Work has owners and lands in one task inbox. Your own to-dos and your calendar sit next to them, and colleagues can join the same chats and tasks. It is a finished desktop app with a tray icon, and it keeps its own settings, skills and memory as files an agent can change.</p>
         <h3>When to pick a personal assistant instead</h3>
         <p>If one assistant is all you need, or you want a large community to tinker with, they are the better fit. ${site.name}’s source is public too, but its community is just starting.</p>
 
         <h2 id="team-workspaces">${site.name} vs. AI team workspaces</h2>
         <p>Genspark GenTeam puts people and AI agents into shared channels and coordinates the work through Genspark’s cloud, with credit tiers. It is the closest idea to ${site.name} on this page, and it is ahead of us on two things: collaboration between many people, and maturity.</p>
         <h3>Where ${site.name} is different</h3>
-        <p>${site.name} keeps the coordination on your own PC. Chats, tasks and secrets sit on your disk. There is no account with us and no credits to buy from us: the app is a free download, and the AI work runs on your own plans, keys or local models. Colleagues you invite connect to your PC, and the data stays there. ${site.name} is also built for one person first, covering work, personal brand and private life, with a private secretary and My day next to the work.</p>
+        <p>${site.name} keeps the coordination on your own PC. Chats, tasks and secrets sit on your disk. There is no account with us and no credits to buy from us: the app is a free download, and the AI work runs on your own plans, keys or local models. Colleagues you invite connect to your PC, and the data stays there. ${site.name} is also built for one person first, covering work, personal brand and private life, with a private secretary next to the work.</p>
         <p>One thing is not a difference: running work through local tools on the plan you already pay for. GenTeam does that too.</p>
         <h3>When to pick GenTeam instead</h3>
         <p>If many people work with agents every day, from different places, and you want a service that does not depend on your own computer being on, GenTeam is the more mature choice today.</p>
@@ -137,7 +137,7 @@ ${pageHero({
         <ul>
           <li><strong>Young.</strong> The releases with the full agent company date from October 2026. Most features are proven by automated tests; testing on real devices, with real accounts and over whole nights is still under way.</li>
           <li><strong>Signing.</strong> Version <span data-rel="windows-v">${rel.windows.version}</span> of the Windows installer is code-signed, though SmartScreen may warn once while the new certificate builds reputation. The Mac app is not notarized, so macOS warns you and you confirm by hand. On macOS agents cannot control the computer${release.renamed ? ', and the Mac update that replaces itself has not run on a real Mac yet' : ', and updates are a manual download for now'}.</li>
-          <li><strong>Guard rails are new and coarse.</strong> In Trust AI mode agents have full access and text steers them, with three switches for spending, messages and posts. Secure mode asks before commands and outside the app’s own folders, but leaves the web open by default, does not check what an allowed command touches, and has no spending limit, only a closed door. If you need fine-grained policies enforced by the tool, this is not yet the tool.</li>
+          <li><strong>Guard rails are new and coarse.</strong> In Trust AI mode agents have full access and text steers them, with three switches for spending, messages and posts. Secure mode asks before every command, but leaves the web open by default, does not check what an allowed command touches, and has no spending limit, only a closed door. If you need fine-grained policies enforced by the tool, this is not yet the tool.</li>
           <li><strong>A vague request is still a gamble.</strong> How much an agent does on its own varies by model and by run. Sometimes it asks where it could have found out.</li>
           <li><strong>Your PC has to be on.</strong> Agents keep working from the tray with the window closed, but only while your computer is on.</li>
           <li><strong>Built for one person first.</strong> You can invite colleagues, but this is early; products built for teams are further along.</li>

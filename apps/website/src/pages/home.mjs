@@ -53,7 +53,7 @@ export default function home(rel) {
           <div class="split__task"><span class="av">L</span>Draft the newsletter for Friday<em>Lena</em></div>
           <div class="split__task"><span class="av av--me">Y</span>Call the printer about the flyers<em>You</em></div>
         </div></div>
-        <div class="step__txt"><span class="step__n">01 — Work</span><h3 class="h3">Say it once.</h3><p class="body">Type or dictate into one inbox. Your manager can split a long sentence into separate tasks, each with the right owner: an agent, or you.</p></div>
+        <div class="step__txt"><span class="step__n">01 — Task</span><h3 class="h3">Say it once.</h3><p class="body">Type or dictate into one inbox. Your manager can split a long sentence into separate tasks, each with the right owner: an agent, or you.</p></div>
       </article>
       <article class="step" data-reveal style="--d:1">
         <div class="step__demo" aria-hidden="true"><div class="log" data-log></div></div>
@@ -67,7 +67,7 @@ export default function home(rel) {
           <div class="card__btns" style="grid-template-columns:1fr 1fr"><span>Trust AI</span><span>Secure</span></div>
           <div class="card__note">${icon('chat')}Trust AI: text steers · Secure: the app asks</div>
         </div></div></div>
-        <div class="step__txt"><span class="step__n">03 — You</span><h3 class="h3">You choose how far it goes.${st('security-modes')}</h3><p class="body">On the first start you pick Trust AI, where agents work with your rights and your words steer them, or Secure, where the app asks you before commands and anything outside its own folders. Every message after that steers them too.</p></div>
+        <div class="step__txt"><span class="step__n">03 — You</span><h3 class="h3">You choose how far it goes.${st('security-modes')}</h3><p class="body">On the first start you pick Trust AI, where agents work with your rights and your words steer them, or Secure, where the app asks you before every command. Every message after that steers them too.</p></div>
       </article>
     </div>
     <p data-reveal style="margin-top:36px"><a class="link" href="${root}how-it-works/">How it works in detail${icon('arrow')}</a></p>

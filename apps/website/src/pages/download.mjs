@@ -66,7 +66,7 @@ ${pageHero({
         <li><strong>Type your name and company,</strong> and press Start.</li>
         <li><strong>Choose a mode and answer the first questions.</strong> Trust AI or Secure, then your manager asks a few questions, among them whether to set up this PC itself.</li>
       </ol>
-      <div class="callout">${icon('bolt')}<div><strong>You choose the mode on the first start.</strong> In Trust AI mode agents have full access from the first moment and your words steer them; in Secure mode the app asks you before commands and outside its own folders. <a href="${root}access/">What that means</a></div></div>
+      <div class="callout">${icon('bolt')}<div><strong>You choose the mode on the first start.</strong> In Trust AI mode agents have full access from the first moment and your words steer them; in Secure mode the app asks you before every command. <a href="${root}access/">What that means</a></div></div>
 
       <h2 id="verify">Check the file</h2>
 ${rel.sums && Object.keys(rel.sums).length ? `      <table>

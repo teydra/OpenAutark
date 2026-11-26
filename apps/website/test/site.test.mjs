@@ -239,3 +239,15 @@ test('the typed-in release values (shown before the live check, and to crawlers)
   assert.ok(html.includes(`v${app} · ${release.fallback.windows.sizeMb} MB`), 'the big button names the current version and size');
   assert.ok(!html.includes('0.3.19'));
 });
+
+test('no text names "My day" or the old Work section, and Secure is described only as asking before every command (Stanislaus and Konrad 26.11.2026)', async () => {
+  const { readdirSync } = await import('node:fs');
+  const files = [join(root, 'build.mjs')];
+  for (const d of ['src', 'src/data', 'src/pages']) for (const f of readdirSync(join(root, d))) if (f.endsWith('.mjs')) files.push(join(root, d, f));
+  for (const f of files) {
+    const t = readFileSync(f, 'utf8');
+    assert.ok(!/My day|my-day/i.test(t), `${f}: My day is gone from the app`);
+    assert.ok(!/own folders|outside its|files elsewhere|files outside/i.test(t), `${f}: Secure asks before every command; the folder claim is not proven for every engine`);
+    assert.ok(!/\(Work\)|tasks into Work|01 — Work|Work: one inbox/.test(t), `${f}: the Work section is gone from the app`);
+  }
+});

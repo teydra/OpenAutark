@@ -40,7 +40,7 @@ function setupSteps(rel) {
     { name: 'Install it', text: 'The Windows installer is signed, but SmartScreen may warn once: choose More info, then Run anyway. The Mac app is not notarized: follow the Open Anyway steps on the download page.' },
     { name: 'Connect one AI', text: 'Sign in through the provider’s official tool: Codex for a ChatGPT plan, Claude Code for a paid Claude plan. The app can install either for you and tests it with a real answer. An API key or a local model works too.' },
     { name: 'Type your name and company', text: short ? 'Press Start. The manager gets to know you and your work and first asks how far it may go.' : 'From the next release that is all: press Start, and the manager gets to know you and first asks how far it may go. In the current release you also write a first request here.' },
-    { name: 'Answer, then hand over work', text: 'Answer the question, tell the AI what you want off your plate, and type or dictate tasks into Work or simply into the chat.' },
+    { name: 'Answer, then hand over work', text: 'Answer the question, tell the AI what you want off your plate, and type or dictate tasks into the inbox or simply into the chat.' },
   ];
 }
 
@@ -105,12 +105,12 @@ ${pageHero({
         <p>Work reaches your company in three places.</p>
         <h3>Chats${st('chats')}</h3>
         <p>Talk to an agent one-to-one or in a group, like in a messenger. Every agent has a direct chat, and you can open as many more as you like. You can keep typing while an agent works. If something changes halfway, mark your message as important: it steers the work that is already running. Messages can be normal, important or quiet${st('rooms')}, in both directions, and every reply shows which model wrote it. The message box can also send later or on a schedule${st('schedule')}.</p>
-        <h3>Work${st('work-inbox')}</h3>
+        <h3>Tasks${st('work-inbox')}</h3>
         <p>One inbox for every task. Type or dictate. With Auto your manager takes it and decides who does it; or pick an agent yourself, or Me for your own list. The manager can split a dictated list: “research the three closest competitors, draft Friday’s newsletter, call the printer” can become one task for research, one for marketing and one on your own list. That is its judgement, not a fixed step.</p>
-        <h3>My day${st('my-day')}</h3>
-        <p>Your to-dos and your calendar in one calm list. It learns how long things take you, makes a morning plan and gives you a short briefing of what happened. Team${st('team-view')} shows every agent and person and what they are doing.</p>
+        <h3>Team${st('team-view')}</h3>
+        <p>Every agent and person, and what they are doing.</p>
         <p>The calendar${st('calendar')} reads ICS feeds or connects to Google Calendar both ways (not yet tested against a real Google account). And a to-do can turn into the tool it needs${st('widgets')}: a recorder, a teleprompter, a timer or a form.</p>
-        <p>Next to every chat sits a strip of tabs like Chrome’s${st('side-tabs')}, for websites and for the app’s own views: My day, Work, Activity, Notes, Media, Files, Screen and an agent’s browser.</p>
+        <p>Next to every chat sits a strip of tabs like Chrome’s${st('side-tabs')}, for websites and for the app’s own views: Notes, Media, Files, Screen and an agent’s browser.</p>
 
         ${h2('wake')}
         <p>This is what makes ${site.name} proactive. An agent does not wait for a prompt. It sleeps until one of five things wakes it${st('wake')}:</p>
@@ -188,7 +188,7 @@ ${pageHero({
         </ul>
 
         ${h2('steering')}
-        <p>In Trust AI mode agents have full access to your PC, and what steers them is text. In Secure mode the app also asks you before commands and before anything outside its own folders, and a declined step does not run. In both modes text steers them: the rules every agent gets, its <code>SYSTEM.md</code>, skills such as the one on spending${st('money-skill')}, what it remembers and what you say. The texts give reference points and leave the thinking to the model, because a bare rule mostly makes a model stop and ask.</p>
+        <p>In Trust AI mode agents have full access to your PC, and what steers them is text. In Secure mode the app also asks you before every command, and a declined step does not run. In both modes text steers them: the rules every agent gets, its <code>SYSTEM.md</code>, skills such as the one on spending${st('money-skill')}, what it remembers and what you say. The texts give reference points and leave the thinking to the model, because a bare rule mostly makes a model stop and ask.</p>
         <div class="callout">${icon('bolt')}<p><strong>Please read the access page before you install.</strong> What agents can reach, how secrets are kept out of prompts, what leaves your PC, the brake, and what is not proven yet. <a href="${root}access/">Access and data</a></p></div>
 
         ${h2('where')}
@@ -206,8 +206,8 @@ ${pageHero({
         ${h2('day')}
         <p>An illustration:</p>
         <ul>
-          <li><strong>07:30</strong> My day has your plan and a short briefing: Ivo, your research agent, finished the competitor overview overnight, and Noa in finance has a question about an invoice. You answer from your phone.</li>
-          <li><strong>09:00</strong> You dictate three things into Work. Your manager turns them into a research task for Ivo, a newsletter draft for Lena and a call on your own list.</li>
+          <li><strong>07:30</strong> Your manager has a short briefing for you: Ivo, your research agent, finished the competitor overview overnight, and Noa in finance has a question about an invoice. You answer from your phone.</li>
+          <li><strong>09:00</strong> You dictate three things into the task inbox. Your manager turns them into a research task for Ivo, a newsletter draft for Lena and a call on your own list.</li>
           <li><strong>11:00</strong> Lena asks Ivo for two numbers, then posts her draft. You send one remark marked important, and she adjusts while she works.</li>
           <li><strong>15:00</strong> Kai checks your website in his own browser. You watch the live view and take over for a minute.</li>
           <li><strong>18:00</strong> You close the window. The company keeps running in the tray, and at 22:00 a schedule wakes Mara, your manager, to plan tomorrow.</li>
