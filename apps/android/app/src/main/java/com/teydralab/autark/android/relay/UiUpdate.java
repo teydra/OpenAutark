@@ -18,7 +18,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
@@ -83,6 +82,7 @@ public final class UiUpdate implements UiFiles.Source {
         newest = own;
         File[] saved = own == null ? null : lists.listFiles();
         if (saved != null) for (File file : saved) {
+            if (!file.getName().endsWith(".json")) continue; // a <n>.json.part the app was killed on is not ready; it goes
             Listing list = null;
             try { list = parse(Files.readAllBytes(file.toPath())); } catch (IOException ignored) { /* unreadable: it goes */ }
             if (list != null && list.n > newest.n && list.shell <= SHELL && complete(list)) newest = list;
@@ -139,7 +139,7 @@ public final class UiUpdate implements UiFiles.Source {
                 if (!complete(list) || list.n <= newest.n) return false; // a file went meanwhile, or another look won
                 if (!lists.isDirectory() && !lists.mkdirs()) return false;
                 File part = new File(lists, list.n + ".json.part"), ready = new File(lists, list.n + ".json");
-                Files.write(part.toPath(), list.raw);
+                try (FileOutputStream out = new FileOutputStream(part)) { out.write(list.raw); out.getFD().sync(); }
                 if (!part.renameTo(ready)) { part.delete(); return false; }
                 newest = list;
                 prune(true);
@@ -201,7 +201,7 @@ public final class UiUpdate implements UiFiles.Source {
         File part = new File(blobs, entry.sha + ".part");
         MessageDigest digest = sha256();
         long read = 0;
-        try (InputStream in = net.open(entry.sha); OutputStream out = new FileOutputStream(part)) {
+        try (InputStream in = net.open(entry.sha); FileOutputStream out = new FileOutputStream(part)) {
             byte[] buffer = new byte[64 * 1024];
             for (int got; (got = in.read(buffer)) > 0; ) {
                 read += got;
@@ -209,6 +209,7 @@ public final class UiUpdate implements UiFiles.Source {
                 digest.update(buffer, 0, got);
                 out.write(buffer, 0, got);
             }
+            out.getFD().sync(); // on the disk before the rename: a power cut never leaves a checked name over unwritten bytes
         } catch (IOException | RuntimeException error) {
             part.delete();
             throw error instanceof IOException ? (IOException) error : new IOException(error);

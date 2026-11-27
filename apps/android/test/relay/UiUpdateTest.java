@@ -2,7 +2,8 @@
 // the APK's assets/ui with its ui.json and a published place in memory: a list is taken only under the key's signature,
 // with n above the newest list and shell not above the app's; only files the app lacks are fetched; a cut fetch and a
 // wrong hash leave everything as it was (and the next look fetches only the rest); a running page keeps its list while a
-// new page gets the newest ready one (through UiFiles' document request); files and lists no longer named go; no key,
+// new page gets the newest ready one (through UiFiles' document request); files and lists no longer named go, and a list
+// left as .part is not ready; no key,
 // no look; at most one look a minute.
 // Never: the network or a phone.
 package com.teydralab.autark.android.relay;
@@ -136,8 +137,11 @@ public final class UiUpdateTest {
                 && new File(dir, "blobs/" + sha("three")).exists() && new File(dir, "blobs/" + sha("<html>2")).exists(), "files no ready list names go: " + names(new File(dir, "blobs")));
 
         // A new process: the ready list is the newest, a page starts on it; a list whose shell is above the app's waits.
+        File killed = new File(dir, "lists/35.json.part"); // the app was killed between writing a list and its rename
+        Files.write(killed.toPath(), list(35, 1, third));
         UiUpdate again = new UiUpdate(dir, assets::get, KEY);
         check(again.ns()[0] == 30 && text(get(new UiFiles(again), "/main.js", false)).equals("three"), "after a restart the newest ready list runs");
+        check(!killed.exists() && new File(dir, "lists/30.json").exists(), "a list left as .part is not ready and goes: " + names(new File(dir, "lists")));
         Map<String, String> fourth = new TreeMap<>(third);
         fourth.put("main.js", "four");
         place.publish(40, UiUpdate.SHELL + 1, fourth, SEED);
