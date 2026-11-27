@@ -5,7 +5,7 @@
 // A row inside a modal keeps the menu's anchor and popover inside that dialog's top layer.
 // B-084: a long press that opens the menu gives a light haptic tick (the Android app's, else navigator.vibrate).
 // F30 (16.11.2026): the builder learns how the menu was opened ({ touch, at: the row }) – a message's Copy takes the
-// mouse selection inside it, and touch offers "Select text"; a touch open clears the one-word selection the browser made
+// mouse selection inside it (a finger selects natively, FCMWSYY3); a touch open clears the one-word selection the browser made
 // under the finger, so only this menu shows (the phone's own copy bar does not stack on it).
 // 17.11.2026 (the owner twice, "soll einfach so sein, wie es normalerweise ist"): a row of text (a message) takes `{ touchByButton: true }` – a finger's
 // long press then opens nothing of ours and the phone's own selection (handles, its copy bar) works as everywhere; the menu is the row's own button

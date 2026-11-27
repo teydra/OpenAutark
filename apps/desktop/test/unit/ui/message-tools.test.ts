@@ -1,6 +1,6 @@
 // F30 (owner 16.11.2026): a message's Copy and Reply (src/ui/chat/message-tools.ts, MessageActions.tsx, MessageItem.tsx,
 // chat.css). Copy selection uses only marked text touching the message; a touch long press's
-// own one-word pick never counts, and on touch the menu offers "Select text" (its sheet, SelectText.tsx). Copy and Reply
+// own one-word pick never counts, and on touch a long press selects natively (FCMWSYY3: no sheet of ours). Copy and Reply
 // are two small icons in every finished text message's meta row – after the time on the left, before the markers in the
 // own bubble – always rendered (nothing moves), seen on hover or focus, always on touch. reply() is the one way the menu,
 // the icon and the phone's swipe answer a message: the draft's reply, never on a streaming or non-text row.
@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { Message } from '../../../src/shared/model/chat.ts';
 import type { SessionInfo } from '../../../src/shared/api/methods.ts';
 import { rpc } from '../../../src/ui/lib/rpc.ts';
@@ -43,20 +43,16 @@ test('Copy selection uses only marked text touching the message', () => {
   assert.equal(menuSelection({ touch: true, at: row }, selection('Anna', [row])), '', 'a long press\'s one word is the browser\'s pick, not a selection to copy');
 });
 
-test('the menu: Copy selection is offered only with a selection; Select text only on touch and only with words', () => {
+test('the menu: Copy selection is offered only with a selection; no Select text sheet of ours (a finger selects natively)', () => {
   const actions = read('src/ui/chat/MessageActions.tsx');
   assert.match(actions, /const selected = menuSelection\(open\);[^\n]*\n\s*if \(selected && message\.body && message\.state !== 'streaming'\) items\.push\(\{ label: 'Copy selection', onSelect: \(\) => void copy\(selected\) \}\);/);
   assert.doesNotMatch(actions, /items\.push\(\{ label: 'Copy',/);
-  assert.match(actions, /if \(open\.touch && copyable\(message\)\) items\.push\(\{ label: 'Select text', onSelect: actions\.selectText \}\);/);
-  assert.match(read('src/ui/chat/MessageItem.tsx'), /const build = \(open: MenuOpen\) => messageMenu\(message, open, \{ edit: \(\) => setEditing\(true\), selectText: \(\) => setSelecting\(true\) \}\);\s*const menu = useContextMenu\(build, \{ touchByButton: true \}\);/, '17.11.2026: a finger selects natively, the menu is the More button');
+  assert.doesNotMatch(actions, /Select text|selectText/, 'FCMWSYY3: the phone\'s own selection and copy bar');
+  assert.match(read('src/ui/chat/MessageItem.tsx'), /const build = \(open: MenuOpen\) => messageMenu\(message, open, \{ edit: \(\) => setEditing\(true\) \}\);\s*const menu = useContextMenu\(build, \{ touchByButton: true \}\);/, '17.11.2026: a finger selects natively, the menu is the More button');
   const menu = read('src/ui/lib/context-menu.tsx');
   assert.match(menu, /if \(touch\.current\) dropTouchSelection\(\);\s*openContextMenu\(x, y, build\(\{ touch: touch\.current, at \}\), container\);/, 'a touch open drops the browser\'s one-word pick: one menu');
   assert.match(menu, /touch\.current = event\.pointerType === 'touch';/);
-  const sheet = read('src/ui/chat/SelectText.tsx');
-  assert.match(sheet, /createPortal\(\s*<Dialog open onClose=\{onClose\} title="Select text"/, 'outside the message: none of our press handlers inside');
-  assert.match(sheet, /<div class="select-text-body">\{props\.message\.body\}<\/div>/, 'the text Copy copies');
-  assert.match(sheet, /addBackLayer\(/, 'the phone\'s Back closes it first');
-  assert.match(read('src/ui/styles/chat.css'), /\.select-text-body \{[^}]*user-select: text; -webkit-user-select: text;/);
+  assert.equal(existsSync(new URL('../../../src/ui/chat/SelectText.tsx', import.meta.url)), false, 'the sheet is gone');
 });
 
 test('the meta row: Copy and Reply on finished text messages only, after the time on the left, before the markers in the own bubble', () => {
