@@ -159,9 +159,9 @@ public final class LinksTest {
         check(links.nextRetry(0) == 500, "after check() or a PC coming online the backoff starts over at 0.5 s");
     }
 
-    /** F7: the page's socket waits for a channel less than the page itself waits (rpc.ts OPEN_LIMIT 8 s); other requests longer. */
+    /** F7: the page's socket waits for a channel less than the page itself waits (protocol.ts OPEN_LIMIT_MS 5 s); other requests longer. */
     private static void waits() {
-        check(StreamProxy.SOCKET_WAIT_MS < 8_000 && StreamProxy.REQUEST_WAIT_MS > StreamProxy.SOCKET_WAIT_MS, "a socket waits below the page's 8 s");
+        check(StreamProxy.SOCKET_WAIT_MS <= 4_000 && StreamProxy.REQUEST_WAIT_MS > StreamProxy.SOCKET_WAIT_MS, "a socket waits well below the page's 5 s");
         check(StreamProxy.upgrade("GET /ws HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"), "a WebSocket upgrade is the page's socket");
         check(StreamProxy.upgrade("GET /ws HTTP/1.1\r\nupgrade:  WebSocket \r\n\r\n"), "header name and value in any case");
         check(!StreamProxy.upgrade("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Upgrade: websocket\r\n\r\n") && !StreamProxy.upgrade("POST /rpc HTTP/1.1\r\n\r\n"), "a page load or an /rpc call is no socket");

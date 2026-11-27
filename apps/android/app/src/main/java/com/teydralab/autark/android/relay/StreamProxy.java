@@ -7,8 +7,9 @@
 // to several PCs; a new stream takes the page's one (Channels.await) and retire() – the page moved to another PC – ends
 // the streams left on the others (a stream that raced that move ends at once too: one PC answers the page). Owner
 // 27.11.2026: a better way to the same PC cuts nothing – drain() lets the old channel's streams run to their end and
-// closes it after the last; a new stream waits for a channel as long as the page waits (a socket 7 s, below rpc.ts's
-// 8 s, so no stream opens for a socket the page gave up; any other request 20 s).
+// closes it after the last; a new stream waits for a channel as long as the page waits (a socket 4 s, below the page's
+// OPEN_LIMIT_MS – 5 s since 27.11.2026, 8 s in 0.3.20 – so no stream opens for a socket the page gave up; any other
+// request 20 s).
 // Never: listens beyond loopback, lets another app's connection through, or buffers without bound.
 package com.teydralab.autark.android.relay;
 
@@ -44,8 +45,8 @@ public final class StreamProxy {
     static final int WINDOW = 256 * 1024;
     private static final int CHUNK = 32 * 1024;
     private static final long QUIET_MS = 4_000;
-    /** How long a new stream waits for a channel: the page's socket (its own limit is 8 s), any other request. */
-    static final long SOCKET_WAIT_MS = 7_000, REQUEST_WAIT_MS = 20_000;
+    /** How long a new stream waits for a channel: the page's socket (its own limit, OPEN_LIMIT_MS, is 5 s), any other request. */
+    static final long SOCKET_WAIT_MS = 4_000, REQUEST_WAIT_MS = 20_000;
     private static final byte[] END = new byte[0];
     /** The channel died: a stream the PC has not answered yet answers 503 itself. */
     private static final byte[] DEAD = new byte[0];
