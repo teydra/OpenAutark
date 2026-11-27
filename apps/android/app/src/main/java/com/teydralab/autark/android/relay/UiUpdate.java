@@ -88,11 +88,12 @@ public final class UiUpdate implements UiFiles.Source {
         if (own != null) for (Map.Entry<String, Entry> file : own.files.entrySet()) packagedBySha.put(file.getValue().sha, file.getKey());
         newest = own;
         File[] saved = own == null ? null : lists.listFiles();
+        Set<String> verified = new HashSet<>(); // blobs hashed in this start: two lists naming one are read once
         if (saved != null) for (File file : saved) {
             if (!file.getName().endsWith(".json")) continue; // a <n>.json.part the app was killed on is not ready; it goes
             Listing list = null;
             try { list = parse(Files.readAllBytes(file.toPath())); } catch (IOException ignored) { /* unreadable: it goes */ }
-            if (list != null && list.n > newest.n && list.shell <= SHELL && complete(list)) newest = list;
+            if (list != null && list.n > newest.n && list.shell <= SHELL && intact(list, verified)) newest = list;
         }
         current = newest;
         synchronized (this) { prune(true); }
@@ -204,6 +205,24 @@ public final class UiUpdate implements UiFiles.Source {
         return true;
     }
 
+    /** Every file of `list` is in the APK or a stored blob of exactly its size and sha256 (28.11.2026, finding 8c of the
+     *  emulator run: a blob changed in the app's own storage under its name was served unchecked, a broken page for good).
+     *  Run once per start, not per request; blobs are hashed as a stream. A list that fails is dropped like an unreadable one. */
+    private boolean intact(Listing list, Set<String> verified) {
+        for (Entry entry : list.files.values()) {
+            if (packagedBySha.containsKey(entry.sha) || verified.contains(entry.sha)) continue;
+            File blob = new File(blobs, entry.sha);
+            if (!blob.isFile() || blob.length() != entry.bytes) return false;
+            MessageDigest digest = sha256();
+            try (InputStream in = new java.io.FileInputStream(blob)) {
+                byte[] buffer = new byte[64 * 1024];
+                for (int got; (got = in.read(buffer)) > 0; ) digest.update(buffer, 0, got);
+            } catch (IOException error) { return false; }
+            if (!Crypto.hex(digest.digest()).equals(entry.sha)) return false;
+            verified.add(entry.sha);
+        }
+        return true;
+    }
     private byte[] bytes(Entry entry) throws IOException {
         File blob = new File(blobs, entry.sha);
         if (blob.isFile()) return Files.readAllBytes(blob.toPath());
