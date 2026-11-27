@@ -21,7 +21,7 @@ import { recordChange } from './changes.ts';
 import { nameOf, tell } from './give.ts';
 import { threadOf } from './thread.ts';
 
-export const MAX_CARD_TASKS = 50;
+export const MAX_CARD_TASKS = 1000;
 
 export interface CardAnswer {
   ids: readonly string[]; // every task on the card (WaitingCard.taskIds)
@@ -33,7 +33,7 @@ export interface CardAnswer {
 const ownerOf = (task: Task): string => task.assigneeKind === 'agent' ? task.assigneeId ?? '' : task.assigneeId ?? HUMAN_ID;
 const isAskOf = (task: Task, by: string) => task.kind !== 'quest' && task.assigneeKind === 'human' && (task.assigneeId ?? HUMAN_ID) === by && task.createdBy !== by;
 
-function cardTasks(t: TaskServiceImpl, ids: readonly string[], by: string): Task[] {
+function cardTasks(t: TaskServiceImpl, ids: readonly string[], by: string) {
   if (!ids.length || ids.length > MAX_CARD_TASKS) throw new WorkforceError('bad_request', `A card holds 1 to ${MAX_CARD_TASKS} tasks.`);
   const tasks = [...new Set(ids)].map((id) => t.repo.get(id));
   const live = tasks.filter((task): task is Task => !!task && !isFinished(task.status));
@@ -41,7 +41,7 @@ function cardTasks(t: TaskServiceImpl, ids: readonly string[], by: string): Task
   if (!card || others.length || card.taskIds.length !== tasks.length) {
     throw new WorkforceError('conflict', 'This card changed. Check the current question and try again.');
   }
-  return live;
+  return { tasks: live, card };
 }
 
 /** The words of an answer: the person's own, else the button's. */
@@ -80,8 +80,11 @@ function widgetAnswer(ask: Task, input: CardAnswer, words: string): unknown {
 
 /** One answer for the whole card (see the header); returns the tasks as they are now. */
 export function answerCard(t: TaskServiceImpl, input: CardAnswer, by: string = HUMAN_ID): TaskView[] {
-  const tasks = cardTasks(t, input.ids, by);
-  const ask = tasks.find((task) => isAskOf(task, by) && !isFinished(task.status));
+  const { tasks, card } = cardTasks(t, input.ids, by);
+  if (card.kind === 'open') throw new WorkforceError('bad_request', 'Open the request to answer it.');
+  if (input.choice && !card.options?.some((option) => option.value === input.choice)) throw new WorkforceError('bad_request', 'Choose an answer on this card.');
+  if (input.decline && card.kind !== 'accept') throw new WorkforceError('bad_request', 'This card cannot be declined here.');
+  const ask = tasks.find((task) => task.id === card.askId);
   const words = wordsOf(input, ask);
   const question = ask ? askQuestion(ask) : questionOf(tasks.find((task) => task.waitingOn)?.waitingOn?.why ?? '');
   const now = t.s.clock.now();
@@ -129,7 +132,7 @@ export function answerCard(t: TaskServiceImpl, input: CardAnswer, by: string = H
 
 /** "Later" (see the header): every wait gets its follow-up at `until` and rests; the ask moves to that time. */
 export function laterCard(t: TaskServiceImpl, ids: readonly string[], until: number, by: string = HUMAN_ID): TaskView[] {
-  const tasks = cardTasks(t, ids, by);
+  const { tasks } = cardTasks(t, ids, by);
   for (const task of tasks) {
     if (isFinished(task.status)) continue;
     if (isAskOf(task, by)) { t.snooze(task.id, until); continue; }

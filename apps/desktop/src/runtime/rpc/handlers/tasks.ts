@@ -187,13 +187,13 @@ export function register(table: HandlerTable): void {
       ids: ids(o, 'ids', MAX_CARD_TASKS), reply: optText(o, 'reply', { max: 4000, allowEmpty: true, multiline: true }),
       choice: optText(o, 'choice', { max: 300 }), decline: optBool(o, 'decline'),
     }, HUMAN_ID);
-  }, TODO);
+  }, TASKS);
   table.add('tasks.laterCard', (params, ctx) => {
     const o = input(params);
     onlyKeys(o, ['ids', 'until']);
     const until = optNum(o, 'until', { min: 0 }) ?? nextFollowUp(ctx.services.clock.now(), dayZone(ctx.services));
     return ctx.services.tasks.laterCard(ids(o, 'ids', MAX_CARD_TASKS), until, HUMAN_ID);
-  }, TODO);
+  }, TASKS);
   table.add('tasks.handOverItem', async (params, ctx) => {
     const o = input(params);
     onlyKeys(o, ['id', 'itemId', 'to']);

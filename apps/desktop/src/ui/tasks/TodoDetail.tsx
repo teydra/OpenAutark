@@ -16,6 +16,7 @@ import { TaskThread } from '../chat/TaskThread.tsx';
 import { openContextMenu, useContextMenu } from '../lib/context-menu.tsx';
 import { dayZone } from '../lib/day-store.ts';
 import type { MenuSection } from '../lib/popover.tsx';
+import { can } from '../lib/session.ts';
 import { agentName } from '../lib/store.ts';
 import { EmptyState, Icon, IconButton, Spinner } from '../lib/ui.tsx';
 import { taskIndex } from './page-data.ts';
@@ -63,6 +64,7 @@ export function DetailTop(props: { scope: PageScope; quest?: Task; label?: strin
 /** P5 "Run again" on a finished task: a fresh copy with its checklist unticked and the same owners, opened at once. */
 export function RunAgain(props: { scope: PageScope; task: Task }) {
   const [busy, setBusy] = useState(false);
+  if (!can('tasks.runAgain')) return null;
   return (
     <button type="button" class="task-again" disabled={busy} onClick={async () => {
       setBusy(true);
