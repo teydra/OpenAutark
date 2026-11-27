@@ -90,6 +90,39 @@ test('rpc: an older PC gets nothing but the version ask; a fitting one opens the
   assert.equal(rpc.turnedAway.value, 1);
 });
 
+test('rpc: a refusal after a PC that was too old is the newest word – the old PC\'s name is no longer said', async (t) => {
+  const globals = globalThis as Record<string, unknown>;
+  const saved = { window: globals.window, document: globals.document, location: globals.location, history: globals.history, WebSocket: globals.WebSocket };
+  globals.window = { addEventListener: () => undefined };
+  globals.document = { addEventListener: () => undefined, visibilityState: 'visible' };
+  globals.location = { protocol: 'http:', host: '127.0.0.1:7', hash: '', pathname: '/', search: '' };
+  globals.history = { replaceState: () => undefined };
+  globals.WebSocket = FakeSocket;
+  mock.timers.enable({ apis: ['setTimeout'] });
+  t.after(() => {
+    mock.timers.reset();
+    for (const key of ['window', 'document', 'location', 'history', 'WebSocket'] as const) {
+      if (saved[key] === undefined) delete globals[key];
+      else globals[key] = saved[key];
+    }
+  });
+  const { rpc } = (await import(new URL('../../../src/ui/lib/rpc.ts?pc-then-refused', import.meta.url).href)) as typeof import('../../../src/ui/lib/rpc.ts');
+  rpc.start();
+  const old = last();
+  old.onopen!();
+  old.version('0.3.20', 'Old-PC');
+  await flush();
+  assert.equal(rpc.outdated.value, 'Old-PC');
+  mock.timers.tick(10_000);
+  const next = last();
+  next.onopen!();
+  next.onclose!({ code: 4401 });
+  await flush();
+  assert.equal(rpc.refused.value, 4401);
+  assert.equal(rpc.outdated.value, null, 'the line and the chat header speak of the PC that refused, not the old one');
+  assert.equal(rpc.turnedAway.value, 2);
+});
+
 test('rpc: a PC that opens but never says its version is replaced like one that never opens', async (t) => {
   const globals = globalThis as Record<string, unknown>;
   const saved = { window: globals.window, document: globals.document, location: globals.location, history: globals.history, WebSocket: globals.WebSocket };

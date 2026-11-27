@@ -254,7 +254,7 @@ function connectSocket(): Promise<void> {
       clearTimeout(limit);
       clearTimeout(silent);
       const refusal = refusals.closed(event.code, token);
-      if (refusal !== null) refused.value = refusal;
+      if (refusal !== null) { refused.value = refusal; outdated.value = null; } // the newest PC's word stands
       if (opened && refusal !== null) turnedAway.value += 1;
       if (!admitted) { pending.delete(ask); reject(new Error('socket closed')); }
       else if (transport === next) onClosed();
