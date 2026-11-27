@@ -46,9 +46,15 @@ jobs:
           Get-Item resources/broker/AutarkWakeHelper.exe | Select-Object Name, Length
       - name: Idle memory and one real wake (real AutarkWakeHelper.exe, real meeting server)
         shell: pwsh
+        # the inputs reach the script as environment variables, never as text in it (a workflow_dispatch input is free text)
+        env:
+          INPUT_MINUTES: ${{ inputs.minutes }}
+          INPUT_RELAY: ${{ inputs.relay }}
         run: |
-          $minutes = '${{ inputs.minutes }}'; if (-not $minutes) { $minutes = '5' }
-          $relay = '${{ inputs.relay }}'; if (-not $relay) { $relay = 'wss://telecoding-relay.onrender.com/autark' }
+          $minutes = $env:INPUT_MINUTES; if (-not $minutes) { $minutes = '5' }
+          $relay = $env:INPUT_RELAY; if (-not $relay) { $relay = 'wss://telecoding-relay.onrender.com/autark' }
+          if ($minutes -notmatch '^[0-9]{1,3}$') { Write-Error 'minutes: a number'; exit 2 }
+          if ($relay -notmatch '^wss?://[A-Za-z0-9._:/-]+$') { Write-Error 'relay: a ws:// or wss:// address'; exit 2 }
           node test/unit/computer/wake-helper-cs/measure.mjs --exe resources/broker/AutarkWakeHelper.exe --relay $relay --minutes $minutes --out ../../wake-helper-memory.json | Tee-Object -FilePath ../../wake-helper-memory.md
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Where the memory goes (2 min run without the GC settings, private memory by kind)
