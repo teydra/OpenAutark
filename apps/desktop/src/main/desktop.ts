@@ -51,7 +51,7 @@ import { MediaArm } from './security.ts';
 import { sessionEnded, watchSessionEnd } from './session-end.ts';
 import { guardAllContents, installSessionGuards } from './session-guards.ts';
 import { SettingsView, changedPreferences } from './settings-view.ts';
-import { beforeDesktopQuit } from './shutdown.ts'; import { quitWake, sleeperScript } from './sleeper.ts'; // 19.11.2026: goodbye + wake helper
+import { beforeDesktopQuit } from './shutdown.ts'; import { quitWake, sleeperScript, wakeHelperExe } from './sleeper.ts'; // 19.11.2026: goodbye + wake helper
 import { applyWaker } from './waker.ts'; // 0.3.19: the broker's waker registration
 import { AppTray } from './tray.ts';
 import { DesktopUpdates, inactiveUpdater, loadUpdater, settleAfterStart, siblingUpdates, updateFromElsewhere } from './updates-wiring.ts';
@@ -312,7 +312,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
   const launcher = launcherDeps(app, { platform, testMode, name: productName, company, dataDir: paths.data, log: line => log.line(line) });
   // B-080: where the desktop broker is still missing, a start with a window asks Windows once for it (broker-setup.ts)
   setupBroker({ platform, packaged: app.isPackaged, testMode, background: options.background, root: paths.root, exe: process.execPath, log: line => log.line(line), report: setup => link.event('broker.setup', setup) }); // F03: how it ended, for the computer tools
-  const waker = { platform, packaged: app.isPackaged, testMode, localAppData: process.env.LOCALAPPDATA, exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), dataDir: paths.data, args: companyArgs(company), log: (line: string) => log.line(line) };
+  const waker = { platform, packaged: app.isPackaged, testMode, localAppData: process.env.LOCALAPPDATA, exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), helper: wakeHelperExe(paths.root, platform), dataDir: paths.data, args: companyArgs(company), log: (line: string) => log.line(line) };
   const pcAwake = pcKeepAwakeFor({ powerSaveBlocker, powerMonitor }, settings.preferences().keepPcAwake, line => log.line(line)); // 0.3.20: no standby on mains power (keep-awake.ts)
   settings.onChange((next, previous) => {
     const changed = changedPreferences(next, previous), prefs = settings.preferences();
@@ -415,7 +415,7 @@ export async function startDesktop(options: DesktopOptions): Promise<Desktop> {
       disposeUpdates: () => desktopUpdates.dispose(),
       stopRuntime: () => link.stop('quit'),
       releasePower: () => { pcAwake.dispose(); return host.releaseAll(); }, destroyTray: () => tray.destroy(),
-      ...quitWake({ by: runMarks.by, call: (method, params) => link.rpc.call(method, params), start: { exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), dataDir: paths.data, args: companyArgs(company), log: line => log.line(line) } }),
+      ...quitWake({ by: runMarks.by, call: (method, params) => link.rpc.call(method, params), start: { exe: process.execPath, script: sleeperScript(path.dirname(paths.runtime)), helper: wakeHelperExe(paths.root, platform), dataDir: paths.data, args: companyArgs(company), log: line => log.line(line) } }),
     }),
     armDueStart: () => armDueStart(settings.preferences().openAtLogin, runMarks.by, launcher), // B-044: next-due.json is settled once the runtime stops
     quit: () => app.quit(), exit: () => app.exit(0), log,

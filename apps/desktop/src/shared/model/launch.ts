@@ -49,4 +49,6 @@ export interface WakerRegistration {
   script: string; // app.asar.unpacked\app\sleeper.mjs
   data: string; // the data folder (wake.json, run-state.json, sleeper.json)
   args: string[]; // the app's own start arguments (another company's --company=<id>)
+  /** 0.3.22: the slim native wake helper (app.asar.unpacked\resources\broker\AutarkWakeHelper.exe); the broker uses it when it is there, else the Node helper. */
+  helper?: string;
 }

@@ -1,0 +1,72 @@
+# Owns: measuring the slim Windows wake helper (resources/broker/WakeHelper.cs) – working set and private bytes at idle after N minutes
+# (target: each under 20 MB; the Node helper it replaces: 113 MB / 54 MB) and one real wake through the real meeting server. By hand
+# (workflow_dispatch) and for a pull request that touches the helper itself: it talks to a public service (the meeting server), so
+# other pushes never depend on it.
+# Never: uses a secret, writes to the repository, publishes anything. The helper runs with a throwaway key and data folder.
+name: Wake helper memory
+
+on:
+  pull_request:
+    paths:
+      - apps/desktop/resources/broker/WakeHelper.cs
+      - apps/desktop/test/unit/computer/wake-helper-cs/measure.mjs
+      - .github/workflows/wake-helper-memory.yml
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes of idle before the last sample
+        default: '5'
+      relay:
+        description: Meeting server (wss://…/autark)
+        default: wss://telecoding-relay.onrender.com/autark
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - run: npm ci --no-fund --no-audit
+      - name: Build the broker and the wake helper
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File resources/broker/build.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item resources/broker/AutarkWakeHelper.exe | Select-Object Name, Length
+      - name: Idle memory and one real wake (real AutarkWakeHelper.exe, real meeting server)
+        shell: pwsh
+        run: |
+          $minutes = '${{ inputs.minutes }}'; if (-not $minutes) { $minutes = '5' }
+          $relay = '${{ inputs.relay }}'; if (-not $relay) { $relay = 'wss://telecoding-relay.onrender.com/autark' }
+          node test/unit/computer/wake-helper-cs/measure.mjs --exe resources/broker/AutarkWakeHelper.exe --relay $relay --minutes $minutes --out ../../wake-helper-memory.json | Tee-Object -FilePath ../../wake-helper-memory.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path ../../wake-helper-memory.md) { Get-Content ../../wake-helper-memory.md | Add-Content $env:GITHUB_STEP_SUMMARY }
+      - name: Real wake through the real meeting server (end to end, real exe)
+        shell: pwsh
+        env:
+          WAKE_HELPER_RELAY: ${{ inputs.relay }}
+        run: |
+          if (-not $env:WAKE_HELPER_RELAY) { $env:WAKE_HELPER_RELAY = 'wss://telecoding-relay.onrender.com/autark' }
+          node --test --test-concurrency=1 --test-name-pattern='real meeting server' test/unit/computer/wake-helper.test.ts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: wake-helper-memory
+          path: |
+            wake-helper-memory.json
+            wake-helper-memory.md
