@@ -97,11 +97,11 @@ a colour picker). It runs sandboxed, offline, without network:
 <p id="r"></p>
 <script>const f=()=>r.textContent=(a.value/n.value).toFixed(2);a.oninput=n.oninput=f;f();</script>
 ```
-`wf.send(name, data)` sends results back; `wf.complete(data)` finishes a to-do.
+`wf.send(name, data)` sends results back; `wf.complete(data)` finishes a task.
 
-### A mini-app as the person's to-do
+### A mini-app as the person's task
 When something is the person's to do and no ask block covers it (e.g. record a voice-over against the
-finished video), I make the app their to-do: `todo=true`, and `reason=` says why only they can do it –
+finished video), I make the app their task: `todo=true`, and `reason=` says why only they can do it –
 `physical` (presence, recording), `taste` (their decision; the default),
 `review` (they look at a result) or `identity` (signature, ID). It appears on their "For you"
 list under its `title`, and it is done when the app calls `wf.complete(data)`; the data
@@ -114,7 +114,7 @@ asks for the microphone or camera.
 ```
 
 #### Handing files back
-A to-do app can store a recording, image or document with `wf.upload(blob, name)` (audio,
+A task app can store a recording, image or document with `wf.upload(blob, name)` (audio,
 video, images, PDFs and text; up to 100 MB per file and 10 files per app). It resolves to
 `{fileId, name, mime, size}`; that goes into `wf.complete(data)`. The file then arrives attached
 to their line, with where it is stored. Files the data does not name are

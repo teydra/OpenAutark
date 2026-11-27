@@ -65,8 +65,8 @@ test('B-080: no shipped text holds a send gate, and no passage about a captcha p
     for (const passage of text.split(/\n\s*\n|\n(?=\s*(?:[-*]|\d+\.)\s)/)) {
       if (!/captcha|not a robot|human check|bot check/i.test(passage)) continue;
       assert.doesNotMatch(passage, /person's day|their day|My day|human\.ask/i, `${path.relative(RESOURCES, file)}: ${passage}`);
-      // B-080 review: nothing tells the AI to solve or try a check itself, nor hands one over as a to-do
-      assert.doesNotMatch(passage, /\bI try (it|them)\b|\bsolv|to-do|\bconfirm\b/i, `${path.relative(RESOURCES, file)}: ${passage}`);
+      // B-080 review: nothing tells the AI to solve or try a check itself, nor hands one over as a task (27.11.2026: the word is task)
+      assert.doesNotMatch(passage, /\bI try (it|them)\b|\bsolv|to-do|task for (them|the person)|\bconfirm\b/i, `${path.relative(RESOURCES, file)}: ${passage}`);
     }
   }
 });

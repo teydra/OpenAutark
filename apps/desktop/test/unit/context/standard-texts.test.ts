@@ -43,7 +43,7 @@ test('their attention is the scarcest thing: what they made and what I reach –
     assert.ok(text.includes('their linked phone among it'), name);
     assert.match(text, /a phone with phone use off (I|we) request once, they confirm – the normal way/, `${name}: a phone without phone use is requested once, the person confirms (Stanislaus 25.11.2026 18:01)`);
     assert.equal(text.split('request once, they confirm').length, 2, `${name}: the phone line stands once`);
-    assert.match(text, /a to-do for them comes after (my|our) own way was tried, with what (I|we) tried in it, and takes them seconds/, name);
+    assert.match(text, /a task for them comes after (my|our) own way was tried, with what (I|we) tried in it, joins their open one on the same matter, and takes them seconds/, `${name}: questions for the person are bundled (Stufe A, Konrad 27.11.2026)`);
     assert.ok(!text.includes("I plan it into Alexandra's day"), `${name}: a task for them is no first way`);
   }
   const handoff = skill('human-minimal-handoff');
@@ -72,12 +72,12 @@ test('we work in minutes: a time on our work comes from outside, a wait names wh
   const carrying = part(AGENT, '## Carrying work', '## Chats');
   assert.ok(carrying.includes('We work in minutes; I have no evening and no tomorrow.'));
   assert.ok(carrying.includes('comes from a customer, a provider, a release or Alexandra; one I would set myself is work I do now'));
-  assert.ok(carrying.includes('It waits on a named person who owes the next step, another to-do, or a date the outside world set; my own order, a test I could run or an unsent question is my next step.'));
+  assert.ok(carrying.includes('It waits on a named person who owes the next step, another task (`after`) or a date the outside world set (`until`); my own order, a test I could run or an unsent question is my next step.'));
   assert.ok(carrying.includes('let the answer wake me instead of a clock'));
   assert.ok(carrying.includes('what I cannot finish, my lead hears at once, with why'));
   const leading = part(LEAD, '## Leading', '## Judgment');
   assert.ok(leading.includes('We work in minutes; none of us has an evening or a tomorrow. A colleague starts when briefed, and a time on our work comes from a customer, a provider, a release or Alexandra, not from me.'));
-  assert.ok(leading.includes('ten at once all have an owner before my turn ends. Their quest stays mine until its last to-do is closed'));
+  assert.ok(leading.includes('ten at once all have an owner before my turn ends. Their quest stays mine until its last task is closed'));
   assert.ok(leading.includes('wake us on the answer instead of a clock'));
   for (const [name, text] of BOTH) {
     assert.ok(text.includes('Alexandra steers and prompts;'), `${name}: the CEO steers, the team holds it together`);
@@ -88,6 +88,28 @@ test('we work in minutes: a time on our work comes from outside, a wait names wh
   }
   assert.match(skill('task-ownership'), /My own order, a check I could run, an unsent question or a time I chose is my next step, taken now/);
   assert.doesNotMatch(skill('task-ownership'), /A later look is a note to myself/);
+});
+
+test('Stufe A (task system wave A, Konrad 27.11.2026): one word, task; its steps a checklist; a wait on a person, a task or a date; a twin goes onto the open one', () => {
+  const owning = skill('task-ownership');
+  const follow = skill('proactive-follow-ups');
+  for (const [name, text] of [...BOTH, ['task-ownership', owning], ['proactive-follow-ups', follow], ['modes/manager', read('modes/manager.md')]]) {
+    assert.doesNotMatch(text, /\bto-dos?\b/i, `${name}: the word is task`);
+    assert.doesNotMatch(text, /something outside|`theme`|`merge`|work file/, `${name}: no outside wait without a date; topics, merge and the work file come with wave B/C`);
+  }
+  assert.ok(AGENT.includes('one an open task already holds goes on its checklist'));
+  assert.ok(AGENT.includes('Its steps are its checklist (`plan`), true as I go.'));
+  const leading = part(LEAD, '## Leading', '## Judgment');
+  assert.ok(leading.includes('its checklist (`plan`) kept true'));
+  assert.ok(leading.includes("one standing still a day gets a new approach, model, owner or a split, and after three days its area's lead decides"), 'stuck: a day to the manager, three days to the area lead – no central lead');
+  assert.match(owning, /gets it as a checklist point instead/);
+  assert.match(owning, /Steps stand as a checklist \(`plan`; an update replaces the whole list\)/, 'as tasks.add/update say of plan');
+  assert.match(owning, /A task waits on one of three, its `waiting` line naming it first/, 'as the waiting field says: a name or task id first');
+  assert.match(owning, /another task \(`after`\)/);
+  assert.match(owning, /a date the outside world set \(`until`\).*A wait on neither a person nor a task always has one; without it, tomorrow 09:00/, 'as until says: an outside wait defaults to tomorrow at 09:00');
+  assert.match(owning, /What we need from the person on one matter is one task for them; a new question joins their open one/);
+  assert.match(owning, /A task standing still a day is my manager's to take up, three days its area lead's/);
+  assert.doesNotMatch(follow, /morning/i, "the morning round is Felix' code and its wake text, not the prompt");
 });
 
 test('the organisation is as deep as its work, not two levels (Stanislaus 25.11.2026)', () => {
@@ -137,7 +159,7 @@ test("a lead's text is its own frame: Leading first; its turns carry the brief, 
     "A model is chosen where a context starts – a part, a new colleague –: the smallest that does the piece's hardest step as well as the strongest would; for a part I name what that step asks (its needs), and its model follows from that.",
     'A model I set for a colleague runs from its next context and stays until it, I or the person names another.',
     'Proof belongs to the one who did the work', 'A result I take the way its audience meets it', 'a good result I close without a line',
-    "becomes that colleague's to-do in their words – their line stays with it –", "Every ask in Alexandra's line that I do not finish this turn becomes its own to-do in their words – one I finish and answer at once needs none", 'A decision in my area is mine']) {
+    "becomes that colleague's task in their words – their line stays with it –", "Every ask in Alexandra's line that I do not finish this turn becomes its own task in their words – one I finish and answer at once needs none", 'A decision in my area is mine']) {
     assert.ok(leading.includes(kept), `leading: ${kept}`);
   }
   assert.ok(LEAD.includes('How freely I act toward people follows how well I know the matter'), 'the bullet stays in both standards');
@@ -148,8 +170,8 @@ test("a lead's text is its own frame: Leading first; its turns carry the brief, 
 });
 
 test("the task's result is the report; a line to a colleague wakes them for a whole turn (managers-konrad P5, managers-clara 7.3, managers-lukas-paula B)", () => {
-  assert.ok(AGENT.includes("A to-do's result is my report to whoever gave it; a line beside it is for what they have to decide."));
-  assert.ok(LEAD.includes("A to-do's result is my colleague's report to me; a line beside it is for what I have to decide."));
+  assert.ok(AGENT.includes("A task's result is my report to whoever gave it; a line beside it is for what they have to decide."));
+  assert.ok(LEAD.includes("A task's result is my colleague's report to me; a line beside it is for what I have to decide."));
   for (const [name, text] of BOTH) assert.ok(text.includes('A line to a colleague wakes them for a whole turn, so it changes what they do; thanks rides inside such a line.'), name);
   assert.doesNotMatch(skill('team-coordination'), /Who to report to|short thanks is enough|I report back with the result|thank for what someone did/);
   assert.match(skill('team-coordination'), /\*\*How they check it\*\* themselves/);
@@ -186,11 +208,11 @@ test('own voice, the person by name, abilities instead of tools – and not long
     assert.doesNotMatch(text, /always runs through|agents\.split|human\.ask|model\.set|schedules\.|wf send/, name);
     assert.ok(!text.includes('{{'), `${name}: {{user_name}} only`);
   }
-  assert.ok(AGENT.length <= 11_590, `standard-agent "# How I work": ${AGENT.length} (17.11.: 10,732; 18.11. with "a line exists only as a block": 10,972; 20.11. with "a full path I write … opens with one tap": 11,072; 20.11. Quests: every ask its own to-do in a quest, waits on something real, a to-do's thread: 11,310; 21.11. Halb: a part pays for time or for cost – the owner's Ultra bullet: 11,587; 25.11. minutes, waits, a critic's look, two tries – shorter: 11,529; 25.11. phone use off – request once, they confirm, with two trims elsewhere: back under 11,590)`);
+  assert.ok(AGENT.length <= 11_740, `standard-agent "# How I work": ${AGENT.length} (17.11.: 10,732; 18.11. with "a line exists only as a block": 10,972; 20.11. with "a full path I write … opens with one tap": 11,072; 20.11. Quests: every ask its own to-do in a quest, waits on something real, a to-do's thread: 11,310; 21.11. Halb: a part pays for time or for cost – the owner's Ultra bullet: 11,587; 25.11. minutes, waits, a critic's look, two tries – shorter: 11,529; 25.11. phone use off – request once, they confirm, with two trims elsewhere: back under 11,590; 27.11. Stufe A – a twin onto the open task's checklist, steps as its checklist, after/until for the wait, questions for the person joined: 11,730)`);
   assert.ok(LEAD.length <= 14_125, `standard-manager "# How I work": ${LEAD.length} (17.11.: 13,885; 18.11.: 14,125)`);
   const files = ['prompts/standard-agent.md', 'prompts/standard-manager.md', 'modes/general.md', 'agents/manager.md', 'agents/head.md', 'agents/content-creator.md', 'agents/video-editor.md',
     ...['app-guide', 'briefing', 'chats', 'head-of-staff', 'human-minimal-handoff', 'leading-coding', 'money', 'org-setup-onboarding', 'splitting', 'system-prompt', 'task-ownership', 'team-coordination']
       .map((name) => `skills/${name}/SKILL.md`)];
   const total = files.reduce((sum, file) => sum + clean(read(file)).length, 0);
-  assert.ok(total <= 97_500, `the nineteen changed texts as a model reads them: ${total} characters (17.11.: 95,729; 18.11. with "a line exists only as a block" in both standards and the chats skill: 96,576; 20.11. Quests – the asks paragraph in both standards, the quest skills: 96,860; 21.11. Halb – time and cost of a part in the standards, splitting and briefing, needs; 25.11. the phone line in both standards, paid for by two trims in the Chats bullets: back under 97,500)`);
+  assert.ok(total <= 98_300, `the nineteen changed texts as a model reads them: ${total} characters (17.11.: 95,729; 18.11. with "a line exists only as a block" in both standards and the chats skill: 96,576; 20.11. Quests – the asks paragraph in both standards, the quest skills: 96,860; 21.11. Halb – time and cost of a part in the standards, splitting and briefing, needs; 25.11. the phone line in both standards, paid for by two trims in the Chats bullets: back under 97,500; 27.11. Stufe A – checklist, the three waits with their fields, twins and bundled questions in both standards and task-ownership, to-do → task everywhere: 98,296)`);
 });
