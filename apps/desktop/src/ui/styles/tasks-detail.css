@@ -12,6 +12,7 @@
 .detail-top { display: flex; flex: none; align-items: center; gap: 8px; min-height: 44px; padding: 4px 8px 4px 16px; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: calc(12.5px * var(--ui-text, 1)); }
 .detail-quest { display: inline-flex; align-items: center; gap: 6px; min-width: 0; margin-left: -6px; padding: 3px 6px; overflow: hidden; border-radius: var(--r-sm); color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .detail-quest:hover:not(.plain) { background: var(--hover); }
+.detail-quest-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .detail-gap { flex: 1 1 auto; }
 .detail-body { display: flex; flex-direction: column; flex: 0 1 auto; gap: 12px; max-height: 58%; padding: 14px 16px 12px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .task-detail.quest .detail-body { max-height: 64%; }
@@ -22,6 +23,10 @@
 .detail-title[contenteditable]:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 45%, transparent); background: none; }
 .detail-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .detail-meta .task-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* the state chip holds a whole wait ("Waiting since … · why" with IDs and paths): it wraps inside the screen (Mika, S9 27.11.2026) */
+.detail-meta .task-chip.state { flex: 0 1 auto; min-width: 0; height: auto; min-height: 24px; padding-block: 3px; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.detail-age { margin: 0; color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); overflow-wrap: anywhere; }
+.detail-age .late { color: var(--warn); }
 button.task-chip.time:hover { border-color: var(--line); }
 button.task-chip.time[aria-expanded=true] { border-color: var(--focus); }
 .popover.time-pop { padding: 10px; }
