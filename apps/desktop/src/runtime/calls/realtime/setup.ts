@@ -1,7 +1,8 @@
 // What a realtime voice session needs before it opens: which account and model serve it (the Voice use routing.voice,
 // '<provider>:<model>' – an older '<accountId>:<model>' too – while an account of it is usable; else, by account priority, the best
 // listed realtime model of an API-key account an adapter serves (adapters.ts: OpenAI, OpenAI-compatible, Google); else the
-// default model of the first account that has one), and how the model speaks: as the chat's agent, briefly, with the chat's
+// default model of the first account that has one – 0.3.22: not an account whose settings.json entry names other uses for its
+// models, and none at all while Voice is "local"), and how the model speaks: as the chat's agent, briefly, with the chat's
 // recent lines as context and hand_over for real work (the agent's full turn does it, with its tools). B-081: who it speaks
 // as for a call (realtimeAgent: the caller; a ring in a chat with more agents, and any call in a group chat, is the voice conversation's).
 // Owns: those choices and the instruction text. Never: reads the key (session.ts asks accounts.apiKey right before
@@ -14,7 +15,8 @@ import { ownHowIWork } from '../../org/system-parts.ts';
 import '../../contracts/open-fs.ts';
 import { vocabularyPrompt } from '../../../shared/voice/vocabulary.ts';
 import { accountTerms } from '../../../shared/voice/hint.ts';
-import { chosenFor, talksLive } from '../../../shared/model/models-uses.ts';
+import { chosenFor, talksLive, USE_LOCAL } from '../../../shared/model/models-uses.ts';
+import { servesAuto } from '../../../shared/model/provider-entries.ts';
 import type { RuntimeServices } from '../../contracts.ts';
 import { coreInstructions } from '../../agent-core/prompt.ts';
 import { adapterFor } from './adapters.ts';
@@ -42,20 +44,24 @@ export function realtimeChoice(s: Pick<RuntimeServices, 'accounts' | 'catalog'> 
   let accounts: Account[] = [];
   try { accounts = s.accounts.list().filter(usable).sort((a, b) => a.priority - b.priority); } catch { return undefined; }
   if (!accounts.length) return undefined;
-  const chosen = (() => { try { return chosenRealtime(chosenFor(s.settings?.get().routing, 'voice')); } catch { return undefined; } })();
+  const settings = (() => { try { return s.settings?.get(); } catch { return undefined; } })();
+  const stored = chosenFor(settings?.routing, 'voice');
+  if (stored === USE_LOCAL) return undefined; // Voice "local": calls on this PC's speech
+  const chosen = chosenRealtime(stored);
   const pinned = chosen ? accounts.find((account) => account.id === chosen.owner) ?? accounts.find((account) => account.provider === chosen.owner) : undefined;
   if (pinned && chosen) return { account: pinned, model: chosen.model };
   let listed: Array<{ provider: string; model: string; accounts: string[] }> = [];
   try { listed = s.catalog.list(); } catch { listed = []; }
   for (const account of accounts) {
-    const own = listed.filter((entry) => entry.provider === account.provider && talksLive(entry) && (!entry.accounts.length || entry.accounts.includes(account.id)));
+    const own = listed.filter((entry) => entry.provider === account.provider && talksLive(entry) && (!entry.accounts.length || entry.accounts.includes(account.id)) &&
+      servesAuto(account, settings?.providers, 'voice', entry.model));
     const rank = adapterFor(account)!.rank;
     const best = own.reduce<typeof own[number] | undefined>((top, entry) => (!top || rank(entry.model) > rank(top.model) ? entry : top), undefined);
     if (best) return { account, model: best.model };
   }
   for (const account of accounts) {
     const model = adapterFor(account)!.defaultModel;
-    if (model) return { account, model };
+    if (model && servesAuto(account, settings?.providers, 'voice', model)) return { account, model };
   }
   return undefined;
 }

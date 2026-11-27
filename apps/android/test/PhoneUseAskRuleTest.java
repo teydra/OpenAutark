@@ -25,6 +25,12 @@ public final class PhoneUseAskRuleTest {
         check("Let the AI use this phone".equals(PhoneUseAskRule.TITLE), "title");
         check(PhoneUseAskRule.line(PhoneUseAskRule.Kind.LITE).contains("installs it here") && PhoneUseAskRule.line(PhoneUseAskRule.Kind.FULL).contains("agree"), "one line each");
         check(!PhoneUseAskRule.button(PhoneUseAskRule.Kind.LITE).equals(PhoneUseAskRule.button(PhoneUseAskRule.Kind.FULL)), "own button per build");
+        // Mika, S9, 27.11.2026: agreed before, switch off – the tap opens Accessibility directly, so no "read" promise.
+        check(PhoneUseAskRule.prompt(false, false).startsWith("Tap to read what this does"), "not agreed: the tap reads first");
+        check(!PhoneUseAskRule.prompt(true, false).contains("read what this does") && PhoneUseAskRule.prompt(true, false).contains("Tap to open Accessibility"), "agreed: the words say Accessibility opens");
+        check(PhoneUseAskRule.prompt(true, true).endsWith(PhoneUseAskRule.RESTRICTED) && !PhoneUseAskRule.prompt(true, false).contains("restricted"), "restricted hint only on Android 13+");
+        check(!PhoneUseAskRule.line(PhoneUseAskRule.Kind.FULL, true).contains("read what it does") && "Turn back on".equals(PhoneUseAskRule.button(PhoneUseAskRule.Kind.FULL, true)), "agreed: card promises no reading");
+        check(PhoneUseAskRule.line(PhoneUseAskRule.Kind.LITE, true).equals(PhoneUseAskRule.line(PhoneUseAskRule.Kind.LITE)) && "Add phone use".equals(PhoneUseAskRule.button(PhoneUseAskRule.Kind.LITE, true)), "Lite unchanged by agreed");
         System.out.println(assertions + " phone-use request assertions passed.");
     }
 }

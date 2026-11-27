@@ -95,6 +95,27 @@ export function lanes(items: readonly CalItem[]): Laned[] {
   return out;
 }
 
+/** A mark on the AI lane is this high (px; the stylesheet's .cal-ai height), centred on its time. */
+export const AI_MARK_PX = 14;
+
+export interface AiPlaced { item: CalItem; top: number }
+
+/**
+ * Where the AI lane's marks stand (px from the hours' top): each centred on its time, but never over the one before it –
+ * notes of the same minute (Mika and Lena at 14:00) stand one below the other, each readable, in time order (S9 review,
+ * 27.11.2026). The lane is one narrow column, so a collision pushes down rather than sideways; a mark's tooltip has its time.
+ */
+export function aiPlaced(items: readonly CalItem[]): AiPlaced[] {
+  const out: AiPlaced[] = [];
+  let free = -Infinity; // the first top a mark may take
+  for (const item of [...items].sort((a, b) => a.span.start - b.span.start)) {
+    const top = Math.max((item.span.start / 60) * HOUR_PX - AI_MARK_PX / 2, free);
+    out.push({ item, top });
+    free = top + AI_MARK_PX;
+  }
+  return out;
+}
+
 /** The seven dates (Monday first) of the week `date` is in. */
 export function weekOf(date: string): string[] {
   const monday = shiftDate(date, -((weekdayOf(date) + 6) % 7));

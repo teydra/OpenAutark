@@ -44,8 +44,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 final class BubbleCall implements UseLink.Events {
     /** The bubble around the call (TodoButton). */
@@ -505,38 +503,9 @@ final class BubbleCall implements UseLink.Events {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> map(Object value) { return value instanceof Map ? (Map<String, Object>) value : Json.map(); }
 
-    // ------------------------------------------------------------------ speakable text (conversation-parts.ts)
+    // ------------------------------------------------------------------ speakable text (SpokenPieces: the page's conversation-parts.ts)
 
-    /** A Markdown answer as speakable text: no fences, markup or bullets, a link as its words, a line without a stop ends as a sentence. */
-    static String speakable(String markdown) {
-        if (markdown == null) return "";
-        String text = markdown
-                .replaceAll("```[\\s\\S]*?(```|$)", " ")
-                .replaceAll("!\\[[^\\]]*\\]\\([^)]*\\)", " ")
-                .replaceAll("\\[([^\\]]+)\\]\\([^)]*\\)", "$1")
-                .replaceAll("(?m)^[ \\t]*[-+•][ \\t]+", "")
-                .replaceAll("[`*_#>|~]+", " ")
-                .replaceAll("([^\\s.!?:;,])[ \\t]*\\n\\s*(?=\\S)", "$1. ")
-                .replaceAll("\\s+", " ")
-                .trim();
-        return text.length() > 4000 ? text.substring(0, 4000) : text;
-    }
+    static String speakable(String markdown) { return SpokenPieces.speakable(markdown); }
 
-    private static final Pattern SENTENCE_END = Pattern.compile("[.!?…][\"'”’)\\]]*(?=\\s|$)|\\n");
-    private static final Pattern ABBREVIATION = Pattern.compile("(?:^|\\s)(?:[\\p{L}\\d]|[\\p{L}\\d]+\\.[\\p{L}\\d.]*|ca|bzw|usw|etc|vgl|ggf|evtl|inkl|zzgl|bspw|Nr|Dr|Prof|Hr|Fr|St|Str|Tel|Mio|Mrd|Mr|Mrs|Ms|Jr|vs|approx)\\.$",
-            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
-    private static final Pattern GOES_ON = Pattern.compile("^[\"'”’)\\]]*\\s+\\p{Ll}");
-    private static final int PIECE_MIN = 15;
-
-    /** The finished sentences at the start of a text still being written (a piece at least PIECE_MIN long), or "". */
-    static String sentencesDone(String text) {
-        int at = 0;
-        Matcher match = SENTENCE_END.matcher(text);
-        while (match.find()) {
-            int end = match.end();
-            if (".".equals(match.group()) && (ABBREVIATION.matcher(text.substring(Math.max(0, match.start() - 40), end)).find() || GOES_ON.matcher(text.substring(end)).find())) continue;
-            if (end - at >= PIECE_MIN) at = end;
-        }
-        return at > 0 ? text.substring(0, at).trim() : "";
-    }
+    static String sentencesDone(String text) { return SpokenPieces.sentencesDone(text); }
 }

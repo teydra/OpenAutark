@@ -86,5 +86,5 @@ until I, my lead or the person names another.
 ```
 
 `to` takes one or more chat ids; `push` or `quiet` set the level (none: normal); `files` takes workspace paths, file ids
-or stored-at paths. Ask blocks and ```app todo blocks inside become the person's to-dos as usual. A block that is not
+or stored-at paths. Ask blocks and ```app todo blocks inside become the person's tasks as usual. A block that is not
 posted – a chat I am no member of, a missing file – is told to me, so silence means it stands in the chat.

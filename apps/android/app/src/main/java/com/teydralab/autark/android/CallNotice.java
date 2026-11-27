@@ -6,7 +6,7 @@
 // call's chat, where the ringing call's own Accept starts it (the page starts its microphone and audio inside a tap);
 // Decline is calls.decline over the app's own socket (phoneuse/UseLink) and takes the notice with it only once that
 // went out. Opening the app clears it (AppNotices.clear). Nothing while the app is on screen: the page shows its own
-// call notice and ring tone then.
+// call notice and ring tone then. Its header line says "AI voice (machine-generated)" (CallVoiceNote, Konrad 27.11.2026).
 // Never: answers or declines by itself, or rings past the ring's time.
 package com.teydralab.autark.android;
 
@@ -59,6 +59,7 @@ public final class CallNotice extends BroadcastReceiver {
         String why = Json.str(data, "body");
         Notification.Builder builder = AppNotices.branded(new Notification.Builder(app, CHANNEL));
         builder.setContentTitle(title == null || title.isEmpty() ? (german ? "Anruf" : "Call") : title).setContentText(why == null ? "" : why)
+                .setSubText(CallVoiceNote.TEXT) // Konrad 27.11.2026: the call's voice is machine-generated, said in the notice's header line
                 .setCategory(Notification.CATEGORY_CALL).setOngoing(true).setShowWhen(true).setTimeoutAfter(left)
                 .setContentIntent(open).setAutoCancel(true)
                 .addAction(new Notification.Action.Builder(null, german ? "Annehmen" : "Accept", open).build())

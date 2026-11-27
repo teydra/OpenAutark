@@ -37,6 +37,9 @@ import { dropThread, threadEvent } from './thread.ts';
 import type { Effort } from '../../shared/model/providers.ts';
 import { setTaskRoute } from '../agents/next-route.ts';
 import '../contracts/people.ts';
+import { checklistLedger, readChecklist, readPlan, settleItems, type PlanItem } from '../../shared/model/task-plan.ts';
+import { handOverItem, runAgain } from './checklist.ts';
+import { answerCard, laterCard, type CardAnswer } from './cards.ts';
 
 export type TaskDeps = Pick<RuntimeServices, 'db' | 'bus' | 'clock' | 'chats' | 'wakes'>
   & Partial<Pick<RuntimeServices, 'org' | 'subconscious' | 'scheduler' | 'notifications' | 'log' | 'dispatcher' | 'catalog' | 'people' | 'settings' | 'decisions'>>;
@@ -49,7 +52,7 @@ export type WaitInput = Omit<TaskWait, 'since'>;
  * kind, a wait (status 'waiting' + waitingOn) or its end (status 'open'), the plan and a fact.
  */
 export type TaskPatch = Partial<Pick<Task, 'title' | 'notes' | 'priority' | 'doneWhen' | 'sort' | 'widget' | 'dependsOn' | 'status' | 'private' | 'kind'>>
-  & { at?: number | null; minutes?: number | null; parentId?: string | null; waitingOn?: WaitInput; plan?: string[]; fact?: string; facts?: string[]; doneCount?: number };
+  & { at?: number | null; minutes?: number | null; parentId?: string | null; waitingOn?: WaitInput; plan?: string[]; checklist?: PlanItem[]; fact?: string; facts?: string[]; doneCount?: number };
 
 /** What finish() takes. */
 export interface FinishInput {
@@ -157,7 +160,14 @@ export class TaskServiceImpl implements TaskService {
       if (draft.private === false) delete draft.private;
       if (patch.parentId !== undefined) { if (patch.parentId === null) delete draft.parentId; else draft.parentId = patch.parentId; }
       let moved = draft.notes !== current.notes || draft.title !== current.title || draft.doneWhen !== current.doneWhen;
-      if (patch.plan !== undefined) { draft.ledger = { ...draft.ledger, plan: patch.plan.map((line) => line.trim()).filter(Boolean).slice(0, 20) }; moved = true; }
+      // P5: lines (a person's edit, an older caller) keep the ids, owners and tasks of the items with their words; items keep theirs by id
+      if (patch.checklist !== undefined || patch.plan !== undefined) {
+        const known = readChecklist(current.ledger);
+        const items = settleItems(patch.checklist ?? readPlan(patch.plan!.map((line) => line.trim()).filter(Boolean)), known);
+        draft.ledger = { ...draft.ledger, ...checklistLedger(items) };
+        if (!items.length) delete draft.ledger.checklist;
+        moved = true;
+      }
       if (patch.fact?.trim()) {
         const fact = patch.fact.trim();
         draft.ledger = { ...draft.ledger, facts: [...(draft.ledger.facts ?? []).filter((item) => item !== fact), fact].slice(-20) };
@@ -290,6 +300,13 @@ export class TaskServiceImpl implements TaskService {
   changeWidget(id: string, type: string, repeat?: TodoRepeat): TaskView { return this.human.changeWidget(id, type, repeat); }
   snooze(ref: string | { messageId: string; blockIndex: number }, until: number): TaskView { return this.human.snooze(ref, until); }
   stopRepeating(id: string, by: string): TaskView { return this.human.stopRepeating(id, by); }
+
+  // ------------------------------------------------------------- checklist and cards (tasks/checklist.ts, tasks/cards.ts)
+
+  handOverItem(id: string, itemId: string, to: string, by: string, options: { givenIn?: string } = {}): Promise<TaskView> { return handOverItem(this, id, itemId, to, by, options); }
+  runAgain(id: string, by: string, input: { title?: string } = {}): Promise<TaskView> { return runAgain(this, id, by, input); }
+  answerCard(input: CardAnswer, by: string): TaskView[] { return answerCard(this, input, by); }
+  laterCard(ids: readonly string[], until: number, by: string): TaskView[] { return laterCard(this, ids, until, by); }
 
   // ------------------------------------------------------------- shared internals
 

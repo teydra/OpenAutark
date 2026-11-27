@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { CalendarEvent } from '../../../src/shared/model/calendar.ts';
-import { HOUR_PX, atMinute, clickSpan, dayBounds, dayView, dragged, lanes, spanIn, weekOf, type CalItem } from '../../../src/ui/tasks/calendar-model.ts';
+import { AI_MARK_PX, HOUR_PX, aiPlaced, atMinute, clickSpan, dayBounds, dayView, dragged, lanes, spanIn, weekOf, type CalItem } from '../../../src/ui/tasks/calendar-model.ts';
 import { questHue } from '../../../src/ui/tasks/page-model.ts';
 
 const TZ = 'Europe/Berlin';
@@ -73,4 +73,17 @@ test('geometry: spans cut at the day\'s edges, lanes for overlaps, a click\'s qu
   const moved = dragged({ startAt: MIDNIGHT + 15 * H, endAt: MIDNIGHT + 16 * H }, { start: 900, end: 960 }, HOUR_PX * 1.3, DATE, TZ);
   assert.deepEqual(moved, { startAt: MIDNIGHT + 16.25 * H, endAt: MIDNIGHT + 17.25 * H }, '78 minutes down: 75, the hour kept');
   assert.deepEqual(weekOf(DATE), ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21', '2026-11-22']);
+});
+
+test('the AI lane stands notes of the same time one below the other, in time order, never over each other', () => {
+  const note = (id: string, start: number): CalItem => ({ id, kind: 'ai', title: id, span: { start, end: start }, hue: 0, who: id });
+  const alone = aiPlaced([note('mika', 840)]);
+  assert.equal(alone[0]!.top, (840 / 60) * HOUR_PX - AI_MARK_PX / 2, 'a lone note is centred on its time');
+  const two = aiPlaced([note('mika', 840), note('lena', 840)]);
+  assert.deepEqual(two.map((placed) => placed.item.id), ['mika', 'lena']);
+  assert.equal(two[1]!.top - two[0]!.top, AI_MARK_PX, 'the second stands right under the first');
+  const crowd = aiPlaced([note('c', 845), note('a', 840), note('b', 840), note('far', 960)]);
+  assert.deepEqual(crowd.map((placed) => placed.item.id), ['a', 'b', 'c', 'far'], 'time order, ties as given');
+  for (let index = 1; index < crowd.length; index += 1) assert.ok(crowd[index]!.top >= crowd[index - 1]!.top + AI_MARK_PX, 'no two overlap');
+  assert.equal(crowd[3]!.top, (960 / 60) * HOUR_PX - AI_MARK_PX / 2, 'a later note far enough away keeps its own time');
 });

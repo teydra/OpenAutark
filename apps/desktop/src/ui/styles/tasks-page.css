@@ -13,7 +13,7 @@
 .tasks-cols { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }
 .tasks-list { display: flex; flex-direction: column; gap: 6px; flex: 1 1 0; min-width: 0; padding: 16px 18px 24px 20px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .tasks-side { display: flex; flex-direction: column; flex: none; width: 356px; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
-.tasks-side.single { flex: 1 1 auto; width: auto; border-left: 0; }
+.tasks-side.single { flex: 1 1 auto; width: auto; min-width: 0; border-left: 0; } /* min-width 0: a long quest name in the detail's top row never widens the phone's view past the screen (Mika, S9 27.11.2026) */
 .task-dot { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--qc, var(--muted)); }
 
 /* ---------------------------------------------------------------- head: the day line (DayLine.tsx, owner 23.11.2026) */
@@ -93,7 +93,7 @@
 /* "Today" on another day (the heading, the one-column calendar's head): small to see, a 44 px target on touch */
 .day-list-today { position: relative; flex: none; margin-left: auto; padding: 2px 10px; border: 1px solid var(--field); border-radius: 12px; color: var(--text); font-size: calc(12.5px * var(--ui-text, 1)); font-weight: 500; letter-spacing: 0; text-transform: none; }
 .day-list-today:hover { background: var(--hover); }
-.cal-head .day-list-today { margin: -3px 0; }
+.cal-head .day-list-today { margin: -3px 0 -3px auto; }
 .day-item-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .day-item-title { font-size: calc(14px * var(--ui-text, 1)); line-height: 1.4; overflow-wrap: anywhere; }
 .day-line-item.done .day-item-title { color: var(--muted); }
@@ -192,13 +192,21 @@ li.tasks-sec.later { margin-top: 6px; list-style: none; }
 .ai-line.done .ai-title { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--field); }
 .ai-state { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); }
 .ai-state .ai-live { width: 6px; height: 6px; }
+.ai-state { min-width: 0; overflow-wrap: anywhere; }
+/* checklist, created, stuck: one quiet line under the state; its parts wrap whole, "Stuck since" in the warning tone */
+.ai-age { display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--muted); font-size: calc(11.5px * var(--ui-text, 1)); }
+.ai-age > .late { color: var(--warn); }
 .ai-note { display: flex; align-items: flex-start; gap: 6px; margin: 4px 8px 6px; color: var(--secondary); font-size: calc(12.5px * var(--ui-text, 1)); }
 .ai-note .icon { flex: none; margin-top: 2px; }
 .ai-note b { color: var(--text); font-weight: 600; }
 
 /* ---------------------------------------------------------------- calendar */
 .task-cal { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.cal-head { display: flex; flex: none; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: calc(13px * var(--ui-text, 1)); }
+/* the head wraps instead of running off a 360 px screen: date and "Today" first, the note under them when there is no room */
+.cal-head { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: calc(13px * var(--ui-text, 1)); }
+.cal-head-day { min-width: 0; }
+.cal-head-note { min-width: 0; margin-left: auto; }
+.cal-head .day-list-today + .cal-head-note { margin-left: 0; }
 .cal-allday { display: flex; flex: none; gap: 4px; min-height: 30px; padding: 3px 10px 3px 48px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
 .cal-allday:empty { border-bottom-color: transparent; } /* nothing without a time: no line, the same height */
 .cal-chip { flex: none; height: 22px; padding: 0 8px; border-left: 3px solid var(--qc); border-radius: 6px; background: color-mix(in srgb, var(--qc) 16%, var(--surface)); color: var(--text); font-size: calc(12px * var(--ui-text, 1)); white-space: nowrap; }
@@ -228,6 +236,7 @@ li.tasks-sec.later { margin-top: 6px; list-style: none; }
 .cal-chip { display: inline-flex; align-items: center; gap: 4px; }
 .cal-block-time { color: var(--secondary); font-size: calc(11px * var(--ui-text, 1)); }
 .cal-ai { position: absolute; right: 0; display: flex; align-items: center; gap: 4px; width: 64px; height: 14px; padding: 0; overflow: hidden; color: var(--muted); font-size: calc(10.5px * var(--ui-text, 1)); white-space: nowrap; }
+.cal-ai-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* a long name ends in an ellipsis (its tooltip has it whole) */
 .cal-ai i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--qc); }
 .cal-ai.done { opacity: .55; }
 .cal-now { position: absolute; z-index: 2; left: -6px; right: 0; border-top: 2px solid var(--danger); pointer-events: none; }

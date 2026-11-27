@@ -1,7 +1,7 @@
 // B-081: an agent's call and a call on another device in the status line (shell/StatusLine.tsx registers it; an overlay
 // line – nothing in the frame moves). One signal fed by the 'calls.live' event (topic chats) and loaded again after every
 // (re)connect – no polling –, and a pure provider:
-//   ringing:  "<Agent> calls · <why>"  [Accept] (opens the chat and answers, CallHeader.tsx answerCall) [Decline]
+//   ringing:  "<Agent> calls · AI voice (machine-generated) · <why>"  [Accept] (opens the chat and answers, CallHeader.tsx answerCall) [Decline]
 //   running elsewhere (not talking on this device): "Call on <device> · <name>: <last line>"  [Take over] [Join]
 //   (owner 19.11.2026: Join brings this device in beside the others – CallHeader.tsx answerCall with join – and opens the
 //   call's chat first when another one is open, so its call card shows)
@@ -14,7 +14,7 @@
 // Owns: that signal, the provider, the tone. Never: decides a call's state (runtime/calls/ring.ts) or starts audio input.
 
 import { effect, signal } from '@preact/signals';
-import type { LiveCall } from '../../../shared/model/call.ts';
+import { AI_VOICE_NOTICE, type LiveCall } from '../../../shared/model/call.ts';
 import { navigate } from '../../lib/router.ts';
 import { rpc } from '../../lib/rpc.ts';
 import { can } from '../../lib/session.ts';
@@ -41,7 +41,7 @@ export function ringingHere(calls: readonly LiveCall[], context: Pick<CallNotice
 /** The status line's call lines: a ring with Accept / Decline, a call on another device with Take over / Join. */
 export function callNotices(calls: readonly LiveCall[], context: CallNoticeContext, actions: CallNoticeActions): Notice[] {
   const ringing = ringingHere(calls, context).map((call): Notice => ({
-    id: `ring:${call.callId}`, tone: 'info', text: `${call.agentName ?? 'An agent'} calls${call.why ? ` · ${clip(call.why, 120)}` : ''}`, priority: NOTICE_PRIORITY.ring,
+    id: `ring:${call.callId}`, tone: 'info', text: `${call.agentName ?? 'An agent'} calls · ${AI_VOICE_NOTICE}${call.why ? ` · ${clip(call.why, 120)}` : ''}`, priority: NOTICE_PRIORITY.ring,
     actions: [
       { label: 'Accept', primary: true, run: () => { if (context.open !== call.conversationId) actions.open(call.conversationId); return actions.answer(call.conversationId, call.callId); } },
       { label: 'Decline', run: () => actions.decline(call.callId) },

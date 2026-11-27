@@ -12,12 +12,13 @@
 // this device shows goes with its lines – call-view.ts; the preview with its cut-out is CallShare.tsx under the card) and the
 // red Hang up (the call cell's End). Team-Call 21.11.2026: while the card shows, with several people in the call the status line
 // names who is in (their audio runs from the shell, people-call.ts – not from this card) ("… · Dominik and Momo").
+// Konrad 27.11.2026: its foot line says "AI voice (machine-generated)" for as long as the card shows (the local voice's licence).
 // Owns: the card's markup, its clock and its level loop. Never: starts or ends audio itself, or decides a call's state.
 
 import { createPortal } from 'preact/compat';
 import type { RefObject } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { callDeviceNames, callDevices } from '../../../shared/model/call.ts';
+import { AI_VOICE_NOTICE, callDeviceNames, callDevices } from '../../../shared/model/call.ts';
 import type { ConversationSummary } from '../../../shared/model/chat.ts';
 import { ChatFace, chatTitle } from '../../lib/chat-face.tsx';
 import { voicePhase, voiceSessions } from '../../lib/shell-state.ts';
@@ -121,6 +122,7 @@ export function CallCard(props: { chat: ConversationSummary; anchor: RefObject<E
         </button>
       </span>
       <p class="call-caption" data-side={caption?.side}>{caption && <><strong>{caption.name}</strong> {caption.text}</>}</p>
+      <p class="call-ai-voice">{AI_VOICE_NOTICE}</p>
       <CallShare conversationId={chat.id} />
     </section>,
     host,

@@ -152,7 +152,7 @@ test('an older single settings stamp counts for every section; then a change sta
   edit(a, { voice: { realtime: 'auto' } });
   assert.ok(a.stamps.get('settings/voice')!.at > 5000, 'the changed section is stamped now');
   assert.equal(a.stamps.get('settings/profile')?.at, 5000, 'the others keep theirs');
-  assert.deepEqual(Object.keys(a.sync.current().sections).sort(), ['profile', 'profile.notes', 'routing', 'voice'], 'the link-up sends every section (and the unit profile.notes)');
+  assert.deepEqual(Object.keys(a.sync.current().sections).sort(), ['profile', 'profile.notes', 'routing', 'voice', 'voice.localTtsSteps'], 'the link-up sends every section (and the units profile.notes, voice.localTtsSteps)');
   off();
 });
 
@@ -284,7 +284,7 @@ const SECTION_FORM: Record<string, string[]> = {
   preferences: ['theme', 'enterSends', 'openAtLogin', 'autoDownloadUpdates'], // the window layout never travels
   notifications: ['enabled', 'sound', 'quietHours', 'pushFor'],
   voice: ['ttsVoice', 'vocabulary', 'realtime', 'talker', 'localStt', 'localTts'],
-  routing: ['work', 'decision', 'voice', 'stt', 'tts', 'image', 'video', 'music', 'sound', 'embeddings', 'costMode', 'allowPaidFallback'],
+  routing: ['work', 'decision', 'voice', 'stt', 'tts', 'speech', 'image', 'video', 'music', 'sound', 'embeddings', 'costMode', 'allowPaidFallback'],
   day: ['workStart', 'workEnd', 'bufferMin', 'planAt', 'aiHelps'],
   calendar: ['googleClientId', 'googleSecretId'],
   lifecycle: ['retention'],

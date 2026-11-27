@@ -55,7 +55,7 @@ test('the person\'s attention comes after our own ways; the examples ask only wh
   assert.match(handoff, /An item goes on their list after my own way was tried, and says what I tried/);
   assert.match(skill('team-coordination'), /with what we tried/);
   assert.match(skill('head-of-staff'), /says what we tried/);
-  assert.match(handoff, /A to-do the person wrote stays theirs/); // no longer in How I work (25.11.2026)
+  assert.match(handoff, /A task the person wrote stays theirs/); // no longer in How I work (25.11.2026)
   assert.doesNotMatch(text('agents/video-editor.md'), /When I need human footage or voice/);
   assert.match(text('agents/video-editor.md'), /I first take from what they already made/);
   assert.match(text('agents/content-creator.md'), /I first take from what they already recorded/);

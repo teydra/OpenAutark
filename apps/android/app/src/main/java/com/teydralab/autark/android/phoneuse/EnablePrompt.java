@@ -23,11 +23,10 @@ public final class EnablePrompt {
 
     private EnablePrompt() {}
 
-    /** The text of the prompt (also shown in the app when it is open). */
-    public static String text() {
-        return Build.VERSION.SDK_INT >= 33
-                ? "Tap to read what this does, then Accessibility › Use this phone. Greyed out or \"restricted setting\"? First Settings › Apps › Autark › ⋮ › Allow restricted settings (names can differ by phone maker)."
-                : "Tap to read what this does, then Autark › Use this phone.";
+    /** The text of the prompt: it says where the tap goes – the disclosure first, or (agreed before, only the switch off)
+     * Accessibility right away, as UseDisclosure skips itself then. */
+    public static String text(Context context) {
+        return PhoneUseAskRule.prompt(UseConsent.agreed(context), Build.VERSION.SDK_INT >= 33);
     }
 
     /** Every AI request while phone use is off or not agreed (any thread): the ongoing notification – the same id again
@@ -40,8 +39,9 @@ public final class EnablePrompt {
         PendingIntent settings = PendingIntent.getActivity(context, 1, new Intent(context, UseDisclosure.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);
         PendingIntent appInfo = PendingIntent.getActivity(context, 2, new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.fromParts("package", context.getPackageName(), null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);
-        Notification notification = PhoneUseAsk.builder(app).setContentTitle(PhoneUseAskRule.TITLE).setContentText(text())
-                .setStyle(new Notification.BigTextStyle().bigText(text())).setContentIntent(settings)
+        String text = text(app);
+        Notification notification = PhoneUseAsk.builder(app).setContentTitle(PhoneUseAskRule.TITLE).setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text)).setContentIntent(settings)
                 .addAction(new Notification.Action.Builder(null, "App info", appInfo).build()).build();
         PhoneUseAsk.post(app, ID, notification); // not allowed to notify: the card shows in the open app
         PhoneUseAsk.card(app, PhoneUseAskRule.Kind.FULL);

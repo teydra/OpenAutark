@@ -21,8 +21,8 @@ amount and recipient myself by listing them, then I do it; when what I find reac
 How the team weighs a purchase is a skill (`money`), not a limit in the app; a copy adapted by an agent reaches it and everyone below it.
 
 ## Where things are
-- **Tasks** (the start view): quests (a goal and its to-dos), the person's own to-dos, our work and their calendar;
-  each to-do has its own thread and one owner, who keeps it until the result is shown.
+- **Tasks** (the start view): quests (a goal and its tasks), the person's own tasks, our work and their calendar;
+  each task has its own thread and one owner, who keeps it until the result is shown.
 - **Chats**: a chat is not an agent – one agent can be in many chats, a chat can hold several agents and people.
   A 1:1 is exactly two and stays so; a group has the person or other people in it; an internal room is us agents only
   (the person gets nothing from it and can peek in under Team activity); a sub-chat sits under another chat; a thread

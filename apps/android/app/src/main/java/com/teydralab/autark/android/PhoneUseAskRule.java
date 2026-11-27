@@ -24,11 +24,33 @@ public final class PhoneUseAskRule {
     /** The Lite button: false – start the download and install; true – first Android's "install unknown apps" switch. */
     public static boolean allowInstallFirst(boolean canInstall) { return !canInstall; }
 
-    public static String line(Kind kind) {
-        return kind == Kind.LITE
-                ? "Your AI wants to work on this phone. Autark adds phone use by itself: it fetches the phone-use version and installs it here. You then read what it does and agree."
+    /** Android 13+ greys the switch out for an app from outside the store: the one extra step, said once. */
+    public static final String RESTRICTED = "Greyed out or \"restricted setting\"? First Settings › Apps › Autark › ⋮ › Allow restricted settings (names can differ by phone maker).";
+
+    public static String line(Kind kind) { return line(kind, false); }
+
+    /** The card's line. `agreed`: the person agreed before and only the switch is off (after an update, or turned off by
+     * hand) – the tap then opens Accessibility right away (UseDisclosure skips itself), so the words promise no reading. */
+    public static String line(Kind kind, boolean agreed) {
+        if (kind == Kind.LITE) return "Your AI wants to work on this phone. Autark adds phone use by itself: it fetches the phone-use version and installs it here. You then read what it does and agree.";
+        return agreed
+                ? "Your AI wants to work on this phone. You agreed before, but phone use is switched off. Switch it back on in Accessibility."
                 : "Your AI wants to work on this phone. First you read what it does and agree, then switch it on in Accessibility.";
     }
 
-    public static String button(Kind kind) { return kind == Kind.LITE ? "Add phone use" : "Read and turn on"; }
+    public static String button(Kind kind) { return button(kind, false); }
+
+    public static String button(Kind kind, boolean agreed) {
+        if (kind == Kind.LITE) return "Add phone use";
+        return agreed ? "Turn back on" : "Read and turn on";
+    }
+
+    /** The full build's notification text (Mika, S9, 27.11.2026: "Tap to read what this does" opened Accessibility
+     * directly – the agreement was stored, only the switch was off). The words follow where the tap really goes. */
+    public static String prompt(boolean agreed, boolean restrictedSettings) {
+        String first = agreed
+                ? "You agreed before; phone use is switched off. Tap to open Accessibility, then Autark › Use this phone."
+                : "Tap to read what this does, then Accessibility › Use this phone.";
+        return restrictedSettings ? first + " " + RESTRICTED : first;
+    }
 }

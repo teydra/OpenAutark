@@ -69,7 +69,7 @@ test('ring: the row is born ringing as the caller\'s, rings this window once and
   });
   assert.equal(rung.until, h.clock.now() + RING_MS);
   assert.deepEqual(rung.online, { pcs: 1, phones: 0 }, 'this PC; the other PC is not reachable, no phone subscribed');
-  assert.deepEqual(h.alerts, [{ title: 'Ava calls', body: 'Logo decision', tag: `call:${rung.callId}` }]);
+  assert.deepEqual(h.alerts, [{ title: 'Ava calls', body: 'AI voice (machine-generated)\nLogo decision', tag: `call:${rung.callId}` }], 'Konrad 27.11.2026: the OS notice says the voice is machine-generated, above why');
   assert.deepEqual(h.of('notify'), [{ kind: 'call', title: 'Ava calls', body: 'Logo decision', conversationId: h.chat.id, toast: false, call: { id: rung.callId, until: rung.until } }], 'the ring as a notify of its own kind (the call notice of the Android app)');
   assert.deepEqual(h.timers.pending.map((timer) => timer.ms), [RING_MS]);
   const [live] = h.rings.live();
@@ -111,6 +111,7 @@ test('a call adds one notice beside unread chat messages and its end clears only
   const { callId } = await h.rings.ring({ conversationId: h.chat.id, agentId: 'ag_ava', why: 'Decision' });
   await rungPush;
   assert.equal(sent[0].tag, `call:${callId}`);
+  assert.equal(sent[0].body, 'AI voice (machine-generated)\nDecision', 'the phones\' ring push says the voice is machine-generated');
   assert.equal(sent[0].url, `/#/chat/${h.chat.id}`, 'the separate call notice still opens its chat');
   assert.equal([...tray.values()].reduce((a, b) => a + b), 3, 'two chat messages plus the call');
   h.rings.decline(callId, { key: 'phone', name: 'Phone' });

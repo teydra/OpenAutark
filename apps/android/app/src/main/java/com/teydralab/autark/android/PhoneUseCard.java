@@ -20,7 +20,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import com.teydralab.autark.android.phoneuse.EnablePrompt;
+import com.teydralab.autark.android.phoneuse.UseConsent;
 import com.teydralab.autark.android.phoneuse.UseDisclosure;
 
 final class PhoneUseCard {
@@ -47,7 +47,8 @@ final class PhoneUseCard {
         title.setTextColor(foreground);
         column.addView(title);
         TextView body = new TextView(activity);
-        body.setText(PhoneUseAskRule.line(kind));
+        boolean agreed = kind == PhoneUseAskRule.Kind.FULL && UseConsent.agreed(activity); // the button then opens Accessibility right away
+        body.setText(PhoneUseAskRule.line(kind, agreed));
         body.setTextSize(17);
         body.setTextColor(foreground);
         body.setLineSpacing(0, 1.15f);
@@ -55,7 +56,7 @@ final class PhoneUseCard {
         column.addView(body);
         if (kind == PhoneUseAskRule.Kind.FULL && android.os.Build.VERSION.SDK_INT >= 33) {
             TextView restricted = new TextView(activity);
-            restricted.setText(EnablePrompt.text());
+            restricted.setText(PhoneUseAskRule.RESTRICTED);
             restricted.setTextSize(14);
             restricted.setTextColor(foreground);
             restricted.setAlpha(0.8f);
@@ -63,7 +64,7 @@ final class PhoneUseCard {
             column.addView(restricted);
         }
         Button go = new Button(activity);
-        go.setText(PhoneUseAskRule.button(kind));
+        go.setText(PhoneUseAskRule.button(kind, agreed));
         go.setAllCaps(false);
         go.setTextSize(18);
         go.setTextColor(Color.WHITE);

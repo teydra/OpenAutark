@@ -7,14 +7,14 @@
 // there; without text it puts the caret into the line. A click on a block opens its detail – where this calendar was.
 // A week's block shows its title whole words at a time (a long word is cut at the column's edge, never split letter by
 // letter; its tooltip has it all). The day's head names it ("Monday, November 23"; the page's head is the day line
-// now); a past day is only read (no slot clicks, no drags). On one column another day's head carries "Today".
+// now); a past day is only read (no slot clicks, no drags). On one column another day's head carries "Today" beside its note; at 360 px the head wraps (the note takes a second line) – nothing leaves the screen.
 // Owns: the grid's markup, the drag and the slot click. Never: what a day shows (calendar-model.ts) or the calls.
 
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { Task } from '../../shared/model/tasks.ts';
 import { calendarWindow, dayZone } from '../lib/day-store.ts';
 import { agentName } from '../lib/store.ts';
-import { DAY_MINUTES, HOUR_PX, atMinute, clickSpan, dayView, dragged, spanClock, weekOf, type CalItem, type Laned, type Lookup } from './calendar-model.ts';
+import { DAY_MINUTES, HOUR_PX, aiPlaced, atMinute, clickSpan, dayView, dragged, spanClock, weekOf, type AiPlaced, type CalItem, type Laned, type Lookup } from './calendar-model.ts';
 import { moveRow } from './page-actions.ts';
 import { backToToday, lineOf, openDetail, workOpen, type PageScope } from './page-state.ts';
 import { submitLine } from './TaskInput.tsx';
@@ -87,12 +87,12 @@ function Block(props: { entry: Laned; scope: PageScope; date: string; readOnly: 
   );
 }
 
-function AiMark(props: { item: CalItem; scope: PageScope }) {
-  const { item } = props;
+function AiMark(props: { placed: AiPlaced; scope: PageScope }) {
+  const { item, top } = props.placed;
   return (
-    <button type="button" class={`cal-ai${item.done ? ' done' : ''}`} style={{ top: `${px(item.span.start) - 7}px`, '--qc': item.hue ? `var(--wf-c${item.hue})` : 'var(--muted)' }}
+    <button type="button" class={`cal-ai${item.done ? ' done' : ''}`} style={{ top: `${top}px`, '--qc': item.hue ? `var(--wf-c${item.hue})` : 'var(--muted)' }}
       title={`${spanClock(item.span)} ${item.who ? agentName(item.who) : ''} · ${item.title}`} onClick={() => { if (item.taskId) openDetail(props.scope, item.taskId); }}>
-      <i aria-hidden="true" />{item.who ? agentName(item.who) : item.title}
+      <i aria-hidden="true" /><span class="cal-ai-name">{item.who ? agentName(item.who) : item.title}</span>
     </button>
   );
 }
@@ -136,7 +136,7 @@ function DayGrid(props: CalendarProps) {
           <div class="cal-blocks">
             {view.blocks.map((entry) => <Block key={entry.item.id} entry={entry} scope={props.scope} date={props.date} readOnly={!!props.readOnly} drag={drag} onDrag={(id, dy) => setDrag(id ? { id, dy } : null)} />)}
           </div>
-          {workOpen.value && view.ai.map((item) => <AiMark key={item.id} item={item} scope={props.scope} />)}
+          {workOpen.value && aiPlaced(view.ai).map((placed) => <AiMark key={placed.item.id} placed={placed} scope={props.scope} />)}
           {today && <div class="cal-now" style={{ top: `${px(nowMinute)}px` }} aria-hidden="true" />}
         </div>
       </div>
@@ -182,10 +182,9 @@ export function TaskCalendar(props: CalendarProps) {
   return (
     <section class="task-cal" aria-label="Calendar">
       <div class="cal-head">
-        <span>{week ? `Week of ${dayWord(weekOf(props.date)[0], props.today)}` : `${headTitle(props.date)}${workOpen.value ? ' · AI lane on' : ''}`}</span>
-        {props.todayButton && props.date !== props.today
-          ? <button type="button" class="day-list-today" onClick={() => backToToday(props.scope)}>Today</button>
-          : <span>{week ? '✓ = done' : 'Logbook before now'}</span>}
+        <span class="cal-head-day">{week ? `Week of ${dayWord(weekOf(props.date)[0], props.today)}` : `${headTitle(props.date)}${workOpen.value ? ' · AI lane on' : ''}`}</span>
+        {props.todayButton && props.date !== props.today && <button type="button" class="day-list-today" onClick={() => backToToday(props.scope)}>Today</button>}
+        <span class="cal-head-note">{week ? '✓ = done' : 'Logbook before now'}</span>
       </div>
       {week ? <WeekGrid {...props} /> : <DayGrid {...props} />}
     </section>

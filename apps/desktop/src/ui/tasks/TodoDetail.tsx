@@ -6,7 +6,9 @@
 // line to write into it (chat/TaskThread.tsx). The list beside it never moves.
 // Owns: the detail's frame and head. Never: the tool's body, the thread's lines, editing (TaskEdit.tsx) or loading the list.
 
+import { useState } from 'preact/hooks';
 import type { Task, TaskView } from '../../shared/model/tasks.ts';
+import { runAgain } from './page-actions.ts';
 import { TaskPlan } from './TaskPlan.tsx';
 import { HUMAN_ID } from '../../shared/ids.ts';
 import { Markdown } from '../blocks/markdown.tsx';
@@ -14,6 +16,7 @@ import { TaskThread } from '../chat/TaskThread.tsx';
 import { openContextMenu, useContextMenu } from '../lib/context-menu.tsx';
 import { dayZone } from '../lib/day-store.ts';
 import type { MenuSection } from '../lib/popover.tsx';
+import { can } from '../lib/session.ts';
 import { agentName } from '../lib/store.ts';
 import { EmptyState, Icon, IconButton, Spinner } from '../lib/ui.tsx';
 import { taskIndex } from './page-data.ts';
@@ -23,7 +26,7 @@ import { TimeChip, TitleEdit } from './TaskEdit.tsx';
 import { letGoOfTake, todoHandlers, TodoWidget } from './TodoWidget.tsx';
 import { todoMenu } from './todo-menu.ts';
 import { todoLabel } from './todo-model.ts';
-import { stateLine } from './waiting.ts';
+import { ageOf, stateLine } from './waiting.ts';
 import { momentText } from './when-text.ts';
 
 /** A row of the index as the widgets take it (a quest's step copy has no view fields). */
@@ -38,6 +41,14 @@ export function HistoryHead(props: { task: Task; now: number }) {
   return <h4 class="detail-label">History<span class="detail-created">Started by {who} · {momentText(task.createdAt, props.now, dayZone.value)}</span></h4>;
 }
 
+/** "Created on Thu 26 Nov 21:20 · Stuck since …" under the head of unfinished work (Mika's S9 review 27.11.2026). */
+export function TaskAge(props: { task: Task; now: number }) {
+  const { task } = props;
+  if (task.status === 'done' || task.status === 'dropped') return null;
+  const age = ageOf(task, props.now, dayZone.value);
+  return <p class="detail-age">{age.created}{age.stuck && <> · <span class="late">{age.stuck}</span></>}</p>;
+}
+
 /** The detail's top row: the quest it is in (or Other), ⋯ with its menu, and ×. */
 export function DetailTop(props: { scope: PageScope; quest?: Task; label?: string; menu?: () => MenuSection[]; onClose: () => void }) {
   const { quest, menu } = props;
@@ -45,9 +56,9 @@ export function DetailTop(props: { scope: PageScope; quest?: Task; label?: strin
     <div class="detail-top">
       {quest
         ? <button type="button" class="detail-quest" style={{ '--qc': `var(--wf-c${questHue(quest.id)})` }} onClick={() => openDetail(props.scope, quest.id)}>
-            <span class="task-dot" aria-hidden="true" />{props.label ?? quest.title}
+            <span class="task-dot" aria-hidden="true" /><span class="detail-quest-text">{props.label ?? quest.title}</span>
           </button>
-        : <span class="detail-quest plain">{props.label ?? 'Other'}</span>}
+        : <span class="detail-quest plain"><span class="detail-quest-text">{props.label ?? 'Other'}</span></span>}
       <span class="detail-gap" />
       {menu && <IconButton icon="dots-three" size="small" label="More" aria-haspopup="menu" onClick={(event) => {
         const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -55,6 +66,18 @@ export function DetailTop(props: { scope: PageScope; quest?: Task; label?: strin
       }} />}
       <IconButton icon="x" size="small" label="Close" onClick={props.onClose} />
     </div>
+  );
+}
+
+/** P5 "Run again" on a finished task: a fresh copy with its checklist unticked and the same owners, opened at once. */
+export function RunAgain(props: { scope: PageScope; task: Task }) {
+  const [busy, setBusy] = useState(false);
+  if (!can('tasks.runAgain')) return null;
+  return (
+    <button type="button" class="task-again" disabled={busy} onClick={async () => {
+      setBusy(true);
+      try { const copy = await runAgain(props.task); if (copy) openDetail(props.scope, copy.id); } finally { setBusy(false); }
+    }}><Icon name="arrow-clockwise" size={14} />Run again</button>
   );
 }
 
@@ -74,7 +97,7 @@ export function TodoDetail(props: { scope: PageScope; task: Task | TaskView | nu
   const view = asView(task);
   const mine = task.assigneeKind === 'human' && (!task.assigneeId || task.assigneeId === HUMAN_ID);
   const finished = task.status === 'done' || task.status === 'dropped';
-  const who = mine ? `for you${task.createdBy !== HUMAN_ID ? ` · from ${agentName(task.createdBy)}` : ''}` : stateLine(view, agentName, now);
+  const who = mine ? `for you${task.createdBy !== HUMAN_ID ? ` · from ${agentName(task.createdBy)}` : ''}` : stateLine(view, agentName, now, dayZone.value);
   return (
     <div class="task-detail">
       <DetailTop scope={props.scope} quest={props.quest} menu={build} onClose={close} />
@@ -82,13 +105,15 @@ export function TodoDetail(props: { scope: PageScope; task: Task | TaskView | nu
         <TitleEdit task={task} label={todoLabel(task)} />
         <div class="detail-meta">
           <TimeChip task={task} now={now} editable={task.assigneeKind === 'human' && !finished} />
-          <span class="task-chip">{who}</span>
+          <span class="task-chip state">{who}</span>
           {task.priority > 0 && <span class="task-chip important"><Icon name="exclamation-mark" size={12} />Important</span>}
           {task.private && <span class="task-chip" title="You do this one; the AI keeps it in view"><Icon name="user" size={12} />Only me</span>}
           {task.widget?.type === 'timer' && typeof task.widget.repeat === 'string' && <span class="task-chip">repeats {task.widget.repeat}</span>}
         </div>
+        <TaskAge task={task} now={now} />
         {task.notes.trim() && <Markdown text={task.notes} class="task-notes" />}
-        <TaskPlan task={task} />
+        <TaskPlan task={task} scope={props.scope} />
+        {finished && <RunAgain scope={props.scope} task={task} />}
         <TodoWidget task={view} now={now} />
       </div>
       <HistoryHead task={task} now={now} />

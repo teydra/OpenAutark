@@ -24,7 +24,9 @@ import { DayLine } from './DayLine.tsx';
 import { busyDays, dayAgenda, nextUp } from './day-preview.ts';
 import { DayList, NextUp } from './DayPreview.tsx';
 import { lineDays, windowSpan } from './day-strip.ts';
+import { cardAsks, waitingCards } from '../../shared/model/waiting-cards.ts';
 import { ForYou } from './ForYou.tsx';
+import { WaitingOnYou } from './WaitingOnYou.tsx';
 import { finished, runningTasks, taskIndex, watchFinished } from './page-data.ts';
 import { atWork, childrenOf, questLines, type QuestLine } from './page-model.ts';
 import { calendarSpan, closeDetail, followRouteDay, keepView, linePaged, oneColumn, openDetail, otherOnly, routePart, selected, settleKept, shownDay, type PageScope } from './page-state.ts';
@@ -63,7 +65,7 @@ function QuestChip(props: { scope: PageScope; line: QuestLine }) {
   const { line } = props;
   const menu = useContextMenu(() => taskMenu(asView(line.quest), props.scope));
   return (
-    <button type="button" class="quest-chip" style={{ '--qc': `var(--wf-c${line.hue})` }} onClick={() => openDetail(props.scope, line.quest.id)} {...menu}>
+    <button type="button" class="quest-chip" title={line.quest.title} style={{ '--qc': `var(--wf-c${line.hue})` }} onClick={() => openDetail(props.scope, line.quest.id)} {...menu}>
       <span class="task-dot" aria-hidden="true" />
       <span class="quest-chip-label">{line.quest.title}</span>
     </button>
@@ -129,6 +131,7 @@ export function TasksPage(props: { scope?: PageScope }) {
 
   const index = taskIndex.value;
   const children = useMemo(() => childrenOf(index), [index]);
+  const cards = useMemo(() => waitingCards(new Map([...todos.value, ...index.values()].map((task) => [task.id, task])).values(), now), [index, todos.value, Math.floor(now / 60_000)]);
   const open = selected(scope);
   const fetched = useTask(open ?? undefined);
   const openTask = open ? index.get(open) ?? fetched : undefined;
@@ -160,7 +163,8 @@ export function TasksPage(props: { scope?: PageScope }) {
         <DayList scope={scope} date={date} today={today} lines={dayAgenda(rows, windowList?.agentRuns ?? [], date, zone, lookup, hiddenSources.value)} />
       ) : (
         <>
-          <ForYou scope={scope} todos={todos.value} finished={finished.value} index={index} selected={open} now={now} dayStart={dayStart} dayEnd={dayEnd} />
+          <WaitingOnYou scope={scope} cards={cards} now={now} />
+          <ForYou scope={scope} todos={todos.value} hidden={cardAsks(cards)} finished={finished.value} index={index} selected={open} now={now} dayStart={dayStart} dayEnd={dayEnd} />
           <AtWork scope={scope} groups={groups} schedules={schedules.value} index={index} {...(owner ? { owner } : {})} now={now} />
         </>
       )}

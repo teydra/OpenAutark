@@ -12,7 +12,8 @@ import { agentName } from '../lib/store.ts';
 import { Icon } from '../lib/ui.tsx';
 import { soonestNote, workSummary, type WorkGroup } from './page-model.ts';
 import { clearOwner, openDetail, toggle, workOpen, type PageScope } from './page-state.ts';
-import { waitingLine } from './waiting.ts';
+import { planProgress } from '../../shared/model/task-plan.ts';
+import { ageOf, waitingLine } from './waiting.ts';
 import { doneText, noteWhenText, whenOf } from './when-text.ts';
 
 /** A doer's name (page-model.ts doerOf): the agent's or colleague's, "Team" while Autark has not picked one. */
@@ -25,11 +26,26 @@ function stateOf(line: WorkGroup['lines'][number], index: ReadonlyMap<string, Ta
   const { task } = line;
   if (line.running) return 'running now';
   if (task.status === 'done') return doneText(task.completedAt ?? task.updatedAt, now, dayZone.value);
-  const waiting = waitingLine(task, agentName, now);
+  const waiting = waitingLine(task, agentName, now, dayZone.value);
   if (waiting) return waiting.replace(/^Waiting on/, 'waits on');
   const before = (task.dependsOn ?? []).map((id) => index.get(id)).find((other) => other && other.status !== 'done' && other.status !== 'dropped');
   if (before) return `after ${before.title}`;
   return 'open';
+}
+
+/** A line's checklist ("☑ 1/3"), when it was created and – while it is stuck – since when (Mika's S9 review 27.11.2026). */
+function LineAge(props: { task: Task; now: number }) {
+  const { task } = props;
+  const { done, total } = planProgress(task.ledger?.plan);
+  const age = task.status === 'done' || task.status === 'dropped' ? undefined : ageOf(task, props.now, dayZone.value);
+  if (!total && !age) return null;
+  return (
+    <span class="ai-age">
+      {total > 0 && <span>☑ {done}/{total}</span>}
+      {age && <span>{age.created}</span>}
+      {age?.stuck && <span class="late">{age.stuck}</span>}
+    </span>
+  );
 }
 
 function noteLine(note: Schedule, now: number): string {
@@ -66,6 +82,7 @@ export function AtWork(props: { scope: PageScope; groups: WorkGroup[]; schedules
                   <span class="ai-what">
                     <span class="ai-title">{line.task.title}</span>
                     <span class="ai-state">{line.running && <span class="ai-live on" aria-hidden="true" />}{stateOf(line, props.index, now)}</span>
+                    <LineAge task={line.task} now={now} />
                   </span>
                 </button>
               ))}

@@ -12,7 +12,7 @@
 // Never: I/O, network or clock access (callers pass everything in).
 
 import { DECISION_PROVIDER, MODEL_FUNCTIONS, type Account, type EngineId, type ModelCaps, type ModelFunction, type ModelInfo, type ModelPrice, type ProviderId } from '../../shared/model/providers.ts';
-import type { ModelUse } from '../../shared/model/models-uses.ts';
+import { speechAsTts, type ModelUse } from '../../shared/model/models-uses.ts';
 import { connectService } from '../../shared/model/providers-connect.ts';
 import { PROVIDER_LABELS } from '../accounts/service-shape.ts';
 import type { EngineModel } from '../engines/types.ts';
@@ -141,13 +141,13 @@ function isFunction(category: string): category is ModelFunction {
 
 /**
  * The specialties of a model settings.json says something about (caps.uses): a chat use means a general model, whatever its
- * name looks like; other uses add to what the name tells. A decision connection's model does nothing else.
+ * name looks like; other uses add to what the name tells (Speech is a speech model, 'tts'). A decision connection's model does nothing else.
  */
 function specialtiesOf(model: string, prior: PriorEntry | undefined, provider: ProviderId, uses: readonly ModelUse[] | undefined): string[] {
   if (provider === DECISION_PROVIDER) return ['decision'];
   if (!uses?.length) return specialties(model, prior, provider);
   if (uses.includes('work') || uses.includes('decision')) return [];
-  return [...new Set([...uses, ...specialties(model, prior, provider)])];
+  return [...new Set([...uses.map(speechAsTts), ...specialties(model, prior, provider)])];
 }
 
 /** The media functions among a model's specialties (ModelInfo.functions). */

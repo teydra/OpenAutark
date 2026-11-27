@@ -14,14 +14,15 @@
 // writer wins). Wherever the ring ends, each PC that saw it sends the 'notify' of kind 'call' once more with its time
 // up (until 0, past on any clock), so the app phone's notice stops ringing. The PC that holds the row closes the phones'
 // ring notices (pwa/read-clear.ts clearNotice, its own call tag) and, for a decline or a missed ring, wakes the agent once with a
-// first-person note.
+// first-person note. Konrad 27.11.2026: the PC's notice and the phones' push say "AI voice (machine-generated)" above why
+// (shared/model/call.ts ringBody); the Android app's notice says it in its header (CallVoiceNote).
 // An employee's seat PC ('employer' link) does not ring for the owner's agents; Team-Call 21.11.2026: it lists the running
 // calls of the chats it shares, and a call another person's PC holds is listed with `others` (Join, never Take over).
 // Owns: rings, the live list, the ring alerts and the decline. Never: holds a device's call (call-log.ts) or audio.
 
 import { WorkforceError } from '../../shared/errors.ts';
 import { SYSTEM_ID, newId } from '../../shared/ids.ts';
-import { RING_MS, callDeviceNames, callHolder, callRecord, callState, type CallDevice, type CallRecord, type CallState, type LiveCall } from '../../shared/model/call.ts';
+import { RING_MS, ringBody, callDeviceNames, callHolder, callRecord, callState, type CallDevice, type CallRecord, type CallState, type LiveCall } from '../../shared/model/call.ts';
 import type { Message } from '../../shared/model/chat.ts';
 import type { RuntimeServices } from '../contracts.ts';
 import { chatWakeKey } from '../chat/delivery.ts';
@@ -103,7 +104,7 @@ export class Rings {
     const phones = await this.phones().catch(() => [] as HeldSub[]);
     const { url } = pushTarget({ kind: 'important', conversationId: request.conversationId });
     const tag = `call:${id}`;
-    const payload = { kind: 'important', title: `${name} calls`, body: why, url, tag, id, conversationId: request.conversationId, ring: true };
+    const payload = { kind: 'important', title: `${name} calls`, body: ringBody(why), url, tag, id, conversationId: request.conversationId, ring: true };
     void pushTo(s, phones, payload, { urgent: true, ttl: RING_MS / 1000, fetch: this.deps.fetch }).catch((error: unknown) => s.log.debug('ring push failed', { error: String(error) }));
     const pcs = 1 + quiet(() => links(s.db).filter(({ record: peer, link }) => link.kind === 'ceo' && s.devices.online(peer.id)).length, 0);
     return { callId: id, rowId: row.id, until, online: { pcs, phones: phones.length } };
@@ -202,7 +203,7 @@ export class Rings {
         entry.timer = this.deps.timers.set(() => this.expire(record.id), Math.max(0, record.ring!.until - now));
         if (alert && !before && !this.seat()) {
           const title = `${this.nameOf(record.ring!.by)} calls`;
-          quiet(() => void s.host.notify({ title, body: record.ring!.why, tag: `call:${record.id}` }).catch(() => false), undefined);
+          quiet(() => void s.host.notify({ title, body: ringBody(record.ring!.why), tag: `call:${record.id}` }).catch(() => false), undefined);
           // the 'notify' event of its own kind (never a toast: the window has its call notice; the ring pushed already)
           quiet(() => s.bus.emit('notify', { kind: 'call', title, body: record.ring!.why, conversationId: message.conversationId, toast: false, call: { id: record.id, until: record.ring!.until } }), undefined);
         }

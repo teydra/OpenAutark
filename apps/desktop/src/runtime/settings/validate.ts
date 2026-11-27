@@ -10,7 +10,7 @@
 import { WorkforceError } from '../../shared/errors.ts';
 import type { Settings } from '../../shared/model/system.ts';
 import { relayAddress } from '../../shared/model/relay.ts';
-import { localSpeechIds, localSpeechModel } from '../../shared/model/local-speech-models.ts';
+import { TTS_STEPS, localSpeechIds, localSpeechModel } from '../../shared/model/local-speech-models.ts';
 import { entryConnection, entryProblem } from '../../shared/model/provider-entries.ts';
 import { endpointFor } from '../engines/http/common.ts';
 import { validateRouting } from '../routing/uses-settings.ts';
@@ -151,6 +151,7 @@ export function validateSettings(s: Settings): void {
     const id = v[key];
     if (id !== undefined && id !== '' && (typeof id !== 'string' || !localSpeechModel(id, purpose))) bad(`voice.${key}`, `'' or one of ${localSpeechIds(purpose).join(', ')}`);
   }
+  if (v.localTtsSteps !== undefined && !(TTS_STEPS as readonly unknown[]).includes(v.localTtsSteps)) bad('voice.localTtsSteps', `${TTS_STEPS.join(' or ')}, or null (the default)`);
   if (!Array.isArray(v.vocabulary) || v.vocabulary.length > MAX_WORDS) bad('voice.vocabulary', `a list of up to ${MAX_WORDS} terms`);
   v.vocabulary = v.vocabulary.map((entry: unknown) => (isPlain(entry) ? entry.term : entry) as string); // older files: {term, soundsLike, pronounce}
   for (const term of v.vocabulary) str(term, 'voice.vocabulary', 120, false);
