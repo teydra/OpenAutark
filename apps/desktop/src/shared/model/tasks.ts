@@ -71,6 +71,7 @@ export interface TaskLedger {
   movedAt?: number; // its last real move: a status change, a new plan or fact, a give, a finished to-do
   doneCount?: number; // how often the person ticked off a repeating to-do (its author hears only the first)
   ringedAt?: number; // the ring time the person was last pushed for (tasks/watch.ts): the PC that comes back does not ring it twice
+  escalated?: { since: number; level: number }; // the stuck escalation told up to this step (1 manager, 2 head) for the standstill since (tasks/stuck-escalation.ts)
   givenIn?: string; // the chat of the agent turn that gave it, when that is not its own chat: where the giver hears how it ended
   changes?: TaskChange[]; // the last logged changes within 24 hours (the undo's source; runtime/tasks/changes.ts)
 }

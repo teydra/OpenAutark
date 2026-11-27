@@ -11,6 +11,7 @@
 //    CEO PC with the smallest id that is not gone (no main PC: the next one rings while it is out; `ledger.ringedAt` on the
 //    synced row says what rang, so the PC that comes back does not ring it again), never on a PC that joined as an employee;
 //  - a wait with until: follow up once when the date arrives (tasks/follow-up.ts);
+//  - stuck work told up the chain: its manager after a day, the head above after three (tasks/stuck-escalation.ts);
 //  - the morning pass (tasks/morning.ts): once a day an agent hears of its quests and eligible standalone to-dos without a next note.
 // Where: an agent's tasks on the PC it runs on (devices/sync/home.ts).
 // Owns: those passes and their timers. Never: calls a model (except the owner pick), writes "working", plans a look, or
@@ -30,6 +31,7 @@ import { giveTask, pickOwner, tell } from './give.ts';
 import { handOver } from './owners.ts';
 import { KvRepo } from '../store/kv.ts';
 import { followUpPass } from './follow-up.ts';
+import { escalationPass } from './stuck-escalation.ts';
 import { MorningPass } from './morning.ts';
 import { nextWorkStart, ringAt } from '../../shared/model/day-settings.ts';
 import { dayZone, daySettings } from '../day/clock.ts';
@@ -110,6 +112,7 @@ export class TaskWatcher implements OwnershipService {
     }
     this.pass();
     this.checkWaits();
+    this.escalate();
     let receipt: ReturnType<typeof installReceipt>;
     try { receipt = installReceipt(this.s); } catch (error) { this.s.log?.warn('install receipt not read', { error: String(error) }); }
     if (receipt) wakeInstaller(this.s, receipt);
@@ -120,7 +123,7 @@ export class TaskWatcher implements OwnershipService {
   start(): () => void {
     if (this.offs.length) return () => this.stop();
     const { bus } = this.s;
-    const hourly = setInterval(() => { this.pass(); this.checkWaits(); }, HOUR_MS);
+    const hourly = setInterval(() => { this.pass(); this.checkWaits(); this.escalate(); }, HOUR_MS);
     (hourly as { unref?: () => void }).unref?.();
     const tracker = new OutageTracker(this.accounts(), this.s.catalog?.list() ?? [], this.s.clock.now());
     this.offs = [
@@ -156,6 +159,14 @@ export class TaskWatcher implements OwnershipService {
       const next = followUpPass(this.t, (task) => this.watchesHere(task), true);
       if (this.offs.length) this.followUps.arm(next);
     } finally { this.checkingWaits = false; }
+  }
+
+  /** Stuck work told up the chain: its manager after a day, the head above after three (tasks/stuck-escalation.ts). */
+  escalate(): number {
+    try { return escalationPass(this.t, (task) => this.watchesHere(task)); } catch (error) {
+      this.s.log?.warn('stuck escalation pass failed', { error: String(error) });
+      return 0;
+    }
   }
 
   // ------------------------------------------------------------- the pass
