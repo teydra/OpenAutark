@@ -12,7 +12,7 @@ import type { RuntimeServices } from '../contracts.ts';
 import { AUDIO_TAGGER, localSpeechModel, type LocalSpeechOffer } from '../../shared/model/local-speech-models.ts';
 import type { Account, ModelInfo } from '../../shared/model/providers.ts';
 import { listenOptions } from '../decision/listener.ts';
-import { FUNCTION_OF } from '../media/generate.ts';
+import { FUNCTION_OF, USE_OF } from '../media/generate.ts';
 import { routesFor } from '../media/generate-route.ts';
 import { GENERATION_KINDS, type GenerationKind } from '../media/providers/types.ts';
 import { functionStatus } from '../models/functions.ts';
@@ -57,7 +57,7 @@ function listener(s: Services): Named | undefined {
 }
 
 function makeFact(s: Services, kind: GenerationKind, offers: readonly LocalSpeechOffer[]): MakeFact {
-  if (quiet(() => functionStatus(s, FUNCTION_OF[kind]).off, false)) return { via: 'none', off: true };
+  if (quiet(() => functionStatus(s, FUNCTION_OF[kind], USE_OF[kind]).off, false)) return { via: 'none', off: true };
   const first = quiet(() => routesFor(s, kind).first, undefined);
   if (first?.via === 'model') {
     const shown = nameOf(s, first.target.modelId, first.target.account.id) ?? { model: first.target.modelId, via: first.target.account.label };

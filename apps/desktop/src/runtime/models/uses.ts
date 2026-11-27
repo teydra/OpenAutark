@@ -6,7 +6,8 @@
 // overview (runtime/abilities/**), which keeps its own rules for the AI's abilities.status. 21.11.2026: Speech to text names
 // the ChatGPT plan's dictation first while routing.stt is "auto" or "codex" and a plan login is here (the order
 // voice/transcribe.ts hears in), and says so when Codex is signed in on this PC but not used here yet; a call on this
-// PC's speech names the model it hears with; every use carries its choices (use-choices.ts).
+// PC's speech names the model it hears with; every use carries its choices (use-choices.ts). 0.3.22: Text to speech and
+// Speech each resolve by their own value (Speech by Text to speech's while it is "auto"); Voice "local" is this PC's speech.
 // Owns: mapping those answers onto UseNow. Never: decides a route itself, changes anything, or calls a network (the
 // router may refresh an empty catalog once, as for a turn).
 
@@ -14,7 +15,7 @@ import type { RuntimeServices } from '../contracts.ts';
 import type { Ability, AbilityAction, AbilityId } from '../../shared/model/abilities.ts';
 import { accountCharge } from '../../shared/model/charge.ts';
 import { localSpeechModel } from '../../shared/model/local-speech-models.ts';
-import { isProviderChoice, MODEL_USES, PLAN_DICTATION, PLAN_DICTATION_NAME, planHears, useValue, USE_AUTO, USE_LOCAL, USE_OFF, type ModelUse, type UseNow } from '../../shared/model/models-uses.ts';
+import { callsOnThisPc, isProviderChoice, MODEL_USES, PLAN_DICTATION, PLAN_DICTATION_NAME, planHears, useValue, USE_AUTO, USE_LOCAL, USE_OFF, type ModelUse, type UseNow } from '../../shared/model/models-uses.ts';
 import { planAccount } from '../voice/plan-transcribe.ts';
 import { useChoices } from './use-choices.ts';
 import type { Agent } from '../../shared/model/org.ts';
@@ -43,8 +44,8 @@ const OFF: Resolved = { kind: 'off' };
 const SET_UP_WITH_AI: AbilityAction = { kind: 'ai', label: 'Set up with AI', target: 'decision' };
 
 /** The ability that holds a media use's state and action. */
-const ABILITY_OF: Partial<Record<ModelUse, AbilityId>> = { stt: 'hear-speech', tts: 'speak', image: 'make-images', music: 'make-music', sound: 'make-sounds', video: 'make-video' };
-const KIND_OF: Partial<Record<ModelUse, GenerationKind>> = { tts: 'speech', image: 'image', music: 'music', sound: 'sound', video: 'video' };
+const ABILITY_OF: Partial<Record<ModelUse, AbilityId>> = { stt: 'hear-speech', tts: 'speak', speech: 'speak', image: 'make-images', music: 'make-music', sound: 'make-sounds', video: 'make-video' };
+const KIND_OF: Partial<Record<ModelUse, GenerationKind>> = { tts: 'speech', speech: 'speech', image: 'image', music: 'music', sound: 'sound', video: 'video' };
 
 /** Work is routed for a plain agent: no agent's or chat's own choice, the same rules a turn goes through. */
 function plainAgent(now: number): Agent {
@@ -81,8 +82,8 @@ async function routedUse(s: RuntimeServices, use: 'work' | 'decision', stored: s
 }
 
 function voiceUse(s: RuntimeServices, stored: string): Resolved {
-  // on this PC's speech the name is filled in by modelUses (the stt and tts models)
-  if (quiet(() => s.settings.get().voice?.realtime, 'off') !== 'auto') return { kind: 'this-pc', thisPc: true };
+  // on this PC's speech (realtime off, or Voice "local") the name is filled in by modelUses (the stt and tts models)
+  if (quiet(() => callsOnThisPc(s.settings.get()), true)) return { kind: 'this-pc', thisPc: true };
   const choice = realtimeChoice(s);
   const wanted = chosenRealtime(stored);
   const served = choice && wanted && choice.model === wanted.model && (choice.account.id === wanted.owner || choice.account.provider === wanted.owner);
@@ -119,9 +120,10 @@ function sttLocalOrService(s: RuntimeServices, stored: string, facts: ReturnType
 }
 
 function madeUse(s: RuntimeServices, use: ModelUse, stored: string, thisPc: boolean): Resolved {
-  const routes = quiet(() => routesFor(s, KIND_OF[use]!), {});
+  // each row by its own value: Text to speech by routing.tts, Speech by routing.speech (Text to speech's while "auto")
+  const routes = quiet(() => routesFor(s, KIND_OF[use]!, use), {});
   const first = routes.first;
-  const pc = use === 'tts' ? { thisPc } : {};
+  const pc = use === 'tts' || use === 'speech' ? { thisPc } : {};
   if (first?.via === 'model') {
     const older = `${first.target.account.provider}:${first.target.model}`; // a connection that now names itself
     const named = stored !== USE_AUTO && first.target.modelId !== stored && first.target.model !== stored && older !== stored ? { gone: stored } : {};

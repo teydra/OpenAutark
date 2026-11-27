@@ -6,6 +6,9 @@
 // sorting, summaries, compaction); Voice = realtime conversations; stt … sound = the media functions ("off" turns
 // one off; tts "local" = the local voice, image "codex" = the ChatGPT plan; stt "auto" and "codex" = the ChatGPT plan's
 // dictation first while its login is here, "local" = this PC's model first – 21.11.2026); Embeddings = what vector.embed and vector.search embed with ("off" turns them off, "local" = this PC's small model). What a use resolves to is the runtime's job (routing/pins.ts, models/functions.ts, calls/realtime, models/uses.ts says it).
+// 0.3.22 (Konrad 27.11.2026): Speech is what media.speak makes (voiceovers, narration), apart from Text to speech, the voice
+// that reads replies aloud and speaks in calls; while Speech is "auto" it follows Text to speech (routeValue), so a stored
+// setting does what it did. Voice "local" = a call on this PC's speech, held while a realtime key is connected.
 // Owns: the list, its labels and texts, which models serve which use and the one mapping of a use's value onto settings
 // (useWrite). Never: reads settings or the catalog itself, or decides a route.
 
@@ -14,8 +17,16 @@ import type { LocalSpeechOffer } from './local-speech-models.ts';
 import type { ModelInfo, ProviderId } from './providers.ts';
 import type { RoutingSettings, VoiceSettings } from './system.ts';
 
-export const MODEL_USES = ['work', 'decision', 'voice', 'stt', 'tts', 'image', 'video', 'music', 'sound', 'embeddings'] as const;
+export const MODEL_USES = ['work', 'decision', 'voice', 'stt', 'tts', 'speech', 'image', 'video', 'music', 'sound', 'embeddings'] as const;
 export type ModelUse = (typeof MODEL_USES)[number];
+
+/** The use whose value a use takes while it stands on "auto": Speech (media.speak) speaks with Text to speech's choice. */
+const FOLLOWS: Partial<Record<ModelUse, ModelUse>> = { speech: 'tts' };
+
+/** The use a model's `uses` or a function stands for: Speech and Text to speech both take speech models ('tts'). */
+export function speechAsTts<T extends string>(use: T): Exclude<T, 'speech'> | 'tts' {
+  return (use === 'speech' ? 'tts' : use) as Exclude<T, 'speech'> | 'tts';
+}
 
 /** Nothing picked yet: the runtime takes what is there. */
 export const USE_AUTO = 'auto';
@@ -75,10 +86,10 @@ export interface UseNow {
 }
 
 /** Uses that can be turned off (the media functions, embeddings). */
-export const OFFABLE_USES: ReadonlySet<ModelUse> = new Set<ModelUse>(['stt', 'tts', 'image', 'video', 'music', 'sound', 'embeddings']);
+export const OFFABLE_USES: ReadonlySet<ModelUse> = new Set<ModelUse>(['stt', 'tts', 'speech', 'image', 'video', 'music', 'sound', 'embeddings']);
 
 export const USE_LABELS: Readonly<Record<ModelUse, string>> = {
-  work: 'Work', decision: 'Decisions', voice: 'Voice conversation', stt: 'Speech to text', tts: 'Text to speech',
+  work: 'Work', decision: 'Decisions', voice: 'Voice conversation', stt: 'Speech to text', tts: 'Text to speech', speech: 'Speech',
   image: 'Images', video: 'Video', music: 'Music', sound: 'Sound effects', embeddings: 'Embeddings',
 };
 
@@ -88,7 +99,8 @@ export const USE_ABOUT: Readonly<Record<ModelUse, string>> = {
   decision: 'Small fast calls: choices, sorting, summaries, compaction',
   voice: 'The live spoken call with an agent: a real-time model, or this PC hearing with Speech to text and speaking with Text to speech',
   stt: 'Dictation and call transcripts',
-  tts: 'The voice that reads replies aloud',
+  tts: 'The voice that reads replies aloud and speaks in calls on this PC',
+  speech: 'Makes spoken audio – voiceovers, narration; with nothing picked it speaks with Text to speech',
   image: 'Makes images',
   video: 'Makes videos',
   music: 'Makes music and songs',
@@ -107,8 +119,8 @@ export interface UseWrite {
   download?: string;
 }
 
-/** This PC's local speech model `offer` for stt or tts: chosen when it is here, else fetched first. */
-function localWrite(use: 'stt' | 'tts', offer: Pick<LocalSpeechOffer, 'id' | 'installed'> | undefined): UseWrite {
+/** This PC's local speech model `offer` for stt, tts or speech: chosen when it is here, else fetched first. */
+function localWrite(use: 'stt' | 'tts' | 'speech', offer: Pick<LocalSpeechOffer, 'id' | 'installed'> | undefined): UseWrite {
   const routing: Partial<RoutingSettings> = { [use]: USE_LOCAL };
   if (!offer) return { routing };
   if (!offer.installed) return { routing, download: offer.id };
@@ -117,22 +129,22 @@ function localWrite(use: 'stt' | 'tts', offer: Pick<LocalSpeechOffer, 'id' | 'in
 
 /**
  * The one mapping of a use's value onto settings (Settings' selects and models.setUse): "auto", "off" (the offable uses),
- * "local" (this PC: tts, embeddings, voice = a call on this PC's speech), a local speech model's id (stt, tts – and voice:
+ * "local" (this PC: tts, speech, embeddings, voice = a call on this PC's speech), a local speech model's id (stt, tts – and voice:
  * the model a call on this PC hears with), "codex" (stt: the ChatGPT plan's dictation; work and image: that plan), else a
  * model id. Speech to text on another model than this PC's forgets the local choice, so that one does not come first.
  */
 export function useWrite(use: ModelUse, value: string, offers: readonly Pick<LocalSpeechOffer, 'id' | 'purpose' | 'installed'>[]): UseWrite {
-  const offer = offers.find((entry) => entry.id === value && (entry.purpose === use || (use === 'voice' && entry.purpose === 'stt')));
+  const offer = offers.find((entry) => entry.id === value && (entry.purpose === speechAsTts(use) || (use === 'voice' && entry.purpose === 'stt')));
   if (use === 'voice') {
     if (value === USE_AUTO) return { routing: { voice: USE_AUTO }, voice: { realtime: 'auto' } };
-    if (value === USE_LOCAL) return { voice: { realtime: 'off' } };
+    if (value === USE_LOCAL) return { routing: { voice: USE_LOCAL }, voice: { realtime: 'off' } };
     if (offer || value === PLAN_DICTATION) {
       const hear = useWrite('stt', value, offers);
-      return { ...hear, voice: { ...hear.voice, realtime: 'off' } };
+      return { ...hear, routing: { ...hear.routing, voice: USE_LOCAL }, voice: { ...hear.voice, realtime: 'off' } };
     }
     return { routing: { voice: value }, voice: { realtime: 'auto' } };
   }
-  if (use === 'stt' || use === 'tts') {
+  if (use === 'stt' || use === 'tts' || use === 'speech') {
     if (offer || value === USE_LOCAL) return localWrite(use, offer);
     if (use === 'stt' && value !== USE_AUTO && value !== PLAN_DICTATION) return { routing: { stt: value }, voice: { localStt: '' } };
   }
@@ -146,6 +158,20 @@ export function useValue(routing: unknown, use: ModelUse): string {
   const value = filled(typeof routing === 'object' && routing !== null ? (routing as Record<string, unknown>)[use] : undefined);
   if (!value || (value === USE_OFF && !OFFABLE_USES.has(use))) return USE_AUTO;
   return value;
+}
+
+/** The effective use: Speech follows Text to speech when Speech is "auto". */
+export function routeUse(routing: unknown, use: ModelUse): ModelUse {
+  return useValue(routing, use) === USE_AUTO ? FOLLOWS[use] ?? use : use;
+}
+
+export function routeValue(routing: unknown, use: ModelUse): string {
+  return useValue(routing, routeUse(routing, use));
+}
+
+/** A call runs on this PC's speech (Speech to text and Text to speech): realtime voice off, or Voice set to "local". */
+export function callsOnThisPc(settings: { routing?: unknown; voice?: { realtime?: string } } | undefined): boolean {
+  return settings?.voice?.realtime !== 'auto' || useValue(settings?.routing, 'voice') === USE_LOCAL;
 }
 
 /** The chosen model (or plan) id of a use; undefined for "auto" and "off". */
@@ -192,11 +218,11 @@ export function isChatModel(model: Pick<ModelInfo, 'functions' | 'strengths' | '
 
 /** Whether `model` can serve `use`: settings.json says so (caps.uses), else its name and kind tell. */
 export function servesUse(model: Pick<ModelInfo, 'functions' | 'strengths' | 'model'> & { caps?: ModelInfo['caps'] }, use: ModelUse): boolean {
-  if (model.caps?.uses?.includes(use)) return true;
+  if (model.caps?.uses?.some((said) => speechAsTts(said) === speechAsTts(use))) return true;
   if (use === 'work' || use === 'decision') return isChatModel(model);
   if (use === 'voice') return talksLive(model);
   if (use === 'embeddings') return EMBEDDING_NAME.test(model.model) && !RERANK_NAME.test(model.model);
-  return Boolean(model.functions?.includes(use));
+  return Boolean(model.functions?.includes(speechAsTts(use)));
 }
 
 /** The connected models that can serve `use`, by provider and name. */

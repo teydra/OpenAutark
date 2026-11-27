@@ -6,13 +6,16 @@
 // pick: healthy accounts of that model, free/local ones before pay-per-use keys. Without a choice
 // the router's money rule applies too: specialists reachable on a free connection (local runtime,
 // plan, keyless server) come before API keys, and API keys are skipped entirely while a free one
-// exists and routing.allowPaidFallback is off. A Settings choice keeps its (possibly paid) account.
+// exists and routing.allowPaidFallback is off. A Settings choice keeps its (possibly paid) account. 0.3.22: the
+// automatic order passes over a connection whose settings.json entry names other uses for its models (servesAuto), and
+// media.speak reads its own use, Speech, which follows Text to speech while it is "auto".
 // Never: routes chat turns (the router does), reads keys, or picks a general chat model.
 
 import type { RuntimeServices } from '../contracts.ts';
 import { functionCandidates, type Account, type ModelFunction, type ModelInfo, type ProviderId } from '../../shared/model/providers.ts';
 import { accountCharge } from '../../shared/model/charge.ts';
-import { PLAN_DICTATION, USE_AUTO, USE_LOCAL, USE_OFF, useValue } from '../../shared/model/models-uses.ts';
+import { PLAN_DICTATION, routeUse, useValue, USE_AUTO, USE_LOCAL, USE_OFF, type ModelUse } from '../../shared/model/models-uses.ts';
+import { servesAuto } from '../../shared/model/provider-entries.ts';
 import { runnableAccounts, spillOver } from '../routing/pool.ts';
 
 export interface FunctionModel {
@@ -55,17 +58,26 @@ function autoOrder(candidates: Reachable[], allowPaid: boolean): Reachable[] {
   return [...pool.filter((entry) => !paid(entry.accounts[0])), ...pool.filter((entry) => paid(entry.accounts[0]))];
 }
 
-/** Resolution with the reasons a caller needs for a clear message. */
-export function functionStatus(s: Services, fn: ModelFunction): FunctionStatus {
-  const routing = s.settings.get().routing;
-  const value = useValue(routing, fn);
+/**
+ * Resolution with the reasons a caller needs for a clear message. `use` is the use whose value counts (default the
+ * function's own; media.speak: 'speech', which follows Text to speech while it is "auto" – models-uses.ts routeUse).
+ * The automatic order skips accounts whose settings.json entry names other uses for its models (provider-entries.ts servesAuto).
+ */
+export function functionStatus(s: Services, fn: ModelFunction, use: ModelUse = fn): FunctionStatus {
+  const settings = s.settings.get();
+  const routing = settings.routing;
+  const effectiveUse = routeUse(routing, use);
+  const value = useValue(routing, effectiveUse);
   const off = value === USE_OFF;
   // stt "codex" (the plan's dictation) and "local" (this PC's model) name no function model: after them the automatic order
   const setting = value === USE_AUTO || (fn === 'stt' && (value === PLAN_DICTATION || value === USE_LOCAL)) ? undefined : value;
   let models: ModelInfo[];
   try { models = s.catalog.list(); } catch { models = []; }
   const reachable: Reachable[] = functionCandidates(fn, setting, models)
-    .map((candidate) => ({ ...candidate, accounts: accountsFor(s, candidate.model) }))
+    .map((candidate) => ({
+      ...candidate,
+      accounts: accountsFor(s, candidate.model).filter((account) => candidate.source === 'settings' || servesAuto(account, settings.providers, effectiveUse, candidate.model.model)),
+    }))
     .filter((candidate) => candidate.accounts.length > 0);
   const chosen = reachable.find((candidate) => candidate.source === 'settings');
   const pick = chosen ?? autoOrder(reachable.filter((candidate) => candidate.source === 'auto'), Boolean(routing.allowPaidFallback))[0];

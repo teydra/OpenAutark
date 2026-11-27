@@ -1,7 +1,7 @@
 // settings.json's Models section (key "routing"): the check of its values after a merge (runtime/settings/validate.ts).
 // A use is "auto", a model id "<connection or provider>:<model>" (a bare model name from an older client is accepted too),
-// for Work also a plan's provider id, for the media uses and embeddings also "off", for tts and embeddings also "local",
-// for images also "codex".
+// for Work also a plan's provider id, for the media uses and embeddings also "off", for tts, speech, embeddings and voice
+// also "local", for images also "codex".
 // Owns: this rule. Never: checks that a chosen model is connected (an unavailable choice falls back at routing
 // time, models/functions.ts and routing/router.ts) or writes settings.
 

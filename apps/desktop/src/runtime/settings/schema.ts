@@ -93,13 +93,15 @@ const int = (key: string, about: string, min: number, max: number, value: number
 const text = (key: string, about: string, allowed: string, more: Partial<KeyDef> = {}): KeyDef => ({ key, about, type: 'string', allowed, ...more });
 const clock = (key: string, about: string, value: string): KeyDef => text(key, about, '"HH:MM"', { pattern: PATTERNS.clock, default: value });
 const fromPc = (name: keyof PcDefaults) => (pc: PcDefaults) => pc[name];
-/** One model use of the Models section (shared/model/models-uses.ts): "auto" (the app takes what is connected; Settings › Models and, for decision and embeddings the tool app.status, else wf call models.uses, name that model) or a model id; work also a plan, media also "off", tts and embeddings also "local", image also "codex". */
+/** One model use of the Models section (shared/model/models-uses.ts): "auto" (the app takes what is connected; Settings › Models and, for decision and embeddings the tool app.status, else wf call models.uses, name that model) or a model id; work also a plan, media also "off", tts, speech, embeddings and voice also "local", image also "codex"; speech "auto" = Text to speech's choice. */
 const useKey = (use: ModelUse): KeyDef => {
   const names = use === 'decision' || use === 'embeddings' ? 'Settings › Models and the tool app.status name that model' : 'Settings › Models and wf call models.uses name that model';
+  const auto = use === 'speech' ? '"auto" (speaks with what Text to speech takes)' : `"auto" (the app takes what is connected; ${names})`;
+  const local = use === 'voice' ? ', or "local" (calls on this PC\'s speech)' : use === 'tts' || use === 'speech' || use === 'embeddings' ? ', or "local" (this PC)' : '';
   return text(use, `${USE_LABELS[use]} – ${USE_ABOUT[use].charAt(0).toLowerCase()}${USE_ABOUT[use].slice(1)}`,
     use === 'work'
       ? `"auto" (the app takes what your plans, API keys and local servers offer; ${names}), a model "<connection>:<model>" (a connection of the section providers, also with a name its server does not list; wf call models.list lists the rest), or a plan such as "codex" (its best model for each turn)`
-      : `"auto" (the app takes what is connected; ${names}) or a model "<connection>:<model>"${OFFABLE_USES.has(use) ? ', or "off"' : ''}${use === 'tts' || use === 'embeddings' ? ', or "local" (this PC)' : ''}${use === 'image' ? ', or "codex" (the ChatGPT plan)' : ''}`,
+      : `${auto} or a model "<connection>:<model>"${OFFABLE_USES.has(use) ? ', or "off"' : ''}${local}${use === 'image' ? ', or "codex" (the ChatGPT plan)' : ''}`,
     { maxLength: 200, default: USE_AUTO });
 };
 
