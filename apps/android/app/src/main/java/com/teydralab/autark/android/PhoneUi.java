@@ -1,7 +1,7 @@
 // Owns: the app's one interface store for the whole process (relay/UiUpdate over files/ui and the APK's assets/ui, which
 // build.ps1 fills with apps/desktop's app/ui and its ui.json) and its look for a newer list when the person returns to
 // the app – on a thread of its own, over HTTPS from UiUpdate.BASE (owner 27.11.2026: an update of the interface fetches
-// only the files that changed). In every build flavour; with no UiUpdate.PUBLIC_KEY yet it never looks.
+// only the files that changed). In every build flavour; with no key in UiUpdate.PUBLIC_KEYS it never looks.
 // Never: decides whether a list counts (UiUpdate does), or reloads the page (MainActivity does, voice permitting).
 package com.teydralab.autark.android;
 
@@ -33,7 +33,7 @@ final class PhoneUi {
                     for (int read; (read = in.read(buffer)) > 0; ) out.write(buffer, 0, read);
                     return out.toByteArray();
                 } catch (FileNotFoundException missing) { return null; }
-            }, UiUpdate.publicKey());
+            }, UiUpdate.publicKeys());
         }
         return store;
     }

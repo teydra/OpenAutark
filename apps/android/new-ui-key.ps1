@@ -2,8 +2,9 @@
 # signature – apps/desktop/scripts/ui-list.mjs signs ui.json, ui-publish.mjs publishes it): an Ed25519 pair made with
 # Node's crypto; the private half as ui-key.pem (PKCS8) beside the release key, in %USERPROFILE%\.autark-release\ui,
 # readable by this Windows user only; the public half printed as base64url of its raw 32 bytes, for the apps' constant
-# (Android relay/UiUpdate.PUBLIC_KEY, the iPhone app's own – docs/ARCHITECTURE.md §8). Run it once by hand, then keep
-# the file in a safe second place (a password manager). Never: overwrites an existing key (every app built with the
+# (Android relay/UiUpdate.PUBLIC_KEYS, the iPhone app's own – docs/ARCHITECTURE.md §8). The active key and its reserve
+# exist since 27.11.2026 (secrets catalog sec_autark-ui-key-active / -reserve, Konrad); this makes a replacement pair
+# when one of them is lost: its public half goes into PUBLIC_KEYS of the next app, its private half into the catalog. Never: overwrites an existing key (every app built with the
 # public half would refuse lists signed by a new one until it is updated), prints the private half, or writes into the
 # repository.
 param([string]$KeyFolder = (Join-Path $env:USERPROFILE '.autark-release/ui'))
@@ -28,4 +29,4 @@ process.stdout.write(pair.publicKey.export({ format: 'jwk' }).x);
 $public = & node -e $script $key
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $key)) { throw 'node could not make the key.' }
 Write-Output "Interface key made: $key. Back it up now: without it no later list reaches the phones that carry its public half."
-Write-Output "Public half for the apps' constant (Android relay/UiUpdate.PUBLIC_KEY, the iPhone app's own): $public"
+Write-Output "Public half for the apps' keys (Android relay/UiUpdate.PUBLIC_KEYS, the iPhone app's own): $public"

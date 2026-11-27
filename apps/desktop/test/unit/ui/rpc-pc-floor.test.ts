@@ -6,6 +6,8 @@
 
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { OLDEST_PC, pcFits } from '../../../src/ui/lib/pc-floor.ts';
 
 test('pcFits: the floor and newer fit; older, unreadable or missing versions do not', () => {
@@ -150,4 +152,18 @@ test('rpc: a PC that opens but never says its version is replaced like one that 
   assert.equal(rpc.outdated.value, null, 'silence is not "too old"');
   mock.timers.tick(0);
   assert.equal(FakeSocket.all.length, count + 1, 'the next attempt goes out at once');
+});
+
+test('the floor turns only a PC\'s connection away, never the start of the bundled interface (Konrad 27.11.2026)', () => {
+  const ui = new URL('../../../src/ui/', import.meta.url);
+  const users = readdirSync(ui, { recursive: true, encoding: 'utf8' })
+    .filter((file) => /\.tsx?$/.test(file) && /from '[^']*pc-floor\.ts'/.test(readFileSync(new URL(file.split(path.sep).join('/'), ui), 'utf8')))
+    .map((file) => file.split(path.sep).join('/'));
+  assert.deepEqual(users, ['lib/rpc.ts'], 'only the socket asks the floor');
+  const rpc = readFileSync(new URL('lib/rpc.ts', ui), 'utf8');
+  assert.equal((rpc.match(/pcFits\(/g) ?? []).length, 1, 'one check, in the version answer of a socket');
+  assert.match(rpc, /if \(info && !pcFits\(info\.version\)\) \{[^}]*end\('PC too old'\)/s, 'a too old PC ends that socket only');
+  for (const file of ['App.tsx', 'main.tsx', 'shell/Shell.tsx']) {
+    assert.doesNotMatch(readFileSync(new URL(file, ui), 'utf8'), /outdated|pcFits|OLDEST_PC/, `${file} renders whatever PC answers`);
+  }
 });

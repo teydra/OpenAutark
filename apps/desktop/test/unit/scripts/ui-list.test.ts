@@ -1,7 +1,9 @@
 // scripts/ui-list.mjs and ui-publish.mjs: the phone apps' list of their interface – every file with its sha256 and size,
 // the list and dot-led names left out, SHELL and OLDEST_PC from the page's sources, the exact bytes the Ed25519
 // signature covers (it verifies under the public half and fails for one changed byte), unsigned without a key (a stale
-// signature goes), and the publish plan (only missing sha256 names upload, names no file needs any more go).
+// signature goes), the key as the secrets catalog keeps it (one line of base64 PKCS8 DER in a variable), and the publish
+// plan into the versioned release (only missing sha256 names upload; only sha256 names no file needs any more go – the
+// APK and every other asset stay; Konrad 27.11.2026).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,8 +12,8 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { LIST, SIGNATURE, listBytes, pageNumbers, uiList, writeUiList } from '../../../scripts/ui-list.mjs';
-import { publishPlan } from '../../../scripts/ui-publish.mjs';
+import { LIST, SIGNATURE, keyOptions, listBytes, pageNumbers, uiList, writeUiList } from '../../../scripts/ui-list.mjs';
+import { publishPlan, versionTag } from '../../../scripts/ui-publish.mjs';
 import { OLDEST_PC } from '../../../src/ui/lib/pc-floor.ts';
 
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
@@ -70,9 +72,30 @@ test('signed: the signature covers the exact bytes of ui.json; unsigned removes 
   }
 });
 
-test('the publish plan uploads only missing sha256 names and removes the ones no file names', () => {
+test('the publish plan uploads only missing sha256 names and removes only sha256 names no file names – never the APK', () => {
   const files = { 'a.js': { sha256: 'a'.repeat(64), bytes: 1 }, 'b.js': { sha256: 'b'.repeat(64), bytes: 1 }, 'copy-of-b.js': { sha256: 'b'.repeat(64), bytes: 1 } };
-  const plan = publishPlan(files, ['a'.repeat(64), 'c'.repeat(64), LIST, SIGNATURE]);
+  const others = ['Autark-0.3.22.apk', 'Autark-Setup-0.3.22.exe', 'latest.yml', 'SHA256SUMS.txt'];
+  const plan = publishPlan(files, ['a'.repeat(64), 'c'.repeat(64), LIST, SIGNATURE, ...others]);
   assert.deepEqual(plan.upload, [{ sha256: 'b'.repeat(64), file: 'b.js' }]);
   assert.deepEqual(plan.remove, ['c'.repeat(64)]);
+});
+
+test('the interface goes only into a versioned release, never a release of its own', () => {
+  for (const tag of ['v0.3.22', 'v1.0.0', 'v0.3.23-rc.1']) assert.equal(versionTag(tag), true, tag);
+  for (const tag of ['phone-ui', '0.3.22', 'v0.3', '', undefined]) assert.equal(versionTag(tag), false, String(tag));
+});
+
+test('the key as the secrets catalog keeps it: one line of base64 PKCS8 DER in a variable signs like the PEM file', async () => {
+  const dir = await built();
+  const keys = generateKeyPairSync('ed25519');
+  try {
+    const line = keys.privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+    const options = keyOptions(['--key-env', 'UI_KEY', dir], { UI_KEY: line });
+    assert.deepEqual(options.taken, [0, 1]);
+    const { signed } = await writeUiList(dir, { keyText: options.keyText, n: 9 });
+    assert.equal(signed, true);
+    assert.equal(verify(null, await readFile(path.join(dir, LIST)), keys.publicKey, await readFile(path.join(dir, SIGNATURE))), true);
+    assert.throws(() => keyOptions(['--key-env', 'NONE'], {}), /is empty/);
+    assert.deepEqual(keyOptions(['--key', 'k.pem']), { key: 'k.pem', taken: [0, 1] });
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

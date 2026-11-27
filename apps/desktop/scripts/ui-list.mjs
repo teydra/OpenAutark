@@ -6,7 +6,9 @@
 // number of the phone app this interface needs); needs is OLDEST_PC of src/ui/lib/pc-floor.ts. Without a key the list
 // is unsigned (what an app carries in its own package needs none) and a stale ui.json.sig goes. The rules of the apps
 // that read it: docs/ARCHITECTURE.md §8, "The interface updates file by file".
-//   node scripts/ui-list.mjs [<dir, default app/ui>] [--key <private key file>]
+// The private key is a PEM file (--key) or, as the secrets catalog keeps it, a variable holding the PKCS8 key as PEM or as one
+// line of base64 DER (--key-env NAME; Konrad 27.11.2026: the key lives in the catalog, the release step signs).
+//   node scripts/ui-list.mjs [<dir, default app/ui>] [--key <private key file> | --key-env <variable>]
 // Owns: listing, hashing, writing and signing the list. Never: uploads, or prints or copies the private key.
 
 import { createHash, createPrivateKey, sign } from 'node:crypto';
@@ -57,30 +59,48 @@ export function listBytes(list) {
   return Buffer.from(JSON.stringify(list), 'utf8');
 }
 
-/** The raw 64-byte Ed25519 signature of `bytes` under the PEM private key `pem`. */
-export function signList(bytes, pem) {
-  const key = createPrivateKey(pem);
+/** The private key in `text`: PEM, or one line of base64 PKCS8 DER (the secrets catalog's form). */
+export function privateKey(text) {
+  const value = String(text ?? '').trim();
+  if (!value) throw new Error('ui list: the private key is empty');
+  if (value.includes('-----BEGIN')) return createPrivateKey(value);
+  return createPrivateKey({ key: Buffer.from(value, 'base64'), format: 'der', type: 'pkcs8' });
+}
+
+/** The raw 64-byte Ed25519 signature of `bytes` under the private key `text` (PEM or base64 PKCS8 DER). */
+export function signList(bytes, text) {
+  const key = privateKey(text);
   if (key.asymmetricKeyType !== 'ed25519') throw new Error('ui list: the key is not an Ed25519 private key');
   return sign(null, bytes, key);
 }
 
-/** Writes ui.json (and ui.json.sig when `key`, a private key file, is given) into `dir`. */
-export async function writeUiList(dir, { key, ...options } = {}) {
+/** Writes ui.json (and ui.json.sig when `key`, a private key file, or `keyText`, the key itself, is given) into `dir`. */
+export async function writeUiList(dir, { key, keyText, ...options } = {}) {
   const list = await uiList(dir, options);
   const bytes = listBytes(list);
+  const text = keyText ?? (key ? await readFile(key, 'utf8') : undefined);
   await writeFile(path.join(dir, LIST), bytes);
-  if (key) await writeFile(path.join(dir, SIGNATURE), signList(bytes, await readFile(key, 'utf8')));
+  if (text !== undefined) await writeFile(path.join(dir, SIGNATURE), signList(bytes, text));
   else await rm(path.join(dir, SIGNATURE), { force: true });
-  return { list, bytes, signed: Boolean(key) };
+  return { list, bytes, signed: text !== undefined };
+}
+
+/** The key options of a command line: --key <file> or --key-env <variable> (its value, never printed). */
+export function keyOptions(args, env = process.env) {
+  const at = args.indexOf('--key'), envAt = args.indexOf('--key-env');
+  if (at >= 0 && !args[at + 1]) throw new Error('ui list: --key needs the private key file');
+  if (envAt >= 0 && !args[envAt + 1]) throw new Error('ui list: --key-env needs the name of a variable');
+  if (envAt < 0) return { key: at >= 0 ? args[at + 1] : undefined, taken: at >= 0 ? [at, at + 1] : [] };
+  const keyText = env[args[envAt + 1]];
+  if (!keyText) throw new Error(`ui list: the variable ${args[envAt + 1]} is empty`);
+  return { keyText, taken: [envAt, envAt + 1] };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  const at = args.indexOf('--key');
-  const key = at >= 0 ? args[at + 1] : undefined;
-  if (at >= 0 && !key) throw new Error('ui list: --key needs the private key file');
-  const dir = path.resolve(args.find((arg, index) => !arg.startsWith('--') && (at < 0 || index !== at + 1)) ?? path.join(root, 'app/ui'));
-  const { list, signed } = await writeUiList(dir, { key });
+  const { taken, ...keys } = keyOptions(args);
+  const dir = path.resolve(args.find((arg, index) => !arg.startsWith('--') && !taken.includes(index)) ?? path.join(root, 'app/ui'));
+  const { list, signed } = await writeUiList(dir, keys);
   const files = Object.values(list.files);
   console.log(`${LIST}: n ${list.n}, shell ${list.shell}, needs ${list.needs}, ${files.length} files, ${files.reduce((sum, file) => sum + file.bytes, 0)} bytes, ${signed ? 'signed' : 'unsigned (no --key)'}`);
 }

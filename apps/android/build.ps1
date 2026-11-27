@@ -8,7 +8,7 @@
 # which the APK carries as assets/tour.html (app/build.gradle), and the interface (owner 27.11.2026: apps/desktop's
 # `node scripts/build.mjs --only ui`, its app/ui copied to app/build/generated/ui/ui with its list ui.json from
 # scripts/ui-list.mjs, carried as assets/ui/); a release APK without either fails. A newer interface is published apart,
-# file by file, with apps/desktop's `node scripts/ui-publish.mjs --key <ui-key.pem>` (README). Never: installs,
+# file by file into the versioned release, with apps/desktop's `node scripts/ui-publish.mjs --tag vX.Y.Z --key-env AUTARK_UI_KEY` (README). Never: installs,
 # publishes or restarts Autark, or prints or stores the key's password.
 param(
     [switch]$Release,

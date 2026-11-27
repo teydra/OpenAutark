@@ -1,7 +1,7 @@
-// Types of scripts/ui-publish.mjs (publishing the phone apps' interface file by file).
+// Types of scripts/ui-publish.mjs (publishing the phone apps' interface file by file into a versioned release).
 
 export const REPOSITORY: string;
-export const TAG: string;
+export function versionTag(tag: unknown): boolean;
 export function publishPlan(
   files: Record<string, { sha256: string; bytes: number }>,
   assetNames: string[],

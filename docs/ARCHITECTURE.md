@@ -2179,7 +2179,8 @@ or as employee; one row per device with right-click Rename and Remove (a PC behi
   counts as open only for a PC at least that old – an older one gets nothing else, the quiet state says "Update Autark on
   <PC>" (`shell/connection-line.ts`), the phone app hears `refused` and moves to the company's next PC, and it is asked
   again every 10 s. The constant goes up in the change that makes the interface need something newer of a PC; there is
-  no path for older versions.
+  no path for older versions. The floor holds back only that connection, never the interface: the app's page starts
+  from its own files whatever PC answers (Konrad 27.11.2026; `test/unit/ui/rpc-pc-floor.test.ts`).
   **The interface updates file by file** (owner 27.11.2026: an app update fetches only the files that changed, the
   others stay; the rules both phone apps follow – Android `relay/UiUpdate.java` + `PhoneUi.java`, the iPhone app the
   same in Swift). *The list* (`apps/desktop/scripts/ui-list.mjs`): `ui.json` beside a built `app/ui`, compact JSON
@@ -2188,16 +2189,22 @@ or as employee; one row per device with right-click Rename and Remove (a PC behi
   seconds since 1970 (it only grows); `shell` is `SHELL` of `ui/pwa/native-port.ts`, the lowest bridge number of the
   app the interface needs (today 1); `needs` is `OLDEST_PC` (information; the page checks its PC itself).
   `ui.json.sig` is the raw 64-byte Ed25519 signature over the exact bytes of `ui.json`, made with the interface key
-  (`apps/android/new-ui-key.ps1`: private half `%USERPROFILE%\.autark-release\ui\ui-key.pem` beside the release key,
-  public half as base64url of its raw 32 bytes in each app's constant – Android `UiUpdate.PUBLIC_KEY`). Each app carries
+  (Konrad 27.11.2026: two keys, the active one and a reserve, so a lost active key is replaced without a new app; the
+  private halves in the secrets catalog – `sec_autark-ui-key-active`, `sec_autark-ui-key-reserve`, PKCS8 DER as one line
+  of base64 – and the release step signs; the public halves as base64url of their raw 32 bytes in each app, Android
+  `UiUpdate.PUBLIC_KEYS`: active `LdtLJGLSC54dj8bVrHxKxe4KCkYKofJMu5FvHjPfbnw`, reserve
+  `Haes-56_0BQE7NuBsZqlQVqkRObOjRWv34weAzbuGuc`; a list counts when its signature verifies under either). Each app carries
   its own interface with its unsigned list (Android `assets/ui/` and `assets/ui/ui.json`, `build.ps1`), which is trusted
-  as part of the signed app. *The place*: the pre-release `phone-ui` of `teydra/OpenAutark` (never the latest release),
-  `https://github.com/teydra/OpenAutark/releases/download/phone-ui/` + `ui.json`, `ui.json.sig` and each file under its
-  sha256 as the name; `node scripts/ui-publish.mjs --key <ui-key.pem>` in `apps/desktop` builds the interface, writes and
-  signs the list, uploads only the sha256 names the release lacks, then the signature and the list, then removes the
-  names the list no longer has (a phone mid-fetch of an older list fails and takes the new one at its next look).
+  as part of the signed app. *The place* (Konrad 27.11.2026: beside the APK in the versioned release): assets of the
+  release `vX.Y.Z` of `teydra/OpenAutark` – `ui.json`, `ui.json.sig` and each file under its sha256 as the name; the
+  apps read `https://github.com/teydra/OpenAutark/releases/latest/download/` + those names, so every app takes the newest
+  interface its `shell` fits and each release carries the whole interface. `node scripts/ui-publish.mjs --tag vX.Y.Z
+  --key-env AUTARK_UI_KEY` in `apps/desktop` (`AUTARK_UI_KEY` = the catalog's active key, `GITHUB_TOKEN` with write
+  access) builds the interface, writes and signs the list, uploads into that release (a draft or a published one) only
+  the sha256 names it lacks, then the signature and the list, then removes the sha256 names the list no longer has – the
+  APK and every other asset stay (a phone mid-fetch of an older list fails and takes the new one at its next look).
   *The app's rules*: (1) On return to the app, at most once a minute (and at once when the clock went back), with a
-  non-empty public key: read `ui.json` (at most 1 MB) and `ui.json.sig`; take the list only when the signature verifies,
+  public key: read `ui.json` (at most 1 MB) and `ui.json.sig`; take the list only when the signature verifies,
   it parses (`index.html` among the files; every path safe – no empty, `.`-led or backslashed segment; sha256 64 lower-case
   hex; each file at most 32 MB, all at most 128 MB), `n` is above the newest list the app has (its own or a ready
   fetched one) and `shell` is at most the app's own number (Android `UiUpdate.SHELL`, 1). With no public key the app

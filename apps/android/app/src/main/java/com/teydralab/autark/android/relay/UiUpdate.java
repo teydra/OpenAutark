@@ -2,13 +2,16 @@
 // changed, the others stay) – the lists it has (the one the APK carries, assets/ui/ui.json, and the ready ones it fetched,
 // files/ui/lists/<n>.json), which list a page gets, and the look for a newer one. A list is apps/desktop/scripts/ui-list.mjs's
 // ui.json {n, shell, needs, files: {<path>: {sha256, bytes}}}; a fetched one counts only when ui.json.sig (raw 64 bytes)
-// verifies under PUBLIC_KEY (Ed25519, as Crypto), its n is above the newest list here and its shell is not above SHELL.
+// verifies under one of PUBLIC_KEYS (Ed25519, as Crypto; Konrad 27.11.2026: the active key and a reserve, so a lost
+// active key is replaced without a new APK), its n is above the newest list here and its shell is not above SHELL.
+// Where (Konrad 27.11.2026: ui.json belongs in the versioned GitHub release beside the APK): BASE is the repository's
+// latest release, so every app reads the newest interface whose shell it has; one whose shell is too low keeps its own.
 // Then only the files whose sha256 is in neither the APK nor files/ui/blobs are fetched, each to <sha256>.part, checked
 // for size and sha256 and kept as blobs/<sha256>; with every file there the list is written and ready. A page gets the
 // newest ready list when it starts (UiFiles calls pageStarts) and keeps its list while it runs; reloadDue says a newer
 // one with other files is ready (MainActivity reloads at the next return, not while voice is live). A cut fetch, no
 // network, a wrong signature or hash change nothing; lists other than the running and the newest one go, and so do the
-// blobs neither names. At most one look a minute; with no PUBLIC_KEY none at all (the APK's own interface runs). The
+// blobs neither names. At most one look a minute; with no key none at all (the APK's own interface runs). The
 // same rules for the iPhone app: docs/ARCHITECTURE.md §8, "The interface updates file by file".
 // Never: serves a file of a list it did not verify, writes outside its folder, or depends on Android.
 package com.teydralab.autark.android.relay;
@@ -22,8 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -33,10 +38,12 @@ import java.util.regex.Pattern;
 public final class UiUpdate implements UiFiles.Source {
     /** This app's bridge number: a list whose shell is above it needs a newer app (the page's SHELL, native-port.ts). */
     public static final int SHELL = 1;
-    /** The interface key's public half, base64url of its raw 32 bytes (apps/android/new-ui-key.ps1 prints it); empty: no look. */
-    public static final String PUBLIC_KEY = "";
-    /** Where ui.json, ui.json.sig and the files by sha256 are published (apps/desktop/scripts/ui-publish.mjs). */
-    public static final String BASE = "https://github.com/teydra/OpenAutark/releases/download/phone-ui/";
+    /** The interface keys' public halves, base64url of their raw 32 bytes: the active one first, then the reserve (Konrad
+     *  27.11.2026; private halves in the secrets catalog, sec_autark-ui-key-active / -reserve). A list counts when one fits. */
+    public static final String[] PUBLIC_KEYS = { "LdtLJGLSC54dj8bVrHxKxe4KCkYKofJMu5FvHjPfbnw", "Haes-56_0BQE7NuBsZqlQVqkRObOjRWv34weAzbuGuc" };
+    /** Where ui.json, ui.json.sig and the files by sha256 are published: assets of the latest versioned release, beside its
+     *  APK (apps/desktop/scripts/ui-publish.mjs --tag vX.Y.Z). */
+    public static final String BASE = "https://github.com/teydra/OpenAutark/releases/latest/download/";
     public static final String LIST = "ui.json", SIGNATURE = "ui.json.sig";
     static final long INTERVAL_MS = 60_000L;
     static final int MAX_LIST = 1 << 20;
@@ -60,7 +67,7 @@ public final class UiUpdate implements UiFiles.Source {
 
     private final File blobs, lists;
     private final UiFiles.Source shipped;
-    private final byte[] publicKey;
+    private final List<byte[]> publicKeys;
     /** The APK's list (null in a build without ui.json: then its files answer by path and nothing is fetched). */
     private final Listing packaged;
     private final Map<String, String> packagedBySha = new HashMap<>();
@@ -69,10 +76,10 @@ public final class UiUpdate implements UiFiles.Source {
     private long checkedAt;
     private boolean checked;
 
-    /** The store in `dir` (files/ui) over the APK's interface `shipped`; `publicKey` is PUBLIC_KEY's bytes or null. */
-    public UiUpdate(File dir, UiFiles.Source shipped, byte[] publicKey) {
+    /** The store in `dir` (files/ui) over the APK's interface `shipped`; `publicKeys` are PUBLIC_KEYS' bytes (none: no look). */
+    public UiUpdate(File dir, UiFiles.Source shipped, List<byte[]> publicKeys) {
         this.shipped = shipped;
-        this.publicKey = publicKey;
+        this.publicKeys = publicKeys == null ? new ArrayList<>() : new ArrayList<>(publicKeys); // no List.copyOf: API 26
         blobs = new File(dir, "blobs");
         lists = new File(dir, "lists");
         Listing own = null;
@@ -91,10 +98,16 @@ public final class UiUpdate implements UiFiles.Source {
         synchronized (this) { prune(true); }
     }
 
-    /** The PUBLIC_KEY constant's bytes, or null while it is empty or no key. */
-    public static byte[] publicKey() {
-        try { byte[] key = Crypto.fromB64url(PUBLIC_KEY); return key.length == 32 ? key : null; }
-        catch (IllegalArgumentException error) { return null; }
+    /** PUBLIC_KEYS' bytes in their order; an entry that is not 32 bytes of base64url is left out. */
+    public static List<byte[]> publicKeys() { return keys(PUBLIC_KEYS); }
+
+    static List<byte[]> keys(String... encoded) {
+        List<byte[]> out = new ArrayList<>();
+        for (String text : encoded) {
+            try { byte[] key = Crypto.fromB64url(text); if (key.length == 32) out.add(key); }
+            catch (IllegalArgumentException | NullPointerException error) { /* not a key */ }
+        }
+        return out;
     }
 
     /** A file of the running page's list (UiFiles.Source); null when the list has no such path. */
@@ -120,7 +133,7 @@ public final class UiUpdate implements UiFiles.Source {
 
     /** True when a look is due: a key, a list in the APK, and a minute since the last look (or the clock went back). */
     public synchronized boolean due(long now) {
-        return publicKey != null && packaged != null && (!checked || now < checkedAt || now - checkedAt >= INTERVAL_MS);
+        return !publicKeys.isEmpty() && packaged != null && (!checked || now < checkedAt || now - checkedAt >= INTERVAL_MS);
     }
 
     /** Looks for a newer list and fetches what it lacks (call it off the main thread); true when a new list is ready. */
@@ -131,7 +144,7 @@ public final class UiUpdate implements UiFiles.Source {
             byte[] raw = get(net, LIST, MAX_LIST), signature = get(net, SIGNATURE, 64);
             long above;
             synchronized (this) { above = newest.n; }
-            Listing list = accept(raw, signature, publicKey, above, SHELL);
+            Listing list = accept(raw, signature, publicKeys, above, SHELL);
             if (list == null) return false;
             Set<String> wanted = new HashSet<>();
             for (Entry entry : list.files.values()) if (!has(entry.sha) && wanted.add(entry.sha)) fetch(net, entry);
@@ -152,9 +165,12 @@ public final class UiUpdate implements UiFiles.Source {
         }
     }
 
-    /** The list `raw` when `signature` verifies under `key`, its n is above `above` and its shell at most `shell`; else null. */
-    static Listing accept(byte[] raw, byte[] signature, byte[] key, long above, int shell) {
-        if (raw == null || !Crypto.verify(key, raw, signature)) return null;
+    /** The list `raw` when `signature` verifies under one of `keys`, its n is above `above` and its shell at most `shell`; else null. */
+    static Listing accept(byte[] raw, byte[] signature, List<byte[]> keys, long above, int shell) {
+        if (raw == null || keys == null) return null;
+        boolean signed = false;
+        for (byte[] key : keys) if (key != null && Crypto.verify(key, raw, signature)) { signed = true; break; }
+        if (!signed) return null;
         Listing list = parse(raw);
         return list == null || list.n <= above || list.shell > shell ? null : list;
     }
