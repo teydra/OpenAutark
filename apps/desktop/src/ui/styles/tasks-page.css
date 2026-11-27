@@ -207,6 +207,8 @@ li.tasks-sec.later { margin-top: 6px; list-style: none; }
 .cal-head-day { min-width: 0; }
 .cal-head-note { min-width: 0; margin-left: auto; }
 .cal-head .day-list-today + .cal-head-note { margin-left: 0; }
+/* on a phone the note has a place of its own – the left of the second line, with or without the Today button, so it never jumps beside the date (Mika, S9 27.11.2026) */
+@media (max-width: 600px) { .cal-head-note { flex: 1 0 100%; margin-left: 0; } }
 .cal-allday { display: flex; flex: none; gap: 4px; min-height: 30px; padding: 3px 10px 3px 48px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
 .cal-allday:empty { border-bottom-color: transparent; } /* nothing without a time: no line, the same height */
 .cal-chip { flex: none; height: 22px; padding: 0 8px; border-left: 3px solid var(--qc); border-radius: 6px; background: color-mix(in srgb, var(--qc) 16%, var(--surface)); color: var(--text); font-size: calc(12px * var(--ui-text, 1)); white-space: nowrap; }
