@@ -15,6 +15,7 @@ import { clearOwner, openDetail, toggle, workOpen, type PageScope } from './page
 import { planProgress } from '../../shared/model/task-plan.ts';
 import { ageOf, waitingLine } from './waiting.ts';
 import { doneText, noteWhenText, whenOf } from './when-text.ts';
+import { notLoaded } from '../shell/connection-line.ts';
 
 /** A doer's name (page-model.ts doerOf): the agent's or colleague's, "Team" while Autark has not picked one. */
 export function doerName(who: string): string {
@@ -65,7 +66,7 @@ export function AtWork(props: { scope: PageScope; groups: WorkGroup[]; schedules
         <span class={`ai-live${live ? ' on' : ''}`} aria-hidden="true" />
         <span class="ai-bar-text">
           <b>At work{props.owner ? ` · ${doerName(props.owner)}` : ''}</b>
-          <span class="ai-bar-sub">{summary}</span>
+          <span class="ai-bar-sub">{notLoaded.value ?? summary}</span>
         </span>
         <Icon name={props.owner ? 'x' : 'caret-right'} size={14} />
       </button>

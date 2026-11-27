@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { signal } from '@preact/signals';
-import { DOWN_GRACE_MS, awayText, connectionLine, down, downSince, watchConnection } from '../../../src/ui/shell/connection-line.ts';
+import { COLD_GRACE_MS, DOWN_GRACE_MS, awayText, connectionLine, down, downSince, graceMs, unloadedText, watchConnection } from '../../../src/ui/shell/connection-line.ts';
 import type { ConnectionFacts } from '../../../src/ui/shell/connection-line.ts';
 import type { ConnectionStatus } from '../../../src/ui/lib/rpc.ts';
 import { time } from '../../../src/ui/lib/format.ts';
@@ -119,4 +119,43 @@ test('watchConnection: the first moment not open stays through the flips; down a
     downSince.value = null;
     down.value = false;
   }
+});
+
+test('a cold start without the PC: the line after COLD_GRACE_MS, a later drop keeps the long grace (Juri 27.11.2026)', (t) => {
+  assert.ok(COLD_GRACE_MS <= 2_000, `the cold start says it within 2 s (${COLD_GRACE_MS})`);
+  assert.equal(graceMs(false), COLD_GRACE_MS);
+  assert.equal(graceMs(true), DOWN_GRACE_MS);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const status = signal<ConnectionStatus>('connecting'); // the page's start: never open yet
+  const stop = watchConnection(status, () => 1_000);
+  try {
+    status.value = 'closed';
+    status.value = 'connecting';
+    t.mock.timers.tick(COLD_GRACE_MS - 1);
+    assert.equal(down.value, false);
+    t.mock.timers.tick(1);
+    assert.equal(down.value, true, 'never open: the line comes after the short grace');
+    assert.equal(text({ loaded: false, status: 'connecting', down: down.value }), 'Office-PC not reachable · reconnecting by itself');
+    status.value = 'open';
+    assert.equal(down.value, false, 'the PC answers: the line goes');
+    status.value = 'closed'; // once open, a drop is a blip until DOWN_GRACE_MS
+    t.mock.timers.tick(COLD_GRACE_MS);
+    assert.equal(down.value, false, 'after it was open once the short grace is over');
+    t.mock.timers.tick(DOWN_GRACE_MS - COLD_GRACE_MS);
+    assert.equal(down.value, true);
+  } finally {
+    stop();
+    downSince.value = null;
+    down.value = false;
+  }
+});
+
+test('lists never loaded say they wait instead of claiming nothing; shown data (live or the copy) says nothing', () => {
+  const base = { loaded: false, status: 'closed' as ConnectionStatus, down: true, pc: 'Office-PC', desktop: false };
+  assert.equal(unloadedText(base), 'Waiting for Office-PC…');
+  assert.equal(unloadedText({ ...base, pc: '' }), 'Waiting for your PC…');
+  assert.equal(unloadedText({ ...base, down: false }), 'Loading…', 'within the grace: a neutral loading word');
+  assert.equal(unloadedText({ ...base, status: 'open' }), 'Loading…', 'connected, the first load on its way');
+  assert.equal(unloadedText({ ...base, desktop: true }), 'Loading…', 'the desktop window names no PC');
+  assert.equal(unloadedText({ ...base, loaded: true }), null, 'data shown (a live load or this device\'s copy): the lists speak for themselves');
 });

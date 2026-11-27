@@ -30,6 +30,7 @@ import { NewAgentDialog } from './NewAgentDialog.tsx';
 import { PersonDialogs } from './person-dialogs.tsx';
 import { setUpWithAi, teamSetupRequest } from './set-up-with-ai.ts';
 import { useSplitNav } from '../splits/SplitNav.tsx'; // B-057
+import { notLoaded } from '../shell/connection-line.ts';
 
 const EXPANDED_KEY = 'wf.teamExpanded';
 
@@ -146,7 +147,7 @@ export function TeamNav() {
             )
             : <p class="empty-state team-empty">Nobody found</p>)
           : <TeamTree expand={expand} />}
-        {!q && !list.length && <p class="empty-state team-empty">No agents yet</p>}
+        {!q && !list.length && <p class="empty-state team-empty">{notLoaded.value ?? 'No agents yet'}</p>}
         {!q && <InvitedGroup activeId={personId} />}
         {!q && <ArchivedGroup />}
       </div>

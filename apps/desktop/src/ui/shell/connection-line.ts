@@ -1,7 +1,8 @@
 // The connection's one quiet state (Sicher-Runde 19.11.2026, D3–D5; owner 27.11.2026): calm and the same while the PC is
 // away – "Office-PC not reachable · reconnecting by itself · as of 14:02" – instead of "Reconnecting…"/"Offline" flipping
 // with every retry; it comes only after the connection was down DOWN_GRACE_MS (a resume's quick new socket shows nothing)
-// and goes the moment it is open again. It has no button: the page reconnects by itself at once (lib/rpc.ts), and every
+// – at a phone's cold start, before it was ever open, after COLD_GRACE_MS – and goes the moment it is open again. Until
+// data was shown once, the lists say unloadedText instead of their empty words (27.11.2026). It has no button: the page reconnects by itself at once (lib/rpc.ts), and every
 // PC of the company that is online is linked, so there is nothing to pick (owner 27.11.2026: "Try now" mostly changed
 // nothing, "Choose PC" brought nothing – both are gone). In an open chat it is the chat header's sub line
 // (chat/ChatHeader.tsx, the line the header always reserves), so it covers nothing; elsewhere it is a quiet line of the
@@ -13,7 +14,7 @@
 // a line of its own. Konrad 24.11.2026: the state stands for every action that failed meanwhile – none of them is a toast
 // of its own (lib/toasts.ts toastError); what did not go out at all is said once in one quiet toast when the connection
 // is back (unsentToast).
-// Owns: the state's text, tone and the refusal's action (awayText, connectionLine, pure), the facts it reads
+// Owns: the state's text, tone and the refusal's action (awayText, connectionLine, unloadedText, pure), the facts it reads
 // (connectionFacts) and the down timer (watchConnection). Never: renders (StatusLine.tsx via notices.ts connectionNotice,
 // ChatHeader.tsx via connectionAway), reconnects or pairs itself.
 
@@ -31,6 +32,12 @@ import type { Notice, NoticeAction } from './notices.ts';
 
 /** How long the connection is down before the state shows (Konrad 24.11.2026: a drop under 5 s shows nothing at all). */
 export const DOWN_GRACE_MS = 5_000;
+/**
+ * The same at a cold start, before the connection was ever open in this page life (Juri's iPhone run 27.11.2026: the
+ * app's own interface came up without the PC and nothing said so – it looked like an empty company). There is no quick
+ * resume to hide yet, so the line comes after this much instead.
+ */
+export const COLD_GRACE_MS = 2_000;
 /** The line's place in the status line: above everything else (NOTICE_PRIORITY.connection). */
 export const CONNECTION_PRIORITY = 100;
 
@@ -112,21 +119,42 @@ export const CONNECTION_ACTIONS: ConnectionActions = { pairAgain };
 /** The away state for an open chat's header sub line (chat/ChatHeader.tsx), or null. */
 export const connectionAway = computed(() => awayText(connectionFacts({ status: rpc.status.value, loaded: loaded.value, loadError: loadError.value })));
 
+/**
+ * What a list says instead of its empty words ("Nothing for you here", "No agents yet") while no data was ever shown –
+ * neither a live load nor this device's copy (pwa/offline-cache.ts): an empty list then would claim an empty company.
+ * Null once data is shown.
+ */
+export function unloadedText(facts: Pick<ConnectionFacts, 'loaded' | 'status' | 'down' | 'pc' | 'desktop'>): string | null {
+  if (facts.loaded) return null;
+  if (facts.desktop || facts.status === 'open' || !facts.down) return 'Loading…';
+  return `Waiting for ${facts.pc || 'your PC'}…`;
+}
+
+/** unloadedText for the lists (tasks/ForYou.tsx, tasks/AtWork.tsx, team/TeamNav.tsx), or null once data is shown. */
+export const notLoaded = computed(() => (loaded.value ? null : unloadedText(connectionFacts({ status: rpc.status.value, loaded: false, loadError: loadError.value }))));
+
 /** The one quiet toast for what did not go out while the connection was away (lib/toasts.ts unsent), or null. */
 export function unsentToast(titles: readonly string[]): { title: string; body: string; tone: 'info' } | null {
   if (!titles.length) return null;
   return { title: titles.length === 1 ? 'Not sent while the connection was away' : `${titles.length} things not sent while the connection was away`, body: titles.join(' · '), tone: 'info' };
 }
 
+/** The grace before the away state shows: COLD_GRACE_MS until the connection was open once, then DOWN_GRACE_MS. */
+export function graceMs(openedBefore: boolean): number {
+  return openedBefore ? DOWN_GRACE_MS : COLD_GRACE_MS;
+}
+
 /**
  * Follows the connection's status: the first moment it is not open (the retries' connecting/closed flips keep it), and
- * one timeout to DOWN_GRACE_MS after it – never polling. While it is open, what did not go out meanwhile (unsent) is said
+ * one timeout to graceMs after it – never polling. While it is open, what did not go out meanwhile (unsent) is said
  * once in one quiet toast. Returns the stop.
  */
 export function watchConnection(status: { value: ConnectionStatus }, now: () => number = Date.now): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let opened = false; // open once since the watch began (the page's start): a later drop gets the longer grace
   const stop = effect(() => {
     if (status.value === 'open') {
+      opened = true;
       if (timer) { clearTimeout(timer); timer = null; }
       downSince.value = null;
       down.value = false;
@@ -136,7 +164,7 @@ export function watchConnection(status: { value: ConnectionStatus }, now: () => 
     }
     if (downSince.peek() !== null) return;
     downSince.value = now();
-    timer = setTimeout(() => { timer = null; down.value = true; }, DOWN_GRACE_MS);
+    timer = setTimeout(() => { timer = null; down.value = true; }, graceMs(opened || platform === 'desktop')); // the desktop window's engine start keeps its 5 s
   });
   return () => { stop(); if (timer) clearTimeout(timer); timer = null; };
 }
