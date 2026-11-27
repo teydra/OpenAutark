@@ -42,6 +42,11 @@ public final class AppNamesTest {
         check(twins.contains("Banking (de.bank.one)") && twins.contains("Banking (de.bank.two)"), "twins show their packages: " + twins);
         String none = AppNames.missing(apps, "Telegram");
         check(none.contains("No app named \"Telegram\"") && none.contains("Wispr Flow"), "none fits: the phone's apps: " + none);
+        // 27.11.2026: started, but another app stayed in front – never "opened", always what is there and the way on
+        String late = AppNames.notInFront("SimplySign", "com.assecods.certum.simplysign", "com.sec.android.app.launcher", 6_000);
+        check(late.contains("start SimplySign (com.assecods.certum.simplysign)") && late.contains("within 6 s – com.sec.android.app.launcher is in front")
+                && late.contains("phone.key home") && !late.contains("opened"), "not in front: " + late);
+        check(AppNames.notInFront(null, "de.bank.one", null, 6_000).contains("start de.bank.one, but") && AppNames.notInFront("", "x.y", "", 6_000).contains("no readable app is in front"), "without a name or a front app");
         System.out.println("AppNamesTest: " + assertions + " assertions passed");
     }
 }

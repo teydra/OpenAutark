@@ -74,6 +74,7 @@ public final class UseLink implements WebSocketClient.Listener {
     private long proofAt;
     private final Pcs pcs;
     private final StepThread steps = new StepThread((line) -> android.util.Log.w("autark", line));
+    private final StepDeadline deadline = new StepDeadline();
     /** My listener for the service turning on or off (one object, so stop() drops exactly mine). */
     private final Runnable onService = this::changed;
     private final AtomicInteger ids = new AtomicInteger(1);
@@ -131,6 +132,7 @@ public final class UseLink implements WebSocketClient.Listener {
         if (ws != null) ws.close();
         synchronized (lock) { lock.notifyAll(); }
         steps.stop();
+        deadline.stop();
         failCalls();
         if (linked == this) { linked = null; tellLinked(); }
     }
@@ -298,9 +300,13 @@ public final class UseLink implements WebSocketClient.Listener {
             PhoneUseUpgrade.prompt(context);
             reply = Json.map("id", id, "error", Json.map("code", "off", "message", offText(service != null)));
         } else {
-            try { reply = Json.map("id", id, "result", service.run(op, params, Json.str(request, "job"), Json.str(request, "by"))); }
+            // StepDeadline: the step runs on its worker within its limit, so one app that hangs never holds the later steps
+            long limit = StepDeadline.limitMs(op, Boolean.TRUE.equals(params.get("ask")), UseService.ASK_MS, Json.num(params, "durationMs", 0));
+            try { reply = Json.map("id", id, "result", deadline.run(() -> service.run(op, params, Json.str(request, "job"), Json.str(request, "by")), limit)); }
+            catch (StepDeadline.Late late) { reply = Json.map("id", id, "error", Json.map("code", "timeout", "message", StepDeadline.lateMessage(op, late.ms))); }
             catch (UseService.UseError error) { reply = Json.map("id", id, "error", Json.map("code", error.code, "message", String.valueOf(error.getMessage()))); }
-            catch (RuntimeException error) { reply = Json.map("id", id, "error", Json.map("code", "conflict", "message", "The step failed on the phone: " + error.getClass().getSimpleName())); }
+            catch (InterruptedException stopped) { Thread.currentThread().interrupt(); reply = Json.map("id", id, "error", Json.map("code", "cancelled", "message", "Phone use stopped on the phone.")); }
+            catch (Exception error) { reply = Json.map("id", id, "error", Json.map("code", "conflict", "message", "The step failed on the phone: " + error.getClass().getSimpleName())); }
         }
         send(Json.map("id", ids.getAndIncrement(), "method", "phoneUse.reply", "params", reply));
     }

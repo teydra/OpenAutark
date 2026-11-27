@@ -129,7 +129,16 @@ public final class UseService extends AccessibilityService {
         return super.onUnbind(intent);
     }
 
-    @Override public void onAccessibilityEvent(AccessibilityEvent event) { /* nothing is read until a request asks */ }
+    /** While phone.open waits for its app (and only then): the package of the last window that came up, not mine. */
+    private volatile boolean watchingFront;
+    private volatile String cameUp;
+
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        // nothing is read until a request asks: only phone.open's own wait notes which app's window came up
+        if (!watchingFront || event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
+        CharSequence pkg = event.getPackageName();
+        if (pkg != null && !getPackageName().contentEquals(pkg)) cameUp = pkg.toString();
+    }
 
     @Override public void onInterrupt() { /* Android's feedback interruption: no step of ours speaks */ }
 
@@ -305,6 +314,7 @@ public final class UseService extends AccessibilityService {
         if (refused != null) throw new UseError("conflict", refused);
         String[] lines = text.split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
+            notLate();
             if (!state.acting()) throw interrupted();
             String moved = moved(app, field);
             if (moved != null) {
@@ -385,8 +395,45 @@ public final class UseService extends AccessibilityService {
             throw new UseError("bad_request", "Give an http(s) link, a package name or an app's name.");
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try { startActivity(intent); } catch (RuntimeException error) { throw new UseError("conflict", "Android did not open it: " + error.getMessage()); }
+        notLate();
+        cameUp = null;
+        watchingFront = pkg != null && !pkg.isEmpty();
+        try {
+            try { startActivity(intent); } catch (RuntimeException error) { throw new UseError("conflict", "Android did not open it: " + error.getMessage()); }
+            if (watchingFront) awaitFront(pkg, app);
+        } finally {
+            watchingFront = false;
+        }
         return pkg != null && !pkg.isEmpty() ? pkg : url;
+    }
+
+    /** How long phone.open waits for its app to come to the front (StepDeadline's 15 s hold this and one tree read). */
+    static final long OPEN_WAIT_MS = 6_000;
+
+    /**
+     * 27.11.2026 (SimplySign: "opened", yet the app never showed): the started app has to come to the front – a window of
+     * its package came up, or the window in front is its own – else the step fails with which app is there instead.
+     */
+    private void awaitFront(String pkg, String shown) throws UseError {
+        long until = SystemClock.elapsedRealtime() + OPEN_WAIT_MS;
+        for (int tick = 1; SystemClock.elapsedRealtime() < until; tick++) {
+            if (pkg.equals(cameUp)) return;
+            if (tick % 5 == 0) { // every half second: an app already in front brings no new window
+                AccessibilityNodeInfo front = front();
+                if (front != null && pkg.contentEquals(front.getPackageName() == null ? "" : front.getPackageName())) return;
+            }
+            try { Thread.sleep(100); }
+            catch (InterruptedException stop) { Thread.currentThread().interrupt(); throw new UseError("timeout", "The step ran out of time on the phone."); }
+        }
+        AccessibilityNodeInfo front = front(); // an app already in front brings no new window: its own window counts
+        String now = front == null ? null : str(front.getPackageName());
+        if (pkg.equals(now) || pkg.equals(cameUp)) return;
+        throw new UseError("conflict", AppNames.notInFront(shown, pkg, now != null && !now.isEmpty() ? now : cameUp, OPEN_WAIT_MS));
+    }
+
+    /** StepDeadline gave up on this step (its worker was interrupted): no tap, text or app start may follow late. */
+    private static void notLate() throws UseError {
+        if (Thread.currentThread().isInterrupted()) throw new UseError("timeout", "The step ran out of time on the phone; nothing more was done.");
     }
 
     /** The launcher's icons: {the name under the icon, package, activity} each (the manifest's launcher query makes them
@@ -484,6 +531,7 @@ public final class UseService extends AccessibilityService {
     }
 
     private void gesture(Gestures.Stroke stroke) throws UseError {
+        notLate();
         if (!state.acting()) throw interrupted();
         Path path = new Path();
         path.moveTo(stroke.points[0], stroke.points[1]);
