@@ -18,7 +18,7 @@
 .task-detail.quest .detail-body { max-height: 64%; }
 /* on a phone the scroll area takes all the height the thread under it does not need: its 58 % cap left the rest as empty space between the notes and the thread (Mika, S9 27.11.2026) */
 .mobile-shell .task-detail .detail-body, .mobile-shell .task-detail.quest .detail-body { flex: 1 1 0; max-height: none; }
-.mobile-shell .task-detail > .task-thread { flex: 0 1 auto; min-height: 0; } /* its 240 px floor is the desktop's: here the thread is as high as its history and slim line need */
+.mobile-shell .task-detail > .task-thread { flex: 0 1 auto; min-height: 0; max-height: 45%; } /* its 240 px floor is the desktop's: here the thread is as high as its history and slim line need */
 .detail-missing { display: grid; flex: 1 1 auto; place-items: center; }
 .detail-title { margin: 0; color: var(--text); font-size: calc(15px * var(--ui-text, 1)); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .detail-title[contenteditable] { border-radius: 4px; outline: none; cursor: text; }
