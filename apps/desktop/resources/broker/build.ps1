@@ -36,6 +36,15 @@ $sources = @((Join-Path $here 'Broker.cs'), (Join-Path $here 'Worker.cs'), (Join
 if ($LASTEXITCODE -ne 0) { throw "csc failed with exit code $LASTEXITCODE" }
 Remove-Item -Recurse -Force $obj
 
-foreach ($file in @($helper, (Join-Path $here 'Broker.cs'), (Join-Path $here 'Worker.cs'), (Join-Path $here 'SignIn.cs'), (Join-Path $here 'Waker.cs'), (Join-Path $here 'ShellJob.cs'), $out)) {
+# The slim wake helper (0.3.22): AutarkWakeHelper.exe from WakeHelper.cs alone – it replaces the Node helper (113 MB) for "Wake while
+# closed" on Windows; the broker starts it for the signed-in person and falls back to the Node helper when it is missing. It needs
+# System.Numerics (BigInteger: the .NET Framework has no Ed25519/X25519) and nothing else. winexe: no console window.
+$wakeOut = Join-Path $here 'AutarkWakeHelper.exe'
+$wakeSource = Join-Path $here 'WakeHelper.cs'
+$wakeReferences = @('System.dll', 'System.Core.dll', 'System.Numerics.dll') | ForEach-Object { '/reference:' + (Join-Path $framework $_) }
+& $csc /nologo /target:winexe /platform:anycpu /optimize+ /warn:4 "/out:$wakeOut" $wakeReferences $wakeSource
+if ($LASTEXITCODE -ne 0) { throw "csc failed for AutarkWakeHelper.exe with exit code $LASTEXITCODE" }
+
+foreach ($file in @($helper, (Join-Path $here 'Broker.cs'), (Join-Path $here 'Worker.cs'), (Join-Path $here 'SignIn.cs'), (Join-Path $here 'Waker.cs'), (Join-Path $here 'ShellJob.cs'), $out, $wakeSource, $wakeOut)) {
   '{0}  {1}' -f (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant(), (Split-Path -Leaf $file)
 }

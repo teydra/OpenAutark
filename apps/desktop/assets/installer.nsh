@@ -180,6 +180,16 @@
     Sleep 500
     IntOp $R1 $R1 + 1
   ${Loop}
+  ; 0.3.22: the slim native wake helper (resources\broker\AutarkWakeHelper.exe, in the app folder) is no Autark.exe: it would hold
+  ; its own file (the broker's supervisor starts it again only once no installer runs) – it is only a waiting listener, so no
+  ; close request, a plain kill; nothing to wait for when none runs (taskkill's exit code is ignored).
+  !ifdef INSTALL_MODE_PER_ALL_USERS
+    nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /F /IM "AutarkWakeHelper.exe"`
+  !else
+    nsExec::Exec `"$SYSDIR\cmd.exe" /C taskkill /F /IM "AutarkWakeHelper.exe" /FI "USERNAME eq %USERNAME%"`
+  !endif
+  Pop $R0
+  Sleep 300
   Pop $R2
   Pop $R1
   Pop $R0

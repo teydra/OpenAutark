@@ -44,7 +44,7 @@ jobs:
 
   native-tcp-windows:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: apps/desktop
@@ -72,5 +72,10 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File resources/broker/build.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test test/unit/tools/shell-job.test.ts test/unit/tools/shell-windows.test.ts
+      - name: Slim wake helper (real AutarkWakeHelper.exe against a stand-in meeting server and app) and the broker's supervisor
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File resources/broker/build.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test --test-concurrency=1 test/unit/computer/wake-helper.test.ts test/unit/computer/waker.test.ts
       - name: Real TCP port and company binds
         run: npm run test:native-tcp

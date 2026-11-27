@@ -44,7 +44,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = 'apps/desktop/dist/win-unpacked'
-          foreach ($name in 'Autark.exe','resources/app.asar','resources/elevate.exe','resources/app-update.yml','resources/app.asar.unpacked/resources/broker/AutarkDesktopBroker.exe') {
+          foreach ($name in 'Autark.exe','resources/app.asar','resources/elevate.exe','resources/app-update.yml','resources/app.asar.unpacked/resources/broker/AutarkDesktopBroker.exe','resources/app.asar.unpacked/resources/broker/AutarkWakeHelper.exe') {
             if (!(Test-Path -LiteralPath (Join-Path $dir $name) -PathType Leaf)) { throw "Missing payload: $name" }
           }
           if ((Get-AuthenticodeSignature -LiteralPath "$dir/Autark.exe").Status -ne 'NotSigned') { throw 'Unexpected signature' }

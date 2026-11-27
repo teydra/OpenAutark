@@ -22,7 +22,7 @@ import { applyKeyringName } from './keyring-name.ts';
 import { BACKGROUND_FLAG, NOTICES, RESTARTED_FLAG, beginLaunch, launchSource, readRunState, type LaunchNotice } from './launcher.ts';
 import { LAUNCHER_PEER_FLAG, launchWindowsCompanies } from './launcher-companies.ts';
 import { PRIVILEGED_SCHEMES } from './protocols/handlers.ts';
-import { WAKE_FILE, sleeperAtLaunch, sleeperScript, startSleeper } from './sleeper.ts';
+import { WAKE_FILE, sleeperAtLaunch, sleeperScript, startSleeper, wakeHelperExe } from './sleeper.ts';
 
 const testData = process.env.WORKFORCE_TEST_DATA ? path.resolve(process.env.WORKFORCE_TEST_DATA) : null;
 if (testData) app.setPath('userData', testData); // isolated profile; also disables the network updater
@@ -92,7 +92,7 @@ if (!launch) {
   } else {
     // 19.11.2026: the person had quit – the wake helper waits at the meeting server so an own PC or phone can start it (main/sleeper.ts)
     if (sleeperAtLaunch(launch, launchSource(process.platform, flags.launcher), existsSync(path.join(app.getPath('userData'), WAKE_FILE)))) {
-      startSleeper({ exe: process.execPath, script: sleeperScript(path.join(app.getAppPath(), 'app')), dataDir: app.getPath('userData'), args: companyArgs(company) });
+      startSleeper({ exe: process.execPath, script: sleeperScript(path.join(app.getAppPath(), 'app')), helper: wakeHelperExe(app.getAppPath()), dataDir: app.getPath('userData'), args: companyArgs(company) });
     }
     app.quit();
   }

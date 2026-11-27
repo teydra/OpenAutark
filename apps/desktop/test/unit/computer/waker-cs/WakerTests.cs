@@ -366,6 +366,143 @@ namespace AutarkBroker
             Case("environment: a value with = in it is kept whole", () =>
                 Expect(WakerEnvironment.Build(new List<string> { "A=b=c" }), "A=b=c\0ELECTRON_RUN_AS_NODE=1\0\0", "block"));
 
+            // ---- the slim native helper (0.3.22) ------------------------------------------------------------------------------
+            const string HelperPath = "C:\\\\Apps\\\\Autark\\\\resources\\\\app.asar.unpacked\\\\resources\\\\broker\\\\AutarkWakeHelper.exe";
+            Func<string, string> withHelper = path => Reg().Replace("}", ",\"helper\":\"" + path + "\"}");
+            Case("native helper: a registration without \"helper\" has none (the Node helper runs, as before)", () =>
+            {
+                WakerRegistration r;
+                return Expect(Parse(Reg(), Everything, out r), null, "reason") ?? Expect(r.Helper, "", "helper");
+            });
+            Case("native helper: an existing AutarkWakeHelper.exe at an absolute path is taken", () =>
+            {
+                WakerRegistration r;
+                return Expect(Parse(withHelper(HelperPath), Everything, out r), null, "reason") ?? Expect(r.Helper, @"C:\Apps\Autark\resources\app.asar.unpacked\resources\broker\AutarkWakeHelper.exe", "helper");
+            });
+            Case("native helper: a missing file, another file name, a relative path or a non-string is ignored – no error, the Node helper stays", () =>
+            {
+                WakerRegistration r;
+                string a = Expect(Parse(withHelper(HelperPath), p => !p.EndsWith("AutarkWakeHelper.exe"), out r), null, "missing") ?? Expect(r.Helper, "", "missing helper");
+                string b = Expect(Parse(withHelper("C:\\\\Windows\\\\System32\\\\cmd.exe"), Everything, out r), null, "cmd") ?? Expect(r.Helper, "", "cmd helper");
+                string c = Expect(Parse(withHelper("AutarkWakeHelper.exe"), Everything, out r), null, "relative") ?? Expect(r.Helper, "", "relative helper");
+                string d = Expect(Parse(Reg().Replace("}", ",\"helper\":5}"), Everything, out r), null, "number") ?? Expect(r.Helper, "", "number helper");
+                string e = Expect(Parse(withHelper("C:\\\\x\\\\AutarkWakeHelper.exe.bat"), Everything, out r), null, "bat") ?? Expect(r.Helper, "", "bat helper");
+                return a ?? b ?? c ?? d ?? e;
+            });
+            Case("native helper: its process counts as a running helper (sleeper.json pid, own pid) – by its image name", () =>
+            {
+                WakerFacts f = Facts(Alive(200, "AutarkWakeHelper.exe"));
+                f.HelperName = "AutarkWakeHelper.exe";
+                f.SleeperPid = 200;
+                string a = Expect(WakerPolicy.Decide(f, new WakerBackoff(), T0), "helper_running", "sleeper");
+                WakerFacts g = Facts(Alive(201, "autarkwakehelper.EXE"));
+                g.HelperName = "AutarkWakeHelper.exe";
+                g.OwnHelperPid = 201;
+                return a ?? Expect(WakerPolicy.Decide(g, new WakerBackoff(), T0), "helper_running", "own pid, case");
+            });
+            Case("native helper: without a registered native helper its image name means nothing; a pid reused by another program starts one", () =>
+            {
+                WakerFacts f = Facts(Alive(200, "AutarkWakeHelper.exe"));
+                f.SleeperPid = 200; // HelperName stays "": not a helper of this registration
+                WakerFacts g = Facts(Alive(200, "notepad.exe"));
+                g.HelperName = "AutarkWakeHelper.exe";
+                g.SleeperPid = 200;
+                return Expect(WakerPolicy.Decide(f, new WakerBackoff(), T0), null, "no native registered") ?? Expect(WakerPolicy.Decide(g, new WakerBackoff(), T0), null, "reused pid");
+            });
+            Case("native helper: the running app is never taken for the helper (AutarkWakeHelper.exe is no app)", () =>
+            {
+                WakerFacts f = Facts(Alive(42, "AutarkWakeHelper.exe"));
+                f.HelperName = "AutarkWakeHelper.exe";
+                f.RunState = "running"; f.RunPid = 42;
+                return Expect(WakerPolicy.Decide(f, new WakerBackoff(), T0), null, "decision");
+            });
+            Case("native helper: used when registered; the Node helper when not", () =>
+            {
+                WakerRegistration with = new WakerRegistration(), without = new WakerRegistration();
+                with.Helper = @"C:\x\AutarkWakeHelper.exe";
+                WakerBackoff b = new WakerBackoff();
+                return Expect(b.UseNative(with), true, "with") ?? Expect(b.UseNative(without), false, "without");
+            });
+            Case("native helper: two quick deaths in a row (or two failed starts) fall back to the Node helper for good", () =>
+            {
+                WakerRegistration r = new WakerRegistration();
+                r.Helper = @"C:\x\AutarkWakeHelper.exe";
+                WakerBackoff b = new WakerBackoff();
+                b.Started(T0, 300, true);
+                b.Observe(T0 + 20000, false);
+                string a = Expect(b.UseNative(r), true, "after one death");
+                b.Started(T0 + 60000, 301, true);
+                b.Observe(T0 + 80000, false);
+                string c = Expect(b.UseNative(r), false, "after two deaths");
+                WakerBackoff f = new WakerBackoff();
+                f.Failed(T0, true);
+                string d = Expect(f.UseNative(r), true, "one failed start");
+                f.Failed(T0 + 60000, true);
+                return a ?? c ?? d ?? Expect(f.UseNative(r), false, "two failed starts");
+            });
+            Case("native helper: a helper that lived a minute clears its record; the Node helper's deaths never count against it", () =>
+            {
+                WakerRegistration r = new WakerRegistration();
+                r.Helper = @"C:\x\AutarkWakeHelper.exe";
+                WakerBackoff b = new WakerBackoff();
+                b.Started(T0, 300, true);
+                b.Observe(T0 + 20000, false); // one quick death
+                b.Started(T0 + 60000, 301, true);
+                b.Observe(T0 + 130000, true); // lived over a minute: the record is cleared
+                b.Started(T0 + 140000, 302, true);
+                b.Observe(T0 + 150000, false); // one quick death again, not two
+                WakerBackoff n = new WakerBackoff();
+                for (int i = 0; i < 4; i++) { n.Started(T0 + i * 60000, 400 + i, false); n.Observe(T0 + i * 60000 + 5000, false); }
+                return Expect(b.UseNative(r), true, "cleared") ?? Expect(n.UseNative(r), true, "node deaths");
+            });
+            Case("native helper: a quick end with exit code 0 (app already running, wake taken, taken over, mutex held) is no failure; two quick crashes still are", () =>
+            {
+                WakerRegistration r = new WakerRegistration();
+                r.Helper = @"C:\x\AutarkWakeHelper.exe";
+                // five logons with autostart: the helper ends within seconds, on purpose, every time
+                WakerBackoff intended = new WakerBackoff();
+                for (int i = 0; i < 5; i++) { intended.Started(T0 + i * 60000, 500 + i, true); intended.Observe(T0 + i * 60000 + 5000, false, 0); }
+                string a = Expect(intended.UseNative(r), true, "five intended quick ends");
+                string a2 = Expect(intended.NativeBroken, false, "not broken");
+                string a3 = Expect(intended.Judged, true, "judged once");
+                // an intended end between two crashes clears the record: crash, intended, crash is not two in a row
+                WakerBackoff mixed = new WakerBackoff();
+                mixed.Started(T0, 510, true); mixed.Observe(T0 + 5000, false, 0xC0000005L);
+                mixed.Started(T0 + 60000, 511, true); mixed.Observe(T0 + 65000, false, 0);
+                mixed.Started(T0 + 120000, 512, true); mixed.Observe(T0 + 125000, false, 1);
+                string b = Expect(mixed.UseNative(r), true, "crash, intended end, crash");
+                // two real crashes (an exception: 1; a crash: an NTSTATUS) in a row
+                WakerBackoff crashes = new WakerBackoff();
+                crashes.Started(T0, 520, true); crashes.Observe(T0 + 5000, false, 1);
+                string c = Expect(crashes.UseNative(r), true, "one crash");
+                crashes.Started(T0 + 60000, 521, true); crashes.Observe(T0 + 65000, false, 0xC0000005L);
+                string d = Expect(crashes.UseNative(r), false, "two crashes");
+                // an exit code that could not be read counts as a crash (the old rule)
+                WakerBackoff unknown = new WakerBackoff();
+                unknown.Started(T0, 530, true); unknown.Observe(T0 + 5000, false, WakerBackoff.UnknownExit);
+                unknown.Started(T0 + 60000, 531, true); unknown.Observe(T0 + 65000, false);
+                string e = Expect(unknown.UseNative(r), false, "unknown exit codes");
+                // the general wait after a quick end is unchanged by the code: no hot restart loop for a helper that ends at once
+                string f = Expect(intended.QuickDeaths, 5, "the wait still grows");
+                // a start that fails stays a failure
+                WakerBackoff failedStarts = new WakerBackoff();
+                failedStarts.Failed(T0, true); failedStarts.Failed(T0 + 60000, true);
+                return a ?? a2 ?? a3 ?? b ?? c ?? d ?? e ?? f ?? Expect(failedStarts.UseNative(r), false, "two failed starts");
+            });
+            Case("native helper command line: helper, wake.json, --app exe, --, the registered args – nothing else", () =>
+            {
+                string line = WakerCommandLine.BuildNative(@"C:\Program Files\Autark\AutarkWakeHelper.exe", @"C:\Program Files\Autark\Autark.exe", @"C:\Users\x\Roaming\Autark\wake.json",
+                    new List<string> { "--company=company-2", "two words" });
+                return Expect(line, "\"C:\\Program Files\\Autark\\AutarkWakeHelper.exe\" \"C:\\Users\\x\\Roaming\\Autark\\wake.json\" --app \"C:\\Program Files\\Autark\\Autark.exe\" -- --company=company-2 \"two words\"", "line")
+                    ?? Expect(WakerCommandLine.BuildNative(@"C:\h.exe", @"C:\a.exe", @"C:\w.json", null), "\"C:\\h.exe\" \"C:\\w.json\" --app \"C:\\a.exe\" --", "no args");
+            });
+            Case("native helper environment: no ELECTRON_RUN_AS_NODE at all (an inherited one is removed), the GC settings (replacing the person's own), the rest stays sorted", () =>
+            {
+                string block = WakerEnvironment.Build(new List<string> { "electron_run_as_node=1", "PATH=C:\\x", "Alpha=2", "comPlus_gcconcurrent=1" }, false);
+                return Expect(block, "Alpha=2\0COMPlus_gcConcurrent=0\0COMPlus_GCgen0size=100000\0PATH=C:\\x\0\0", "block")
+                    ?? Expect(WakerEnvironment.Build(new List<string>(), false), "COMPlus_gcConcurrent=0\0COMPlus_GCgen0size=100000\0\0", "empty");
+            });
+
             // ---- files of the app ---------------------------------------------------------------------------------------------
             Case("run-state.json and sleeper.json are read; broken ones are ignored", () =>
             {

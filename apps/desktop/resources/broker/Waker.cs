@@ -3,9 +3,14 @@
 // meeting server for a signed wake from the person's phone. When the person ends Autark (Task Manager, a crash, a restart) the
 // helper dies with it – this supervisor, living in the always-running service, starts one again, as the person.
 //
+// Since 0.3.22 (Windows only) the helper can be the slim native AutarkWakeHelper.exe (WakeHelper.cs, ~15 MB instead of 113 MB):
+// the registration names it in the optional "helper"; it is used when that file is there and has not died within a minute twice in
+// a row (WakerBackoff.NativeBroken) – otherwise the Node helper above is started, unchanged. Mac and Linux have no broker and keep the
+// Node helper (launchd / systemd --user).
+//
 // The contract with the app (TypeScript side):
 //   <the user's Local AppData>\AutarkDesktopBroker\wakers\*.json   one registration per Autark data folder; present = waker on:
-//       {"v":1,"exe":"C:\\...\\Autark.exe","script":"C:\\...\\app\\sleeper.mjs","data":"C:\\Users\\x\\AppData\\Roaming\\Autark","args":["--company=company-2"]}
+//       {"v":1,"exe":"C:\\...\\Autark.exe","script":"C:\\...\\app\\sleeper.mjs","data":"C:\\Users\\x\\AppData\\Roaming\\Autark","args":["--company=company-2"],"helper":"C:\\...\\broker\\AutarkWakeHelper.exe"}
 //   <data>\wake.json      the helper's key file (must exist)
 //   <data>\run-state.json {"state":"running"|"quit","at":<epoch ms>,"pid":<n>,"by":"person"|"update"|"system"|"launcher"}
 //   <data>\sleeper.json   {"pid":<n>,"at":<epoch ms>} written by a running helper, removed at its clean end
@@ -48,7 +53,12 @@ namespace AutarkBroker
         public string Exe = "";
         public string Script = "";
         public string Data = "";
+        /// The slim native wake helper (AutarkWakeHelper.exe, 0.3.22), "" when the registration names none or it is not there: then the
+        /// Node helper (exe + script) is used, as before.
+        public string Helper = "";
         public List<string> Args = new List<string>();
+
+        public const string HelperFileName = "AutarkWakeHelper.exe";
 
         public string WakeFile { get { return Path.Combine(Data, "wake.json"); } }
         public string RunStateFile { get { return Path.Combine(Data, "run-state.json"); } }
@@ -98,6 +108,10 @@ namespace AutarkBroker
             registration.Script = script;
             registration.Data = data;
             registration.Args = args;
+            // optional: only the file "AutarkWakeHelper.exe" at an absolute path that exists counts; anything else = no native helper
+            string helper = Str(map, "helper");
+            if (helper != null && IsAbsolute(helper) && string.Equals(Path.GetFileName(helper), HelperFileName, StringComparison.OrdinalIgnoreCase) && exists(helper))
+                registration.Helper = helper;
             return registration;
         }
 
@@ -112,6 +126,8 @@ namespace AutarkBroker
     public sealed class WakerFacts
     {
         public string ExeName = "";
+        /// The native helper's image name ("AutarkWakeHelper.exe"), "" = none registered.
+        public string HelperName = "";
         public bool WakeFileExists;
         /// run-state.json's "state"; null = absent or unreadable.
         public string RunState;
@@ -152,6 +168,16 @@ namespace AutarkBroker
             string image = ImageOf(pid);
             return image != null && string.Equals(image, ExeName, StringComparison.OrdinalIgnoreCase);
         }
+
+        /// The process `pid` lives and is a wake helper: the Node helper (an Autark.exe) or the native one (AutarkWakeHelper.exe).
+        public bool IsHelper(long pid)
+        {
+            if (pid <= 0 || ImageOf == null) return false;
+            string image = ImageOf(pid);
+            if (image == null) return false;
+            return string.Equals(image, ExeName, StringComparison.OrdinalIgnoreCase)
+                || (HelperName.Length > 0 && string.Equals(image, HelperName, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     static class WakerJson
@@ -189,6 +215,22 @@ namespace AutarkBroker
         public int QuickDeaths;
         public long HelperPid;
         bool judged = true;
+        bool lastNative;
+        int nativeQuick;
+        /// The native helper died within a minute twice in a row (or would not start): the Node helper is used from then on, until the
+        /// registration goes away and comes back (the app's next start of "Wake while closed" – a fresh memory).
+        public bool NativeBroken;
+        public const int NativeTries = 2;
+
+        /// Which helper to start now: the native one when the registration has it and it has not failed NativeTries times in a row.
+        public bool UseNative(WakerRegistration registration) { return registration.Helper.Length > 0 && !NativeBroken; }
+
+        void Judge(bool quick)
+        {
+            if (!lastNative) return;
+            if (!quick) { nativeQuick = 0; return; }
+            if (++nativeQuick >= NativeTries) NativeBroken = true;
+        }
 
         /// The wait after the last start: 15 s x 2^deaths, at most 30 minutes.
         public static long WaitMs(int quickDeaths)
@@ -197,24 +239,40 @@ namespace AutarkBroker
             return Math.Min(MaxMs, BaseMs << n);
         }
 
-        public void Started(long nowMs, long pid) { LastStartMs = nowMs; HelperPid = pid; judged = false; }
+        public void Started(long nowMs, long pid) { Started(nowMs, pid, false); }
+
+        public void Started(long nowMs, long pid, bool native) { LastStartMs = nowMs; HelperPid = pid; judged = false; lastNative = native; }
 
         /// The start itself failed: counts like a helper that died at once.
-        public void Failed(long nowMs) { LastStartMs = nowMs; HelperPid = 0; judged = true; QuickDeaths++; }
+        public void Failed(long nowMs) { Failed(nowMs, false); }
+
+        public void Failed(long nowMs, bool native) { LastStartMs = nowMs; HelperPid = 0; judged = true; QuickDeaths++; lastNative = native; Judge(true); }
+
+        /// The last start has been judged (its helper lived a minute, or is gone): nothing more to learn from its process.
+        public bool Judged { get { return judged; } }
+
+        public void Observe(long nowMs, bool helperAlive) { Observe(nowMs, helperAlive, UnknownExit); }
+
+        /// The exit code of a helper that is gone and whose code could not be read (killed from outside, no handle): counts as a crash.
+        public const long UnknownExit = -1;
 
         /// Called at every tick with whether the helper started last still lives: it lived a minute -> the count resets; it was gone
-        /// before -> one more quick death (judged once per start).
-        public void Observe(long nowMs, bool helperAlive)
+        /// before -> one more quick death (judged once per start). `exitCode` is the gone helper's exit code (UnknownExit when not
+        /// known): the native helper ends at once ON PURPOSE with 0 – the app already runs (every logon with autostart), a wake was
+        /// taken, another helper took over, its mutex is held – and such an end is no failure: it does not count towards NativeBroken
+        /// (the general wait after a quick end is unchanged).
+        public void Observe(long nowMs, bool helperAlive, long exitCode)
         {
             if (judged || LastStartMs <= 0) return;
             long age = nowMs - LastStartMs;
             if (helperAlive)
             {
-                if (age >= QuickMs) { QuickDeaths = 0; judged = true; }
+                if (age >= QuickMs) { QuickDeaths = 0; judged = true; Judge(false); }
                 return;
             }
             judged = true;
             if (age < QuickMs) QuickDeaths++; else QuickDeaths = 0;
+            Judge(age < QuickMs && exitCode != 0);
         }
     }
 
@@ -233,7 +291,7 @@ namespace AutarkBroker
                 long age = nowMs - facts.RunAt;
                 if (age >= -60 * 1000 && age < UpdateWindowMs) return "updating"; // a stamp far in the future is no update
             }
-            if (facts.IsExe(facts.SleeperPid) || facts.IsExe(facts.OwnHelperPid)) return "helper_running";
+            if (facts.IsHelper(facts.SleeperPid) || facts.IsHelper(facts.OwnHelperPid)) return "helper_running";
             if (facts.InstallerRunning) return "installer";
             if (backoff != null && backoff.LastStartMs > 0 && nowMs < backoff.LastStartMs + WakerBackoff.WaitMs(backoff.QuickDeaths)) return "backoff";
             return null;
@@ -283,6 +341,15 @@ namespace AutarkBroker
             if (args != null) foreach (string arg in args) sb.Append(' ').Append(Quote(arg, false));
             return sb.ToString();
         }
+
+        /// The native helper's whole command line: "helper" "<data>\wake.json" --app "exe" -- args...
+        public static string BuildNative(string helper, string exe, string wakeFile, IList<string> args)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append(Quote(helper, true)).Append(' ').Append(Quote(wakeFile, true)).Append(" --app ").Append(Quote(exe, true)).Append(" --");
+            if (args != null) foreach (string arg in args) sb.Append(' ').Append(Quote(arg, false));
+            return sb.ToString();
+        }
     }
 
     /// The helper's environment block: the person's own variables plus ELECTRON_RUN_AS_NODE=1.
@@ -297,7 +364,16 @@ namespace AutarkBroker
         }
 
         /// "K=V" entries -> a UTF-16 block "K=V\0K=V\0\0", sorted by name like Windows does; an existing ELECTRON_RUN_AS_NODE is replaced.
-        public static string Build(IEnumerable<string> entries)
+        public static string Build(IEnumerable<string> entries) { return Build(entries, true); }
+
+        /// The native helper's memory settings for the .NET runtime (WakeHelper.cs removes them again from the app it starts): a plain
+        /// GC without the background thread and a 1 MB youngest generation (hex) instead of a size taken from the CPU cache – about
+        /// 4 MB less private memory. The same pair is set where the app starts the helper itself (sleeper.ts).
+        public const string GcConcurrent = "COMPlus_gcConcurrent", GcConcurrentValue = "0", GcGen0Size = "COMPlus_GCgen0size", GcGen0SizeValue = "100000";
+
+        /// `runAsNode` false (the native helper): no ELECTRON_RUN_AS_NODE at all – the app the helper starts must not inherit it –,
+        /// and the GC settings above.
+        public static string Build(IEnumerable<string> entries, bool runAsNode)
         {
             List<string> list = new List<string>();
             if (entries != null)
@@ -305,9 +381,11 @@ namespace AutarkBroker
                 {
                     if (string.IsNullOrEmpty(entry) || entry.IndexOf('=', entry.Length > 0 && entry[0] == '=' ? 1 : 0) < 0) continue;
                     if (string.Equals(NameOf(entry), RunAsNode, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!runAsNode && (string.Equals(NameOf(entry), GcConcurrent, StringComparison.OrdinalIgnoreCase) || string.Equals(NameOf(entry), GcGen0Size, StringComparison.OrdinalIgnoreCase))) continue;
                     list.Add(entry);
                 }
-            list.Add(RunAsNode + "=1");
+            if (runAsNode) list.Add(RunAsNode + "=1");
+            else { list.Add(GcConcurrent + "=" + GcConcurrentValue); list.Add(GcGen0Size + "=" + GcGen0SizeValue); }
             list.Sort((a, b) => string.Compare(NameOf(a), NameOf(b), StringComparison.OrdinalIgnoreCase));
             StringBuilder sb = new StringBuilder();
             foreach (string entry in list) sb.Append(entry).Append('\0');
@@ -462,9 +540,11 @@ namespace AutarkBroker
             finally { DestroyEnvironmentBlock(block); }
         }
 
-        /// CreateProcessAsUser with the person's primary token and a Unicode environment block; returns the new process id.
-        public static int Start(IntPtr userToken, string exe, string commandLine, string currentDirectory, string desktop, string environmentBlock)
+        /// CreateProcessAsUser with the person's primary token and a Unicode environment block; returns the new process id and (in
+        /// `process`) the process handle, which the caller closes (WakerNative.Close): it keeps the exit code readable after the end.
+        public static int Start(IntPtr userToken, string exe, string commandLine, string currentDirectory, string desktop, string environmentBlock, out IntPtr process)
         {
+            process = IntPtr.Zero;
             IntPtr environment = Marshal.StringToHGlobalUni(environmentBlock);
             try
             {
@@ -476,10 +556,18 @@ namespace AutarkBroker
                     environment, currentDirectory, ref startup, out info))
                     throw new Win32Exception();
                 CloseHandle(info.hThread);
-                CloseHandle(info.hProcess);
+                process = info.hProcess;
                 return info.dwProcessId;
             }
             finally { Marshal.FreeHGlobal(environment); }
+        }
+
+        /// The exit code of a process that has ended (by its handle), else WakerBackoff.UnknownExit (it still runs, or cannot be asked).
+        public static long ExitCodeOf(IntPtr process)
+        {
+            uint code;
+            if (process == IntPtr.Zero || !GetExitCodeProcess(process, out code) || code == STILL_ACTIVE) return WakerBackoff.UnknownExit;
+            return code;
         }
     }
 
@@ -501,6 +589,8 @@ namespace AutarkBroker
         readonly object gate = new object();
         readonly Dictionary<string, WakerBackoff> backoffs = new Dictionary<string, WakerBackoff>();
         readonly Dictionary<string, string> notes = new Dictionary<string, string>();
+        /// Per registration: the process handle of the helper started last, until its start is judged (its exit code is read from it).
+        readonly Dictionary<string, IntPtr> handles = new Dictionary<string, IntPtr>();
         System.Threading.Timer timer;
         bool stopped;
 
@@ -521,6 +611,7 @@ namespace AutarkBroker
             {
                 stopped = true;
                 if (timer != null) { timer.Dispose(); timer = null; }
+                foreach (string key in new List<string>(handles.Keys)) Release(key);
             }
         }
 
@@ -564,26 +655,40 @@ namespace AutarkBroker
                     if (!backoffs.TryGetValue(entry.FileName, out backoff)) { backoff = new WakerBackoff(); backoffs[entry.FileName] = backoff; }
                     WakerFacts facts = entry.Facts;
                     facts.ExeName = Path.GetFileName(registration.Exe);
+                    facts.HelperName = registration.Helper.Length > 0 ? Path.GetFileName(registration.Helper) : "";
                     facts.ImageOf = WakerNative.ImageOf;
                     long now = NowMs();
-                    backoff.Observe(now, facts.IsExe(backoff.HelperPid));
+                    IntPtr started;
+                    handles.TryGetValue(entry.FileName, out started);
+                    bool helperAlive = facts.IsHelper(backoff.HelperPid);
+                    backoff.Observe(now, helperAlive, helperAlive ? WakerBackoff.UnknownExit : WakerNative.ExitCodeOf(started));
+                    if (backoff.Judged) Release(entry.FileName); // judged: the helper's handle has told what it could
                     facts.OwnHelperPid = backoff.HelperPid;
                     if (!installer.HasValue) installer = InstallerRunning(session);
                     facts.InstallerRunning = installer.Value;
                     string why = WakerPolicy.Decide(facts, backoff, now);
                     if (why != null) { if (why != "backoff") Note(entry.FileName, why, false); continue; }
+                    bool native = backoff.UseNative(registration);
                     try
                     {
-                        string command = WakerCommandLine.Build(registration.Exe, registration.Script, registration.WakeFile, registration.Args);
-                        string block = WakerEnvironment.Build(WakerNative.UserEnvironment(token));
-                        int pid = WakerNative.Start(token, registration.Exe, command, Path.GetDirectoryName(registration.Exe), "winsta0\\default", block);
-                        backoff.Started(now, pid);
+                        // The slim native helper when the registration names it (and it has not failed twice in a row), else the Node
+                        // helper – both with the person's token, in the person's session, never as SYSTEM.
+                        string program = native ? registration.Helper : registration.Exe;
+                        string command = native
+                            ? WakerCommandLine.BuildNative(registration.Helper, registration.Exe, registration.WakeFile, registration.Args)
+                            : WakerCommandLine.Build(registration.Exe, registration.Script, registration.WakeFile, registration.Args);
+                        string block = WakerEnvironment.Build(WakerNative.UserEnvironment(token), !native);
+                        IntPtr process;
+                        int pid = WakerNative.Start(token, program, command, Path.GetDirectoryName(registration.Exe), "winsta0\\default", block, out process);
+                        Release(entry.FileName);
+                        handles[entry.FileName] = process;
+                        backoff.Started(now, pid, native);
                         notes[entry.FileName] = "started";
-                        Program.Log("waker " + entry.FileName + " started helper " + pid + " in session " + session);
+                        Program.Log("waker " + entry.FileName + " started " + (native ? "native" : "node") + " helper " + pid + " in session " + session);
                     }
                     catch (Exception e)
                     {
-                        backoff.Failed(now);
+                        backoff.Failed(now, native);
                         notes[entry.FileName] = "start failed";
                         Program.Log("waker " + entry.FileName + " start failed: " + e.GetType().Name + ": " + e.Message);
                     }
@@ -597,9 +702,19 @@ namespace AutarkBroker
             }
         }
 
+        /// Closes the process handle kept for a registration's last helper (it serves only to read the exit code once).
+        void Release(string key)
+        {
+            IntPtr handle;
+            if (!handles.TryGetValue(key, out handle)) return;
+            handles.Remove(key);
+            WakerNative.Close(handle);
+        }
+
         /// Removed registrations drop their memory: switching the waker off and on starts clean.
         void Forget(HashSet<string> seen)
         {
+            foreach (string key in new List<string>(handles.Keys)) if (!seen.Contains(key)) Release(key);
             foreach (string key in new List<string>(backoffs.Keys)) if (!seen.Contains(key)) backoffs.Remove(key);
             foreach (string key in new List<string>(notes.Keys)) if (key.Length > 0 && !seen.Contains(key)) notes.Remove(key);
         }

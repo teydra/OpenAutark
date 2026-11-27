@@ -4,6 +4,8 @@
 // person had quit) while that file is there. It is this same Autark.exe as Node (ELECTRON_RUN_AS_NODE) with
 // app/sleeper.mjs (app.asar.unpacked when packaged) – Smart App Control blocks new unsigned executables, so it is no new
 // program – detached, hidden, no window; it gets the app's own start arguments (another company's --company=<id>).
+// 0.3.22: on Windows the slim native AutarkWakeHelper.exe (resources/broker/WakeHelper.cs, under 20 MB) is started instead when it is
+// there; the Node helper above is the fallback (missing file, no start). Mac and Linux keep the Node helper (launchd / systemd --user).
 // Owns: that decision and the spawn. Never: imports electron, starts the helper while the app runs, or reads the key file.
 
 import { spawn as spawnChild } from 'node:child_process';
@@ -33,9 +35,24 @@ export function sleeperScript(appDir: string, exists: (file: string) => boolean 
   return exists(file) ? file : undefined;
 }
 
+export const WAKE_HELPER = 'AutarkWakeHelper.exe';
+
+/**
+ * 0.3.22 (Windows only): the slim native wake helper (resources/broker/WakeHelper.cs, ~15 MB idle instead of the Node helper's 113 MB),
+ * unpacked beside the broker; undefined on Mac and Linux (they keep the Node helper: launchd / systemd --user) and in a build without it.
+ * `root`: the app's root (app.asar), the same as broker-setup.ts.
+ */
+export function wakeHelperExe(root: string, platform: string = process.platform, exists: (file: string) => boolean = existsSync): string | undefined {
+  if (platform !== 'win32') return undefined;
+  const file = path.win32.join(root, 'resources', 'broker', WAKE_HELPER).replace(/([\\/])app\.asar([\\/])/, '$1app.asar.unpacked$2');
+  return exists(file) ? file : undefined;
+}
+
 export interface SleeperStart {
   exe: string; // process.execPath
   script: string | undefined;
+  /** The native helper (wakeHelperExe), Windows only: tried first; the Node helper (exe + script) when it is absent or does not start. */
+  helper?: string | undefined;
   dataDir: string;
   /** The app's own start arguments (another company's --company=<id>). */
   args: readonly string[];
@@ -56,9 +73,36 @@ export function quitWake(input: { by: QuitBy | undefined; call(method: 'devices.
 /** Starts the helper detached; false when the build or the data folder has no helper. Never throws. */
 export function startSleeper(input: SleeperStart): boolean {
   const wakeFile = path.join(input.dataDir, WAKE_FILE);
-  if (!input.script || !(input.exists ?? existsSync)(wakeFile)) return false;
+  if ((!input.script && !input.helper) || !(input.exists ?? existsSync)(wakeFile)) return false;
+  if (input.helper && startNative(input, input.helper, wakeFile)) return true;
+  return input.script ? startNode(input, input.script, wakeFile) : false;
+}
+
+/** The native helper: `<helper> <wake.json> --app <Autark.exe> -- <the app's arguments>`, no ELECTRON_RUN_AS_NODE; it starts the app itself on a wake. */
+function startNative(input: SleeperStart, helper: string, wakeFile: string): boolean {
   try {
-    const child = (input.spawn ?? spawnChild)(input.exe, [input.script, wakeFile, '--', ...input.args], {
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    // memory: a plain GC and a 1 MB youngest generation (hex) – about 4 MB less private memory (the helper removes both again from the app it starts; the broker sets the same pair)
+    env.COMPlus_gcConcurrent = '0';
+    env.COMPlus_GCgen0size = '100000';
+    const child = (input.spawn ?? spawnChild)(helper, [wakeFile, '--app', input.exe, '--', ...input.args], { detached: true, stdio: 'ignore', windowsHide: true, env });
+    child.on('error', (error) => {
+      input.log?.(`native wake helper did not start: ${error.message}`);
+      if (input.script) startNode(input, input.script, wakeFile); // refused or damaged: the Node helper takes over
+    });
+    child.unref();
+    input.log?.('native wake helper started');
+    return true;
+  } catch (error) {
+    input.log?.(`native wake helper did not start: ${(error as Error)?.message ?? 'error'}`);
+    return false;
+  }
+}
+
+function startNode(input: SleeperStart, script: string, wakeFile: string): boolean {
+  try {
+    const child = (input.spawn ?? spawnChild)(input.exe, [script, wakeFile, '--', ...input.args], {
       detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     });
     child.on('error', (error) => input.log?.(`wake helper did not start: ${error.message}`));

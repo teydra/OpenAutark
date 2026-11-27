@@ -20,6 +20,7 @@ export interface WakerDeps {
   localAppData: string | undefined; // process.env.LOCALAPPDATA
   exe: string;
   script: string | undefined; // main/sleeper.ts sleeperScript
+  helper?: string | undefined; // main/sleeper.ts wakeHelperExe: the slim native helper, when this build has it
   dataDir: string;
   args: readonly string[];
   log?(line: string): void;
@@ -31,8 +32,8 @@ export function wakerFile(localAppData: string, dataDir: string): string {
   return path.win32.join(localAppData, ...WAKER_DIR, `${key}.json`);
 }
 
-export function wakerRegistration(deps: Pick<WakerDeps, 'exe' | 'dataDir' | 'args'> & { script: string }): WakerRegistration {
-  return { v: 1, exe: deps.exe, script: deps.script, data: deps.dataDir, args: [...deps.args] };
+export function wakerRegistration(deps: Pick<WakerDeps, 'exe' | 'dataDir' | 'args' | 'helper'> & { script: string }): WakerRegistration {
+  return { v: 1, exe: deps.exe, script: deps.script, data: deps.dataDir, args: [...deps.args], ...(deps.helper ? { helper: deps.helper } : {}) };
 }
 
 /** Writes (on) or removes (off) the registration; nothing outside the installed Windows app. Never throws. */

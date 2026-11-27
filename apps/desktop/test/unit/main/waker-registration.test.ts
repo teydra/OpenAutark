@@ -32,6 +32,13 @@ test('applyWaker: written while on (the broker contract), removed when off; skip
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { v: 1, exe: d.exe, script: d.script, data: d.dataDir, args: ['--company=company-2'] });
   assert.equal(await applyWaker(false, d), 'removed');
   assert.equal(existsSync(file), false);
+  // 0.3.22: a build with the slim native helper names it; the broker uses it when the file is there, else the Node helper
+  const helper = 'C:\\Program Files\\Autark\\resources\\app.asar.unpacked\\resources\\broker\\AutarkWakeHelper.exe';
+  assert.equal(await applyWaker(true, deps(root, { helper })), 'written');
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { v: 1, exe: d.exe, script: d.script, data: d.dataDir, args: ['--company=company-2'], helper });
+  assert.equal(await applyWaker(true, d), 'written');
+  assert.equal(Object.hasOwn(JSON.parse(readFileSync(file, 'utf8')), 'helper'), false, 'no helper key when the build has none');
+  assert.equal(await applyWaker(false, d), 'removed');
   assert.equal(await applyWaker(true, deps(root, { script: undefined })), 'removed', 'a build without the helper registers nothing');
   for (const over of [{ packaged: false }, { testMode: true }, { platform: 'linux' }, { localAppData: undefined }]) {
     assert.equal(await applyWaker(true, deps(root, over)), 'skipped', JSON.stringify(over));
