@@ -36,12 +36,16 @@ test('source rules: it starts the one registered program, through no shell, and 
   assert.match(helper, /EnvironmentVariables\.Remove\("ELECTRON_RUN_AS_NODE"\)/, 'the app starts as the app');
   assert.doesNotMatch(helper, /cmd\.exe|powershell|ShellExecute = true|"runas"/i);
   assert.doesNotMatch(helper, /System\.Text\.RegularExpressions|Regex|ClientWebSocket|System\.Linq|HttpClient|WebClient/, 'no regex, no LINQ, no heavy network classes');
+  // memory: the first System.Net class loads System.Configuration, System.Xml and System.Core (~5 MB private); so do the framework's
+  // hash classes (System.Core since .NET 4.7). The connection is winhttp.dll, the hashes bcrypt.dll.
+  assert.doesNotMatch(helper, /System\.Net|TcpClient|SslStream|\bUri\b|\bSocket\b/, 'no System.Net: winhttp.dll does the connection');
+  assert.doesNotMatch(helper, /SHA(1|256|512)\.Create|SHA\d+Managed|SHA\d+Cng|HMACSHA|RandomNumberGenerator\.Create|System\.Linq/, 'hashes through bcrypt.dll (Digest), not the framework classes');
   assert.doesNotMatch(helper, /LocalSystem|CreateProcessAsUser|WTSQueryUserToken|TOKEN_|Impersonate/, 'it never handles tokens: it runs as the person it was started as');
   assert.doesNotMatch(helper, /Console\.Write|\bkey\b.*Log\(/, 'no key in a log line');
   // what a wake carries: only op, at, nonce and sig are read
   const check = helper.slice(helper.indexOf('public static bool Check('), helper.indexOf('const int MaxSeen'));
   assert.deepEqual([...check.matchAll(/(?:Str|Num)\(o, "(\w+)"\)/g)].map((match) => match[1]).sort(), ['at', 'nonce', 'op', 'sig']);
-  const pair = helper.slice(helper.indexOf('string Pair('), helper.indexOf('// =====', helper.indexOf('string Pair(')));
+  const pair = helper.slice(helper.indexOf('string Pair('), helper.indexOf('public static class Life', helper.indexOf('string Pair(')));
   assert.deepEqual([...pair.matchAll(/(?:Str|Num)\(frame, "(\w+)"\)/g)].map((match) => match[1]).sort(), ['c', 'e', 'from'], 'the frame: sender, ephemeral key and sealed body');
   assert.doesNotMatch(pair, /error|stale|forbidden|REFUSED/, 'nothing is answered to a request that is no real wake');
 });

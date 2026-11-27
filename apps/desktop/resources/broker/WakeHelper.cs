@@ -35,11 +35,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Net.Security;
-using System.Net.Sockets;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -1007,7 +1004,11 @@ namespace AutarkWake
         }
     }
 
-    // =============================================================== WebSocket client (RFC 6455, text frames only)
+    // =============================================================== WebSocket client (WinHTTP)
+    // Why WinHTTP and not System.Net: the first System.Net class (Socket, TcpClient, SslStream) starts the framework's trace
+    // configuration, which loads System.Configuration, System.Xml and System.Core – about 5 MB of private memory in a process that
+    // otherwise never needs them. winhttp.dll does TLS, the HTTP upgrade, the framing, ping/pong (it answers the server's pings and
+    // sends its own every 30 s, which also finds a dead connection) and the close handshake. No proxy, like the Node helper.
 
     public sealed class WsClosed : Exception
     {
@@ -1018,166 +1019,144 @@ namespace AutarkWake
     public sealed class WsClient
     {
         public const int MaxPayload = 70 * 1024;
-        TcpClient tcp;
-        Stream stream;
-        readonly object gate = new object();
-        readonly byte[] mask = new byte[4];
-        readonly RandomNumberGenerator rng = new RNGCryptoServiceProvider();
 
-        /// Connects (TCP 10 s, TLS for wss, HTTP upgrade 10 s); afterwards a read waits at most `readMs`.
+        [DllImport("winhttp.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr WinHttpOpen(string agent, uint accessType, string proxy, string bypass, uint flags);
+        [DllImport("winhttp.dll", SetLastError = true)] static extern bool WinHttpSetTimeouts(IntPtr handle, int resolve, int connect, int send, int receive);
+        [DllImport("winhttp.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr WinHttpConnect(IntPtr session, string server, ushort port, uint reserved);
+        [DllImport("winhttp.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr WinHttpOpenRequest(IntPtr connection, string verb, string path, string version, string referrer, IntPtr acceptTypes, uint flags);
+        [DllImport("winhttp.dll", SetLastError = true)] static extern bool WinHttpSetOption(IntPtr handle, uint option, ref uint value, uint size);
+        [DllImport("winhttp.dll", EntryPoint = "WinHttpSetOption", SetLastError = true)] static extern bool WinHttpSetOptionNone(IntPtr handle, uint option, IntPtr value, uint size);
+        [DllImport("winhttp.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool WinHttpSendRequest(IntPtr request, string headers, uint headersLength, IntPtr optional, uint optionalLength, uint totalLength, IntPtr context);
+        [DllImport("winhttp.dll", SetLastError = true)] static extern bool WinHttpReceiveResponse(IntPtr request, IntPtr reserved);
+        [DllImport("winhttp.dll", SetLastError = true)] static extern bool WinHttpQueryHeaders(IntPtr request, uint level, string name, ref uint buffer, ref uint length, IntPtr index);
+        [DllImport("winhttp.dll", SetLastError = true)] static extern IntPtr WinHttpWebSocketCompleteUpgrade(IntPtr request, IntPtr context);
+        [DllImport("winhttp.dll")] static extern bool WinHttpCloseHandle(IntPtr handle);
+        [DllImport("winhttp.dll")] static extern uint WinHttpWebSocketSend(IntPtr socket, int type, byte[] buffer, uint length);
+        [DllImport("winhttp.dll")] static extern uint WinHttpWebSocketReceive(IntPtr socket, byte[] buffer, uint length, out uint read, out int type);
+        [DllImport("winhttp.dll")] static extern uint WinHttpWebSocketShutdown(IntPtr socket, ushort status, byte[] reason, uint length);
+        [DllImport("winhttp.dll")] static extern uint WinHttpWebSocketQueryCloseStatus(IntPtr socket, out ushort status, byte[] reason, uint length, out uint reasonLength);
+
+        const int Utf8Message = 2, BinaryMessage = 0, CloseBuffer = 4;
+
+        IntPtr session, connection, socket;
+        System.Threading.Timer watchdog;
+        int readMs;
+        volatile bool dead;
+
+        static IOException Fail(string what) { return new IOException("winhttp " + what + " " + Marshal.GetLastWin32Error()); }
+        static bool SetNumber(IntPtr handle, uint option, uint value) { return WinHttpSetOption(handle, option, ref value, 4); }
+
+        /// Connects (resolve, connect, TLS and the HTTP upgrade each take at most 10 s); afterwards the connection is dropped when
+        /// no message arrives for `readMs` (the 30 s keep-alive pings of winhttp.dll find a dead connection sooner).
         public static WsClient Connect(string url, int readMs)
         {
-            Uri uri = new Uri(url);
-            bool secure = uri.Scheme == "wss";
-            int port = uri.Port > 0 ? uri.Port : secure ? 443 : 80;
+            bool secure = url.StartsWith("wss://", StringComparison.Ordinal);
+            if (!secure && !url.StartsWith("ws://", StringComparison.Ordinal)) throw new IOException("address");
+            string rest = url.Substring(secure ? 6 : 5);
+            int slash = rest.IndexOf('/');
+            string authority = slash < 0 ? rest : rest.Substring(0, slash);
+            string path = slash < 0 ? "/" : rest.Substring(slash);
+            string host = authority;
+            int port = secure ? 443 : 80;
+            int colon = authority.LastIndexOf(':');
+            if (colon > 0 && authority.IndexOf(']') < colon)
+            {
+                host = authority.Substring(0, colon);
+                if (!int.TryParse(authority.Substring(colon + 1), NumberStyles.None, CultureInfo.InvariantCulture, out port) || port < 1 || port > 65535) throw new IOException("address");
+            }
+            host = host.Trim('[', ']');
+            if (host.Length == 0) throw new IOException("address");
+
             WsClient client = new WsClient();
+            client.readMs = readMs;
             try
             {
-                client.tcp = new TcpClient();
-                IAsyncResult connecting = client.tcp.BeginConnect(uri.Host, port, null, null);
-                if (!connecting.AsyncWaitHandle.WaitOne(10000)) throw new IOException("connect timeout");
-                client.tcp.EndConnect(connecting);
-                client.tcp.NoDelay = true;
-                client.tcp.ReceiveTimeout = 10000;
-                client.tcp.SendTimeout = 10000;
-                Stream raw = client.tcp.GetStream();
-                if (secure)
+                client.session = WinHttpOpen("AutarkWakeHelper", 1u, null, null, 0);
+                if (client.session == IntPtr.Zero) throw Fail("open");
+                WinHttpSetTimeouts(client.session, 10000, 10000, 10000, 10000);
+                if (secure && !SetNumber(client.session, 84u, 0x800u | 0x2000u)) SetNumber(client.session, 84u, 0x800u); // TLS 1.2 and 1.3 (84 = secure protocols)
+                client.connection = WinHttpConnect(client.session, host, (ushort)port, 0);
+                if (client.connection == IntPtr.Zero) throw Fail("connect");
+                IntPtr request = WinHttpOpenRequest(client.connection, "GET", path, null, null, IntPtr.Zero, secure ? 0x00800000u : 0u);
+                if (request == IntPtr.Zero) throw Fail("request");
+                try
                 {
-                    SslStream ssl = new SslStream(raw, false);
-                    SslProtocols protocols;
-                    try { protocols = SslProtocols.Tls12 | (SslProtocols)12288; ssl.AuthenticateAsClient(uri.Host, null, protocols, false); }
-                    catch (NotSupportedException) { ssl = new SslStream(client.tcp.GetStream(), false); ssl.AuthenticateAsClient(uri.Host, null, SslProtocols.Tls12, false); }
-                    raw = ssl;
+                    if (!WinHttpSetOptionNone(request, 114u, IntPtr.Zero, 0)) throw Fail("upgrade option"); // 114 = upgrade to web socket
+                    if (!WinHttpSendRequest(request, null, 0, IntPtr.Zero, 0, 0, IntPtr.Zero)) throw Fail("send");
+                    if (!WinHttpReceiveResponse(request, IntPtr.Zero)) throw Fail("response");
+                    uint status = 0, size = 4;
+                    if (!WinHttpQueryHeaders(request, 19u | 0x20000000u, null, ref status, ref size, IntPtr.Zero) || status != 101) throw new IOException("upgrade refused");
+                    client.socket = WinHttpWebSocketCompleteUpgrade(request, IntPtr.Zero);
+                    if (client.socket == IntPtr.Zero) throw Fail("upgrade");
                 }
-                client.stream = raw;
-                client.Handshake(uri);
-                client.tcp.ReceiveTimeout = readMs;
+                finally { WinHttpCloseHandle(request); }
+                SetNumber(client.socket, 116u, 30000u); // 116 = keep-alive ping interval
+                SetNumber(client.socket, 6u, 0u);       // 6 = receive timeout: none once connected (the watchdog below and the pings decide)
+                client.watchdog = new System.Threading.Timer(delegate { client.Abort(); }, null, readMs, Timeout.Infinite);
                 return client;
             }
             catch (Exception) { client.Abort(); throw; }
         }
 
-        void Handshake(Uri uri)
-        {
-            byte[] nonce = new byte[16];
-            rng.GetBytes(nonce);
-            string key = Convert.ToBase64String(nonce);
-            string request = "GET " + uri.PathAndQuery + " HTTP/1.1\r\nHost: " + uri.Authority + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + key
-                + "\r\nSec-WebSocket-Version: 13\r\n\r\n";
-            byte[] bytes = Encoding.ASCII.GetBytes(request);
-            stream.Write(bytes, 0, bytes.Length);
-            stream.Flush();
-            StringBuilder head = new StringBuilder();
-            while (head.Length < 8192)
-            {
-                int b = stream.ReadByte();
-                if (b < 0) throw new IOException("closed in handshake");
-                head.Append((char)b);
-                if (head.Length >= 4 && head[head.Length - 4] == '\r' && head[head.Length - 3] == '\n' && head[head.Length - 2] == '\r' && head[head.Length - 1] == '\n') break;
-            }
-            string text = head.ToString();
-            if (!text.StartsWith("HTTP/1.1 101", StringComparison.Ordinal)) throw new IOException("upgrade refused");
-            string accept;
-            accept = Convert.ToBase64String(Digest.Sha1(Encoding.ASCII.GetBytes(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
-            bool ok = false;
-            foreach (string line in text.Split(new string[] { "\r\n" }, StringSplitOptions.None))
-                if (line.StartsWith("sec-websocket-accept:", StringComparison.OrdinalIgnoreCase) && line.Substring(21).Trim() == accept) ok = true;
-            if (!ok) throw new IOException("bad accept");
-        }
-
-        void ReadExact(byte[] buffer, int count)
-        {
-            int got = 0;
-            while (got < count)
-            {
-                int n = stream.Read(buffer, got, count - got);
-                if (n <= 0) throw new IOException("closed");
-                got += n;
-            }
-        }
-
-        /// The next text message (fragments joined) or null for something to ignore (binary, pong); answers pings; throws WsClosed on a
-        /// close frame and IOException on a dead or silent connection (the read timeout is the 90 s watchdog: any frame re-arms it).
+        /// The next text message (fragments joined) or null for something to ignore (binary); winhttp.dll answers pings itself. Throws
+        /// WsClosed on a close frame and IOException on a dead or silent connection (any message re-arms the watchdog).
         public string ReadText()
         {
-            MemoryStream message = null;
-            int messageOpcode = 0;
-            byte[] header = new byte[8];
+            MemoryStream message = new MemoryStream();
+            byte[] buffer = new byte[8192];
             while (true)
             {
-                ReadExact(header, 2);
-                bool fin = (header[0] & 0x80) != 0;
-                int opcode = header[0] & 0x0f;
-                bool masked = (header[1] & 0x80) != 0;
-                long length = header[1] & 0x7f;
-                if ((header[0] & 0x70) != 0 || masked) throw new IOException("protocol");
-                if (length == 126) { ReadExact(header, 2); length = (header[0] << 8) | header[1]; }
-                else if (length == 127)
+                IntPtr handle = socket;
+                if (handle == IntPtr.Zero) throw new IOException("closed");
+                uint read;
+                int type;
+                uint error = WinHttpWebSocketReceive(handle, buffer, (uint)buffer.Length, out read, out type);
+                if (error != 0) throw new IOException(dead ? "ended" : "receive " + error);
+                try { watchdog.Change(readMs, Timeout.Infinite); } catch (Exception) { }
+                if (type == CloseBuffer)
                 {
-                    ReadExact(header, 8);
-                    length = 0;
-                    for (int i = 0; i < 8; i++) length = (length << 8) | header[i];
+                    ushort code;
+                    uint reasonLength;
+                    int status = WinHttpWebSocketQueryCloseStatus(handle, out code, new byte[123], 123, out reasonLength) == 0 ? code : 1005;
+                    throw new WsClosed(status);
                 }
-                if (length < 0 || length > MaxPayload) { Close(1009); throw new IOException("too large"); }
-                byte[] payload = new byte[length];
-                if (length > 0) ReadExact(payload, (int)length);
-                if (opcode >= 8)
-                {
-                    if (!fin || length > 125) throw new IOException("protocol");
-                    if (opcode == 9) { Send(10, payload); return null; }
-                    if (opcode == 10) return null;
-                    if (opcode == 8)
-                    {
-                        int code = payload.Length >= 2 ? (payload[0] << 8) | payload[1] : 1005;
-                        throw new WsClosed(code);
-                    }
-                    throw new IOException("protocol");
-                }
-                if (opcode == 1 || opcode == 2) { if (message != null) throw new IOException("protocol"); message = new MemoryStream(); messageOpcode = opcode; }
-                else if (opcode != 0 || message == null) throw new IOException("protocol");
-                if (message.Length + length > MaxPayload) { Close(1009); throw new IOException("too large"); }
-                message.Write(payload, 0, payload.Length);
-                if (fin) return messageOpcode == 1 ? Encoding.UTF8.GetString(message.ToArray()) : null;
+                if (message.Length + read > MaxPayload) { Close(1009); throw new IOException("too large"); }
+                message.Write(buffer, 0, (int)read);
+                if (type == Utf8Message) return Encoding.UTF8.GetString(message.ToArray());
+                if (type == BinaryMessage) return null;
             }
         }
 
-        public void SendText(string text) { Send(1, Encoding.UTF8.GetBytes(text)); }
-
-        void Send(int opcode, byte[] payload)
+        public void SendText(string text)
         {
-            lock (gate)
-            {
-                if (stream == null) return;
-                MemoryStream frame = new MemoryStream();
-                frame.WriteByte((byte)(0x80 | opcode));
-                if (payload.Length < 126) frame.WriteByte((byte)(0x80 | payload.Length));
-                else if (payload.Length < 65536) { frame.WriteByte(0x80 | 126); frame.WriteByte((byte)(payload.Length >> 8)); frame.WriteByte((byte)payload.Length); }
-                else throw new IOException("too large");
-                rng.GetBytes(mask);
-                frame.Write(mask, 0, 4);
-                byte[] masked = new byte[payload.Length];
-                for (int i = 0; i < payload.Length; i++) masked[i] = (byte)(payload[i] ^ mask[i & 3]);
-                frame.Write(masked, 0, masked.Length);
-                byte[] all = frame.ToArray();
-                stream.Write(all, 0, all.Length);
-                stream.Flush();
-            }
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
+            IntPtr handle = socket;
+            if (handle == IntPtr.Zero) return;
+            uint error = WinHttpWebSocketSend(handle, Utf8Message, bytes, (uint)bytes.Length);
+            if (error != 0) throw new IOException("send " + error);
         }
 
         /// A close frame (best effort), then the connection goes.
         public void Close(int code)
         {
-            try { Send(8, new byte[] { (byte)(code >> 8), (byte)code }); } catch (Exception) { }
+            IntPtr handle = socket;
+            if (handle != IntPtr.Zero) { try { WinHttpWebSocketShutdown(handle, (ushort)code, null, 0); } catch (Exception) { } }
             Abort();
         }
 
         public void Abort()
         {
-            try { if (stream != null) stream.Close(); } catch (Exception) { }
-            try { if (tcp != null) tcp.Close(); } catch (Exception) { }
-            stream = null;
+            dead = true;
+            try { if (watchdog != null) watchdog.Dispose(); } catch (Exception) { }
+            IntPtr s = Interlocked.Exchange(ref socket, IntPtr.Zero);
+            IntPtr c = Interlocked.Exchange(ref connection, IntPtr.Zero);
+            IntPtr o = Interlocked.Exchange(ref session, IntPtr.Zero);
+            if (s != IntPtr.Zero) WinHttpCloseHandle(s);
+            if (c != IntPtr.Zero) WinHttpCloseHandle(c);
+            if (o != IntPtr.Zero) WinHttpCloseHandle(o);
         }
     }
+
 
     // =============================================================== processes (Win32)
 
@@ -1442,7 +1421,7 @@ namespace AutarkWake
                 catch (Exception e)
                 {
                     // the connection is gone: reconnect with backoff (the kind of failure only – never a message that could carry data)
-                    Log("connection ended: " + e.GetType().Name + (e is IOException || e is SocketException || e is AuthenticationException ? ": " + e.Message : ""));
+                    Log("connection ended: " + e.GetType().Name + (e is IOException ? ": " + e.Message : ""));
                 }
                 client = null;
                 if (ended) break;
