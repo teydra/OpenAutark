@@ -455,6 +455,40 @@ namespace AutarkBroker
                 for (int i = 0; i < 4; i++) { n.Started(T0 + i * 60000, 400 + i, false); n.Observe(T0 + i * 60000 + 5000, false); }
                 return Expect(b.UseNative(r), true, "cleared") ?? Expect(n.UseNative(r), true, "node deaths");
             });
+            Case("native helper: a quick end with exit code 0 (app already running, wake taken, taken over, mutex held) is no failure; two quick crashes still are", () =>
+            {
+                WakerRegistration r = new WakerRegistration();
+                r.Helper = @"C:\x\AutarkWakeHelper.exe";
+                // five logons with autostart: the helper ends within seconds, on purpose, every time
+                WakerBackoff intended = new WakerBackoff();
+                for (int i = 0; i < 5; i++) { intended.Started(T0 + i * 60000, 500 + i, true); intended.Observe(T0 + i * 60000 + 5000, false, 0); }
+                string a = Expect(intended.UseNative(r), true, "five intended quick ends");
+                string a2 = Expect(intended.NativeBroken, false, "not broken");
+                string a3 = Expect(intended.Judged, true, "judged once");
+                // an intended end between two crashes clears the record: crash, intended, crash is not two in a row
+                WakerBackoff mixed = new WakerBackoff();
+                mixed.Started(T0, 510, true); mixed.Observe(T0 + 5000, false, 0xC0000005L);
+                mixed.Started(T0 + 60000, 511, true); mixed.Observe(T0 + 65000, false, 0);
+                mixed.Started(T0 + 120000, 512, true); mixed.Observe(T0 + 125000, false, 1);
+                string b = Expect(mixed.UseNative(r), true, "crash, intended end, crash");
+                // two real crashes (an exception: 1; a crash: an NTSTATUS) in a row
+                WakerBackoff crashes = new WakerBackoff();
+                crashes.Started(T0, 520, true); crashes.Observe(T0 + 5000, false, 1);
+                string c = Expect(crashes.UseNative(r), true, "one crash");
+                crashes.Started(T0 + 60000, 521, true); crashes.Observe(T0 + 65000, false, 0xC0000005L);
+                string d = Expect(crashes.UseNative(r), false, "two crashes");
+                // an exit code that could not be read counts as a crash (the old rule)
+                WakerBackoff unknown = new WakerBackoff();
+                unknown.Started(T0, 530, true); unknown.Observe(T0 + 5000, false, WakerBackoff.UnknownExit);
+                unknown.Started(T0 + 60000, 531, true); unknown.Observe(T0 + 65000, false);
+                string e = Expect(unknown.UseNative(r), false, "unknown exit codes");
+                // the general wait after a quick end is unchanged by the code: no hot restart loop for a helper that ends at once
+                string f = Expect(intended.QuickDeaths, 5, "the wait still grows");
+                // a start that fails stays a failure
+                WakerBackoff failedStarts = new WakerBackoff();
+                failedStarts.Failed(T0, true); failedStarts.Failed(T0 + 60000, true);
+                return a ?? a2 ?? a3 ?? b ?? c ?? d ?? e ?? f ?? Expect(failedStarts.UseNative(r), false, "two failed starts");
+            });
             Case("native helper command line: helper, wake.json, --app exe, --, the registered args – nothing else", () =>
             {
                 string line = WakerCommandLine.BuildNative(@"C:\Program Files\Autark\AutarkWakeHelper.exe", @"C:\Program Files\Autark\Autark.exe", @"C:\Users\x\Roaming\Autark\wake.json",

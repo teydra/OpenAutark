@@ -248,9 +248,20 @@ namespace AutarkBroker
 
         public void Failed(long nowMs, bool native) { LastStartMs = nowMs; HelperPid = 0; judged = true; QuickDeaths++; lastNative = native; Judge(true); }
 
+        /// The last start has been judged (its helper lived a minute, or is gone): nothing more to learn from its process.
+        public bool Judged { get { return judged; } }
+
+        public void Observe(long nowMs, bool helperAlive) { Observe(nowMs, helperAlive, UnknownExit); }
+
+        /// The exit code of a helper that is gone and whose code could not be read (killed from outside, no handle): counts as a crash.
+        public const long UnknownExit = -1;
+
         /// Called at every tick with whether the helper started last still lives: it lived a minute -> the count resets; it was gone
-        /// before -> one more quick death (judged once per start).
-        public void Observe(long nowMs, bool helperAlive)
+        /// before -> one more quick death (judged once per start). `exitCode` is the gone helper's exit code (UnknownExit when not
+        /// known): the native helper ends at once ON PURPOSE with 0 – the app already runs (every logon with autostart), a wake was
+        /// taken, another helper took over, its mutex is held – and such an end is no failure: it does not count towards NativeBroken
+        /// (the general wait after a quick end is unchanged).
+        public void Observe(long nowMs, bool helperAlive, long exitCode)
         {
             if (judged || LastStartMs <= 0) return;
             long age = nowMs - LastStartMs;
@@ -261,7 +272,7 @@ namespace AutarkBroker
             }
             judged = true;
             if (age < QuickMs) QuickDeaths++; else QuickDeaths = 0;
-            Judge(age < QuickMs);
+            Judge(age < QuickMs && exitCode != 0);
         }
     }
 
@@ -529,9 +540,11 @@ namespace AutarkBroker
             finally { DestroyEnvironmentBlock(block); }
         }
 
-        /// CreateProcessAsUser with the person's primary token and a Unicode environment block; returns the new process id.
-        public static int Start(IntPtr userToken, string exe, string commandLine, string currentDirectory, string desktop, string environmentBlock)
+        /// CreateProcessAsUser with the person's primary token and a Unicode environment block; returns the new process id and (in
+        /// `process`) the process handle, which the caller closes (WakerNative.Close): it keeps the exit code readable after the end.
+        public static int Start(IntPtr userToken, string exe, string commandLine, string currentDirectory, string desktop, string environmentBlock, out IntPtr process)
         {
+            process = IntPtr.Zero;
             IntPtr environment = Marshal.StringToHGlobalUni(environmentBlock);
             try
             {
@@ -543,10 +556,18 @@ namespace AutarkBroker
                     environment, currentDirectory, ref startup, out info))
                     throw new Win32Exception();
                 CloseHandle(info.hThread);
-                CloseHandle(info.hProcess);
+                process = info.hProcess;
                 return info.dwProcessId;
             }
             finally { Marshal.FreeHGlobal(environment); }
+        }
+
+        /// The exit code of a process that has ended (by its handle), else WakerBackoff.UnknownExit (it still runs, or cannot be asked).
+        public static long ExitCodeOf(IntPtr process)
+        {
+            uint code;
+            if (process == IntPtr.Zero || !GetExitCodeProcess(process, out code) || code == STILL_ACTIVE) return WakerBackoff.UnknownExit;
+            return code;
         }
     }
 
@@ -568,6 +589,8 @@ namespace AutarkBroker
         readonly object gate = new object();
         readonly Dictionary<string, WakerBackoff> backoffs = new Dictionary<string, WakerBackoff>();
         readonly Dictionary<string, string> notes = new Dictionary<string, string>();
+        /// Per registration: the process handle of the helper started last, until its start is judged (its exit code is read from it).
+        readonly Dictionary<string, IntPtr> handles = new Dictionary<string, IntPtr>();
         System.Threading.Timer timer;
         bool stopped;
 
@@ -588,6 +611,7 @@ namespace AutarkBroker
             {
                 stopped = true;
                 if (timer != null) { timer.Dispose(); timer = null; }
+                foreach (string key in new List<string>(handles.Keys)) Release(key);
             }
         }
 
@@ -634,7 +658,11 @@ namespace AutarkBroker
                     facts.HelperName = registration.Helper.Length > 0 ? Path.GetFileName(registration.Helper) : "";
                     facts.ImageOf = WakerNative.ImageOf;
                     long now = NowMs();
-                    backoff.Observe(now, facts.IsHelper(backoff.HelperPid));
+                    IntPtr started;
+                    handles.TryGetValue(entry.FileName, out started);
+                    bool helperAlive = facts.IsHelper(backoff.HelperPid);
+                    backoff.Observe(now, helperAlive, helperAlive ? WakerBackoff.UnknownExit : WakerNative.ExitCodeOf(started));
+                    if (backoff.Judged) Release(entry.FileName); // judged: the helper's handle has told what it could
                     facts.OwnHelperPid = backoff.HelperPid;
                     if (!installer.HasValue) installer = InstallerRunning(session);
                     facts.InstallerRunning = installer.Value;
@@ -650,7 +678,10 @@ namespace AutarkBroker
                             ? WakerCommandLine.BuildNative(registration.Helper, registration.Exe, registration.WakeFile, registration.Args)
                             : WakerCommandLine.Build(registration.Exe, registration.Script, registration.WakeFile, registration.Args);
                         string block = WakerEnvironment.Build(WakerNative.UserEnvironment(token), !native);
-                        int pid = WakerNative.Start(token, program, command, Path.GetDirectoryName(registration.Exe), "winsta0\\default", block);
+                        IntPtr process;
+                        int pid = WakerNative.Start(token, program, command, Path.GetDirectoryName(registration.Exe), "winsta0\\default", block, out process);
+                        Release(entry.FileName);
+                        handles[entry.FileName] = process;
                         backoff.Started(now, pid, native);
                         notes[entry.FileName] = "started";
                         Program.Log("waker " + entry.FileName + " started " + (native ? "native" : "node") + " helper " + pid + " in session " + session);
@@ -671,9 +702,19 @@ namespace AutarkBroker
             }
         }
 
+        /// Closes the process handle kept for a registration's last helper (it serves only to read the exit code once).
+        void Release(string key)
+        {
+            IntPtr handle;
+            if (!handles.TryGetValue(key, out handle)) return;
+            handles.Remove(key);
+            WakerNative.Close(handle);
+        }
+
         /// Removed registrations drop their memory: switching the waker off and on starts clean.
         void Forget(HashSet<string> seen)
         {
+            foreach (string key in new List<string>(handles.Keys)) if (!seen.Contains(key)) Release(key);
             foreach (string key in new List<string>(backoffs.Keys)) if (!seen.Contains(key)) backoffs.Remove(key);
             foreach (string key in new List<string>(notes.Keys)) if (key.Length > 0 && !seen.Contains(key)) notes.Remove(key);
         }
