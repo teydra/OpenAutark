@@ -51,7 +51,7 @@ jobs:
           $relay = '${{ inputs.relay }}'; if (-not $relay) { $relay = 'wss://telecoding-relay.onrender.com/autark' }
           node test/unit/computer/wake-helper-cs/measure.mjs --exe resources/broker/AutarkWakeHelper.exe --relay $relay --minutes $minutes --out ../../wake-helper-memory.json | Tee-Object -FilePath ../../wake-helper-memory.md
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Where the memory goes (90 s runs: plain-ws stand-in server vs real TLS, GC settings)
+      - name: Where the memory goes (90 s runs - plain-ws stand-in server vs real TLS, GC settings)
         shell: pwsh
         continue-on-error: true
         run: |
