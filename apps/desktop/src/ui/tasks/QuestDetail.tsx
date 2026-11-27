@@ -24,14 +24,14 @@ import { openDetail, type PageScope } from './page-state.ts';
 import { useWeekTime } from './quest-runs.ts';
 import { taskMenu } from './task-menu.ts';
 import { TitleEdit } from './TaskEdit.tsx';
-import { asView, DetailTop, HistoryHead, RunAgain } from './TodoDetail.tsx';
+import { asView, DetailTop, HistoryHead, RunAgain, TaskAge } from './TodoDetail.tsx';
 import { waitingLine } from './waiting.ts';
 import { doneText, minutesText, whenOf } from './when-text.ts';
 
 function sub(task: Task, now: number): string {
   if (task.status === 'done') return task.completedAt ? doneText(task.completedAt, now, dayZone.value) : 'done';
   if (task.status === 'dropped') return 'dropped';
-  return waitingLine(task, agentName, now) ?? whenOf(task, now, dayZone.value)?.text ?? '';
+  return waitingLine(task, agentName, now, dayZone.value) ?? whenOf(task, now, dayZone.value)?.text ?? '';
 }
 
 function MiniRow(props: { task: Task; who: string; scope: PageScope; now: number }) {
@@ -74,6 +74,7 @@ export function QuestDetail(props: { scope: PageScope; quest: Task; todos: reado
       <DetailTop scope={props.scope} quest={quest} label={`Quest · ${lead} ${lead === 'You' ? 'lead' : 'leads'}${closed ? ` · ${quest.status}` : ''}`} menu={build} onClose={props.onClose} />
       <div class="detail-body" {...menu}>
         <TitleEdit task={quest} label={quest.title} />
+        <TaskAge task={quest} now={now} />
         {quest.doneWhen && <p class="quest-done-when"><b>Done when:</b> {quest.doneWhen}</p>}
         <div class="quest-progress">
           <span class="quest-stats">
