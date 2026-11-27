@@ -2,7 +2,7 @@
 // a call runs: tools/registry.ts for this company's agents on this PC (and, for a call into another company of this PC, as
 // this company's gate for its own agent), devices/tools.ts for a linked PC's call and tools/builtin/companies.ts for another
 // company's call (the caller's agent, this company's settings). By name and arguments first, then by category:
-// files.read/list/search → read (the path; a search without one reaches the home folder), files.write → write,
+// files.read/list/search → read (the path; a search without one reaches the home folder), files.write and files.delete → write,
 // shell.exec → commands and write for its folder, computer.* → computer (the app the outputs showed), phone.* → phone,
 // browser.* / web.* → web (25.11.2026, webNeed: a search, the site of a URL it opens, a step in an open tab, or – eval, a
 // stored link – no site), agents.create/archive/update of another agent and spaces.save → team, modes.save, app.install,
@@ -71,7 +71,10 @@ export function needsOf(tool: Pick<ToolDef, 'name' | 'category'>, args: Record<s
   const needs: Need[] = [];
   if (READ_TOOLS.has(name)) needs.push({ capability: 'read', path: str(args.path) ?? (name === 'files.search' ? os.homedir() : undefined) });
   else if (name === 'files.write') needs.push({ capability: 'write', path: str(args.path) });
-  else if (name === 'shell.exec') {
+  else if (name === 'files.delete') { // task_7ja3mcr6: write for each path it deletes (a dry run too: it reads where it would write)
+    const named = [args.path, ...(Array.isArray(args.paths) ? args.paths : [])].map(str).filter((one): one is string => Boolean(one));
+    needs.push(...(named.length ? named.map((one) => ({ capability: 'write' as const, path: one })) : [{ capability: 'write' as const }]));
+  } else if (name === 'shell.exec') {
     needs.push({ capability: 'commands' });
     const cwd = str(args.cwd);
     if (cwd) needs.push({ capability: 'write', path: cwd });

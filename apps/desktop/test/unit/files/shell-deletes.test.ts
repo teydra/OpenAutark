@@ -1,0 +1,161 @@
+// task_7ja3mcr6: the delete guard of shell.exec (files/shell-deletes.ts) – recursive deletes read as PowerShell, cmd.exe and
+// sh read them, targets checked against the kept folders (files/delete-zones.ts). The incident line of 27.11.2026 is
+// refused; the cleanups agents run every day pass. The pure readings use win32 and POSIX paths on any OS; the shell.exec
+// runs at the end use a fake shell (and on Windows the real one) on throwaway folders with spaces.
+// Owns: these assertions only. Never: deletes outside its own temp folder.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { deleteZones } from '../../../src/runtime/files/delete-zones.ts';
+import { recursiveDeletes, shellDeleteRefusal } from '../../../src/runtime/files/shell-deletes.ts';
+import { fileTools, type ShellSpawn } from '../../../src/runtime/tools/builtin/files.ts';
+import type { ToolContext, ToolOutput } from '../../../src/runtime/tools/types.ts';
+
+const W_HOME = 'C:\\Users\\H';
+const W_FIRST = `${W_HOME}\\AppData\\Roaming\\X`;
+const W_DIR = `${W_FIRST} Companies`;
+const W_DATA = `${W_DIR}\\company-2`;
+const W_WS = `${W_DATA}\\workspace`;
+const W_ENV = { APPDATA: `${W_HOME}\\AppData\\Roaming`, LOCALAPPDATA: `${W_HOME}\\AppData\\Local` };
+const winZones = deleteZones({ platform: 'win32', data: W_DATA, workspace: W_WS, temp: `${W_DATA}\\tmp`, companies: { first: W_FIRST, dir: W_DIR }, home: W_HOME, env: W_ENV, tmp: `${W_HOME}\\AppData\\Local\\Temp` });
+const win = (command: string, cwd = W_WS) => shellDeleteRefusal(command, { platform: 'win32', cwd, env: W_ENV, home: W_HOME }, winZones);
+
+const P_HOME = '/home/ada';
+const P_FIRST = `${P_HOME}/.config/X`;
+const P_DIR = `${P_FIRST} Companies`;
+const P_DATA = `${P_DIR}/company-2`;
+const P_WS = `${P_DATA}/workspace`;
+const P_ENV = { HOME: P_HOME };
+const posixZones = deleteZones({ platform: 'linux', data: P_DATA, workspace: P_WS, temp: `${P_DATA}/tmp`, companies: { first: P_FIRST, dir: P_DIR }, home: P_HOME, env: P_ENV, tmp: '/tmp' });
+const posix = (command: string, cwd = P_WS) => shellDeleteRefusal(command, { platform: 'linux', cwd, env: P_ENV, home: P_HOME }, posixZones);
+
+test('shell guard: the incident line of 27.11.2026 – cmd /c "rd /s /q <unquoted path with a space>" – is refused before it runs', () => {
+  const line = `cmd /c "rd /s /q ${W_WS}\\old wt"`;
+  const targets = recursiveDeletes(line, { platform: 'win32', cwd: W_WS, env: W_ENV, home: W_HOME }).map((hit) => hit.target);
+  assert.deepEqual(targets, [W_FIRST, `${W_WS}\\Companies\\company-2\\workspace\\old`, `${W_WS}\\wt`], 'cmd splits the path at its spaces, as on 27.11.');
+  const refused = win(line);
+  assert.match(refused ?? '', /^BLOCKED – not executed\./);
+  assert.match(refused ?? '', /X is the first company's data folder/);
+  assert.match(refused ?? '', /unquoted path splits at its spaces/);
+  assert.match(refused ?? '', /files\.delete/);
+  assert.ok(win(`cmd /c rd /s /q ${W_WS}\\old wt`), 'unquoted in PowerShell too');
+  assert.ok(win(`cmd.exe /d /c "cd /d ${W_WS} && rmdir /S /Q ${W_DIR}\\company-2\\workspace\\x"`), 'rmdir after cd /d, upper-case switches');
+});
+
+test('shell guard: the cleanups agents run pass – quoted rd, Remove-Item -Recurse in the workspace, a worktree, git', () => {
+  for (const line of [
+    `cmd /c rd /s /q "${W_WS}\\old wt"`,
+    `Remove-Item -Recurse -Force -LiteralPath "${W_WS}\\delete-guard\\apps\\desktop\\node_modules"`,
+    `Remove-Item -LiteralPath '${W_WS}\\a b\\dist' -Recurse -Force -ErrorAction SilentlyContinue`,
+    `cd "${W_WS}\\delete-guard"; Remove-Item -Recurse -Force .\\dist, .\\out`,
+    `Remove-Item -Recurse -Force "${W_WS}\\wt\\*"`,
+    `Remove-Item -Recurse -Force "${W_DATA}\\tmp\\*"`,
+    `git worktree remove "${W_WS}\\delete-guard"; git branch -D feature/x`,
+    `Remove-Item -Recurse -Force "$env:LOCALAPPDATA\\Temp\\wf-test-123"`,
+    `Remove-Item -Recurse ${W_FIRST} -WhatIf`,
+    `Remove-Item ${W_FIRST}\\notes.txt`,
+  ]) assert.equal(win(line), undefined, line);
+});
+
+test('shell guard: PowerShell forms that reach a kept folder are refused', () => {
+  for (const line of [
+    `Remove-Item -Recurse -Force $env:APPDATA\\X`,
+    `rm -rf ${W_FIRST} Companies\\company-2\\workspace\\x`,
+    `$p = '${W_FIRST}'; Remove-Item $p -Recurse -Force`,
+    `$p='${W_DATA}'; ri -r -fo $p`,
+    `cd "${W_WS}"; cd ..; Remove-Item -Recurse -Force .`,
+    `cd "${W_WS}"; rd /s /q ..\\..\\company-2`,
+    `Get-ChildItem ${W_FIRST} | Remove-Item -Recurse -Force`,
+    `Get-ChildItem -Recurse "${W_DIR}" | Remove-Item -Force`,
+    `Remove-Item -Recurse -Force "${W_WS}\\*"`,
+    `cmd /c "rd /s /q "${W_WS}\\old wt""`, // PowerShell itself ends the argument at the space after "…\X", so cmd gets "…\X" as a target
+    `Remove-Item -Recurse -Force ~\\AppData`,
+    `pwsh -NoProfile -Command "Remove-Item -Recurse -Force '${W_FIRST}'"`,
+    `powershell -NoProfile -EncodedCommand ${Buffer.from(`Remove-Item -Recurse -Force '${W_DATA}'`, 'utf16le').toString('base64')}`,
+    `[IO.Directory]::Delete('${W_FIRST}', $true)`,
+    `Remove-Item -Recurse -Force "$env:LOCALAPPDATA\\Google\\Chrome\\User Data\\Default"`,
+    `cmd /c "del /s /q %APPDATA%\\X\\*"`,
+    `if (Test-Path x) { Remove-Item -Recurse -Force "${W_HOME}" }`,
+  ]) assert.ok(win(line), line);
+});
+
+test('shell guard: sh forms on macOS and Linux – rm -rf, find -delete, bash -c – are read the same way', () => {
+  for (const line of [
+    `rm -rf ${P_DIR}/company-2/workspace/x`,
+    `rm -r -- ~/.mozilla`,
+    `sudo rm -Rf "${P_DATA}"`,
+    `rm -rf ~/*`,
+    `bash -c 'rm -rf "$HOME/.config/X"'`,
+    `find ${P_FIRST} -name '*.log' -delete`,
+    `D="${P_FIRST}"; rm -rf "$D"`,
+  ]) assert.ok(posix(line), line);
+  for (const line of [
+    `rm -rf "${P_WS}/old wt"`,
+    `cd ~/Workforce/wt && rm -rf node_modules dist`,
+    `rm -rf ./build/*`,
+    `rm -f ${P_FIRST}/notes.txt`,
+    `echo "rm -rf ${P_FIRST}"`,
+  ]) assert.equal(posix(line), undefined, line);
+});
+
+// ---- shell.exec itself: the guard runs before the shell starts
+
+function world(t: { after(fn: () => void): void }) {
+  const base = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'wf-shell-guard-'))); // the space is in "X Companies"
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const first = path.join(base, 'X');
+  const companies = path.join(base, 'X Companies');
+  const workspace = path.join(companies, 'company-2', 'workspace');
+  mkdirSync(first, { recursive: true });
+  mkdirSync(workspace, { recursive: true });
+  writeFileSync(path.join(first, 'sentinel.txt'), 'stays');
+  const ctx = {
+    agent: { id: 'ag_a', name: 'Ada' }, runId: 'r1', mode: 'general', signal: new AbortController().signal, status: () => undefined,
+    services: { paths: { workspace, temp: path.join(companies, 'company-2', 'tmp') }, host: { app: { companies: { first, dir: companies }, packaged: false, executable: process.execPath, resourcesDir: base, dataDir: path.join(companies, 'company-2'), version: '0' } }, secrets: { redact: (value: string) => value } },
+  } as unknown as ToolContext;
+  return { base, first, workspace, ctx };
+}
+
+const textOf = (out: ToolOutput) => (out.content[0].type === 'text' ? out.content[0].text : '');
+
+test('shell.exec: the incident line never reaches the shell; an allowed rd/Remove-Item line does', async (t) => {
+  const w = world(t);
+  const ran: string[] = [];
+  const shell: ShellSpawn = (command) => {
+    ran.push(command);
+    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: null, kill: () => true });
+    setImmediate(() => child.emit('close', 0));
+    return child as unknown as ReturnType<ShellSpawn>;
+  };
+  const exec = fileTools({ shell }).find((tool) => tool.name === 'shell.exec')!;
+  const win32 = process.platform === 'win32';
+  const incident = win32 ? `cmd /c "rd /s /q ${w.workspace}\\old wt"` : `rm -rf ${w.workspace}/old wt`;
+  const blocked = await exec.run({ command: incident }, w.ctx);
+  assert.equal(blocked.isError, true);
+  assert.match(textOf(blocked), /^BLOCKED – not executed\./);
+  assert.deepEqual(ran, [], 'the shell never started');
+  const allowed = win32 ? `cmd /c rd /s /q "${w.workspace}\\old wt"; Remove-Item -Recurse -Force -LiteralPath "${w.workspace}\\dist"` : `rm -rf "${w.workspace}/old wt" "${w.workspace}/dist"`;
+  const passed = await exec.run({ command: allowed }, w.ctx);
+  assert.notEqual(passed.isError, true, textOf(passed));
+  assert.deepEqual(ran, [allowed]);
+});
+
+test('shell.exec on Windows, real shell: the quoted rd deletes the worktree; the incident line leaves the bait whole', { skip: process.platform !== 'win32' }, async (t) => {
+  const w = world(t);
+  const exec = fileTools().find((tool) => tool.name === 'shell.exec')!;
+  const tree = path.join(w.workspace, 'old wt');
+  mkdirSync(path.join(tree, 'node_modules', 'a b'), { recursive: true });
+  writeFileSync(path.join(tree, 'node_modules', 'a b', 'f.txt'), 'x');
+  const blocked = await exec.run({ command: `cmd /c "rd /s /q ${tree}"` }, w.ctx);
+  assert.match(textOf(blocked), /^BLOCKED/);
+  assert.equal(readFileSync(path.join(w.first, 'sentinel.txt'), 'utf8'), 'stays');
+  assert.ok(existsSync(tree));
+  const done = await exec.run({ command: `cmd /c rd /s /q "${tree}"` }, w.ctx);
+  assert.notEqual(done.isError, true, textOf(done));
+  assert.ok(!existsSync(tree), 'the quoted rd ran and deleted the worktree');
+  assert.equal(readFileSync(path.join(w.first, 'sentinel.txt'), 'utf8'), 'stays');
+});
