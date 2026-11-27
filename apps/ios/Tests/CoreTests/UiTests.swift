@@ -285,7 +285,7 @@ final class UiUpdateTests: XCTestCase {
         }
         XCTAssertNotEqual(UiUpdate.publicKeys[0], UiUpdate.publicKeys[1])
         XCTAssertEqual(UiUpdate.decodedKeys(["short", "", "!!!!"]).count, 0, "a key that does not decode to 32 bytes counts for nothing")
-        XCTAssertTrue(UiUpdate.base.hasPrefix("https://github.com/teydra/OpenAutark/releases/download/") && UiUpdate.base.hasSuffix("/"))
+        XCTAssertEqual(UiUpdate.base, "https://github.com/teydra/OpenAutark/releases/latest/download/", "the latest versioned release's assets, as Android's UiUpdate.BASE")
         XCTAssertEqual(UiUpdate.shell, 1)
     }
 
