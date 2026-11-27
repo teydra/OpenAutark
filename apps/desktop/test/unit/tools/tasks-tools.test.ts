@@ -205,6 +205,33 @@ test('tasks.list: my quests; one quest whole with its to-dos and thread; the ope
   assert.match((await h.run('tasks.list', { done: true, who: 'all' })).text, /Sign on the phone · in task_\S+ – Signed/);
 });
 
+test('tasks.list: every view shows the quest\'s next note, whoever set it – who=all, search, the id view and my own list (27.11.2026: always "no next note")', async () => {
+  const h = setup();
+  const quest = h.tasks.create({ kind: 'quest', title: 'Windows signing', doneWhen: 'Every installer is signed', assigneeKind: 'agent', assigneeId: 'ag_ida', createdBy: HUMAN_ID });
+  const build = h.tasks.create({ title: 'Release build with signing', parentId: quest.id, assigneeKind: 'agent', assigneeId: 'ag_jonas', createdBy: 'ag_ida' });
+  const bare = h.tasks.create({ kind: 'quest', title: 'Blog relaunch', assigneeKind: 'agent', assigneeId: 'ag_ida', createdBy: HUMAN_ID });
+  h.tasks.create({ title: 'Draft the post', parentId: bare.id, assigneeKind: 'agent', assigneeId: 'ag_ida', createdBy: 'ag_ida' });
+  // Jonas's note on his to-do (the earlier one) and Ida's on the quest; a paused one and one about another task do not count.
+  h.scheduler.create({ ownerId: 'ag_jonas', kind: 'reminder', taskId: build.id, title: 'Build', spec: { at: Date.parse('2026-10-18T09:00:00Z') }, payload: { note: 'Look at the build' } });
+  h.scheduler.create({ ownerId: 'ag_ida', kind: 'reminder', taskId: quest.id, title: 'Look', spec: { at: Date.parse('2026-10-19T09:00:00Z') }, payload: { note: 'Look at Certum' } });
+  const paused = h.scheduler.create({ ownerId: 'ag_jonas', kind: 'reminder', taskId: bare.id, title: 'Old', spec: { at: Date.parse('2026-10-18T08:00:00Z') }, payload: { note: 'Old' } });
+  h.scheduler.update(paused.id, { active: false }, 'ag_jonas');
+
+  const jonasNote = 'next note Sun 18 Oct 09:00 (Jonas\'s)';
+  const all = (await h.run('tasks.list', { who: 'all' })).text;
+  assert.ok(all.includes(`Windows signing · ${quest.id} · Jonas 1 · ${jonasNote}`), all);
+  assert.ok(all.includes(`Blog relaunch · ${bare.id} · me: 1 · no next note`), all);
+  const found = (await h.run('tasks.list', { search: 'Windows signing' })).text;
+  assert.ok(found.includes(`Windows signing · ${quest.id} · Jonas 1 · ${jonasNote}`), found);
+  assert.ok((await h.run('tasks.list', {})).text.includes(`Windows signing · ${quest.id} · Jonas 1 · ${jonasNote}`), 'my own list too: a colleague\'s note counts');
+  const whole = (await h.run('tasks.list', { id: quest.id })).text;
+  assert.ok(whole.includes('\nNext note Sun 18 Oct 09:00 (Jonas\'s).\n'), whole);
+  assert.ok((await h.run('tasks.list', { id: build.id })).text.includes(`\nNext note Sun 18 Oct 09:00 (Jonas's) (on ${quest.id}).\n`), 'a to-do shows its quest\'s next note');
+  assert.ok((await h.run('tasks.list', { id: bare.id })).text.includes('\nNo next note.\n'), 'a paused note is no next note');
+  // Jonas reads Ida's quest: his own note stands without a name.
+  assert.ok((await h.run('tasks.list', { who: 'all' }, h.ctx(undefined, 'ag_jonas'))).text.includes(`Windows signing · ${quest.id} · Ida's · me: 1 · next note Sun 18 Oct 09:00 ·`));
+});
+
 test('R2.13: a close is quiet and carries its side work on request; its follow-ups are what I set up in this turn; priority on add and update', async () => {
   const h = setup();
   const given = h.tasks.create({ title: 'Fix the login', assigneeKind: 'agent', assigneeId: 'ag_ida', createdBy: 'ag_jonas' });
