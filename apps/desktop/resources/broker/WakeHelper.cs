@@ -11,6 +11,9 @@
 // then it takes one kind of message: a sealed 'pair' request from a pinned key that carries a wake – fresh (60 s), once per nonce,
 // with the pin's Ed25519 signature over this helper's key, this session's box key, the time and the nonce (wf-wake-v1|...).
 // Command line: AutarkWakeHelper.exe <data>\wake.json --app <path to Autark.exe> -- <the app's own start arguments>
+// Exit code (the broker's Waker.cs reads it): 0 for every end that is meant – the app already runs (every logon with autostart), a wake
+// was taken and the app started, another helper took over (4009), the single-instance mutex is held, nothing to wait for (no wake file,
+// no app) – and 1 for an exception. Only a code other than 0 counts as a failure of the helper (two quick ones: back to the Node helper).
 //
 // What a wake can do (Konrad's rules, 27.11.2026):
 //  1. Exactly one thing: start THE registered app (--app, set by the broker from the registration) for the signed-in person,
@@ -20,9 +23,13 @@
 //     (a burst of 6, then one per 5 s), and after one accepted wake nothing else is taken for 30 s.
 //  3. Windows only. Mac and Linux have no broker and keep the Node helper (launchd / systemd --user); the broker falls back to
 //     the Node helper when this program is missing or does not start.
-// Memory: no JSON/crypto package, no ClientWebSocket, no regex, no LINQ; one thread reads the socket (read timeout 90 s = the old
-// watchdog: the server pings every 30 s), a timer for due work, a directory watch for run-state.json. Ed25519/X25519 are done with
-// System.Numerics.BigInteger (the .NET Framework has neither), AES-256-GCM with CNG, the rest is the framework's SHA-2/HMAC.
+// Memory: no JSON/crypto package, no ClientWebSocket, no regex, no LINQ; one thread reads the socket, a timer for due work, a
+// directory watch for run-state.json. Ed25519/X25519 are done with System.Numerics.BigInteger (the .NET Framework has neither),
+// AES-256-GCM, SHA-1/256 and HMAC with CNG (bcrypt.dll).
+// The watchdog: a connection that delivers no message for 90 s is dropped. The server's own protocol pings (every 30 s) do NOT count:
+// winhttp.dll answers them and WinHttpWebSocketReceive never reports them. So every 60 s the helper asks the server something it
+// answers (a 'find' of its own Remote ID: 'found' without entries) and that answer is the message that re-arms the watchdog; a
+// server that falls silent is still noticed after 90 s. Test switches (timing only): AUTARK_WAKE_WATCHDOG_MS, AUTARK_WAKE_PROBE_MS.
 // Ed25519 and X25519 here are not constant-time: the helper signs only its own hello at the meeting server and never a message
 // chosen by someone else's timing.
 //
@@ -710,6 +717,23 @@ namespace AutarkWake
             return B64.Hex(Digest.Sha256(pub));
         }
 
+        /// The 9-digit Remote ID of a fingerprint (apps/desktop/src/runtime/remote/id.ts remoteIdOf: 8 digits of its hash + a Luhn check digit).
+        public static string RemoteIdOf(string fingerprint)
+        {
+            byte[] d = Digest.Sha256(Encoding.UTF8.GetBytes("wf-remote-id-v1|" + fingerprint.ToLowerInvariant()));
+            ulong n = ((ulong)d[0] << 24 | (ulong)d[1] << 16 | (ulong)d[2] << 8 | d[3]) * 4UL + (ulong)(d[4] & 3);
+            string payload = n.ToString(CultureInfo.InvariantCulture).PadLeft(10, '0');
+            payload = payload.Substring(payload.Length - 8);
+            int sum = 0;
+            for (int i = 0; i < payload.Length; i++)
+            {
+                int digit = payload[payload.Length - 1 - i] - '0';
+                if (i % 2 == 0) { digit *= 2; if (digit > 9) digit -= 9; }
+                sum += digit;
+            }
+            return payload + ((10 - sum % 10) % 10).ToString(CultureInfo.InvariantCulture);
+        }
+
         static bool IsFp(string s)
         {
             if (s == null || s.Length != 64) return false;
@@ -874,8 +898,9 @@ namespace AutarkWake
         PairBox box = new PairBox();
         long lastWake = -1;
 
-        public bool Ready;
+        public volatile bool Ready;
         public int Dropped;
+        int probeRef;
 
         public WakeCore(WakeFile file, Func<long> now, Action<string> log) { this.file = file; this.now = now; this.log = log ?? (s => { }); }
 
@@ -883,6 +908,14 @@ namespace AutarkWake
         public void NewSession() { box = new PairBox(); Ready = false; }
 
         public string BoxText { get { return box.PubText; } }
+
+        /// A message the meeting server answers at once and without a side effect (relay.ts find: the asker itself is never listed, so
+        /// 'found' comes back empty; a refused one comes back as 'error'): a 'find' of this helper's own Remote ID. Any answer re-arms the watchdog.
+        public string ProbeFrame()
+        {
+            int reference = Interlocked.Increment(ref probeRef) & 0x3fffffff;
+            return "{\"t\":\"find\",\"ref\":" + reference.ToString(CultureInfo.InvariantCulture) + ",\"id\":\"" + WakeRules.RemoteIdOf(file.Fp) + "\"}";
+        }
 
         string Sign(string text) { return B64.Enc(Ed25519.Sign(file.Seed, Encoding.UTF8.GetBytes(text))); }
 
@@ -1042,12 +1075,14 @@ namespace AutarkWake
         System.Threading.Timer watchdog;
         int readMs;
         volatile bool dead;
+        readonly object sendGate = new object();
 
         static IOException Fail(string what) { return new IOException("winhttp " + what + " " + Marshal.GetLastWin32Error()); }
         static bool SetNumber(IntPtr handle, uint option, uint value) { return WinHttpSetOption(handle, option, ref value, 4); }
 
         /// Connects (resolve, connect, TLS and the HTTP upgrade each take at most 10 s); afterwards the connection is dropped when
-        /// no message arrives for `readMs` (the 30 s keep-alive pings of winhttp.dll find a dead connection sooner).
+        /// no message arrives for `readMs` (protocol pings do not count – see the watchdog note at the top; the 30 s keep-alive pings
+        /// of winhttp.dll find a dead connection sooner).
         public static WsClient Connect(string url, int readMs)
         {
             bool secure = url.StartsWith("wss://", StringComparison.Ordinal);
@@ -1099,7 +1134,8 @@ namespace AutarkWake
         }
 
         /// The next text message (fragments joined) or null for something to ignore (binary); winhttp.dll answers pings itself. Throws
-        /// WsClosed on a close frame and IOException on a dead or silent connection (any message re-arms the watchdog).
+        /// WsClosed on a close frame and IOException on a dead or silent connection (any message re-arms the watchdog; a protocol ping
+        /// is answered by winhttp.dll and never returned here).
         public string ReadText()
         {
             MemoryStream message = new MemoryStream();
@@ -1127,13 +1163,17 @@ namespace AutarkWake
             }
         }
 
+        /// One sender at a time: the reading thread answers a wake while the probe timer sends its own message.
         public void SendText(string text)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(text);
-            IntPtr handle = socket;
-            if (handle == IntPtr.Zero) return;
-            uint error = WinHttpWebSocketSend(handle, Utf8Message, bytes, (uint)bytes.Length);
-            if (error != 0) throw new IOException("send " + error);
+            lock (sendGate)
+            {
+                IntPtr handle = socket;
+                if (handle == IntPtr.Zero) return;
+                uint error = WinHttpWebSocketSend(handle, Utf8Message, bytes, (uint)bytes.Length);
+                if (error != 0) throw new IOException("send " + error);
+            }
         }
 
         /// A close frame (best effort), then the connection goes.
@@ -1377,18 +1417,37 @@ namespace AutarkWake
             dueTimer = new System.Threading.Timer(tick, null, Life.DueDelay(at, NowMs()), Timeout.Infinite);
         }
 
+        /// A timing in ms from the environment (tests shorten it), else `fallback`; only 200 ms to 1 h are taken.
+        static int TimingSwitch(string name, int fallback)
+        {
+            int value;
+            string text = Environment.GetEnvironmentVariable(name);
+            return text != null && int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value) && value >= 200 && value <= 3600000 ? value : fallback;
+        }
+
         static void Connections(WakeFile wake)
         {
             WakeCore core = new WakeCore(wake, NowMs, Log);
             int attempt = 0;
+            int watchdogMs = TimingSwitch("AUTARK_WAKE_WATCHDOG_MS", 90000);
+            int probeMs = TimingSwitch("AUTARK_WAKE_PROBE_MS", 60000);
             while (!ended)
             {
+                System.Threading.Timer probe = null;
                 try
                 {
                     core.NewSession();
-                    WsClient ws = WsClient.Connect(wake.Relay, 90000);
+                    WsClient ws = WsClient.Connect(wake.Relay, watchdogMs);
                     client = ws;
                     Procs.Trim();
+                    // The server's protocol pings never reach ReadText (winhttp.dll answers them), so an idle connection would be dropped by
+                    // the watchdog every `watchdogMs` and come back with a new box key (a wake between find and request is then lost): the
+                    // helper itself sends something the server answers, and the answer re-arms the watchdog.
+                    probe = new System.Threading.Timer(delegate
+                    {
+                        try { if (core.Ready && !ended) ws.SendText(core.ProbeFrame()); }
+                        catch (Exception) { /* a dead connection: the watchdog or the reader notices */ }
+                    }, null, probeMs, probeMs);
                     while (!ended)
                     {
                         string text = ws.ReadText();
@@ -1416,6 +1475,7 @@ namespace AutarkWake
                     // the connection is gone: reconnect with backoff (the kind of failure only – never a message that could carry data)
                     Log("connection ended: " + e.GetType().Name + (e is IOException ? ": " + e.Message : ""));
                 }
+                finally { if (probe != null) probe.Dispose(); }
                 client = null;
                 if (ended) break;
                 int delay = BackoffMs[Math.Min(attempt, BackoffMs.Length - 1)];

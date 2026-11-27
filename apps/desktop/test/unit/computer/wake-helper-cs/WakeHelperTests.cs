@@ -383,6 +383,25 @@ namespace AutarkWakeTests
                 w.Core.OnFrame("{\"t\":\"ready\"}", out woke);
                 return Ok(w.Core.Ready, "ready");
             });
+            Case("remote id: the helper derives the same 9-digit Remote ID as remote/id.ts remoteIdOf (vectors from the TypeScript)", () =>
+            {
+                return Expect(WakeRules.RemoteIdOf(new string('0', 64)), "114875446", "zeros")
+                    ?? Expect(WakeRules.RemoteIdOf("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"), "762479228", "sha256 of abc")
+                    ?? Expect(WakeRules.RemoteIdOf("FFFFFFFF00000000000000000000000000000000000000000000000000000001"), "626465694", "upper case is lowered");
+            });
+            Case("core: the probe is a 'find' of the helper's own Remote ID with a fresh ref each time (the server answers it; nothing else does)", () =>
+            {
+                World w = new World();
+                Dictionary<string, object> first = (Dictionary<string, object>)MiniJson.Parse(w.Core.ProbeFrame());
+                Dictionary<string, object> second = (Dictionary<string, object>)MiniJson.Parse(w.Core.ProbeFrame());
+                bool woke;
+                // whatever the server answers (found, error) is ignored without any reply, and never a wake
+                string a = w.Core.OnFrame("{\"t\":\"found\",\"ref\":1,\"entries\":[]}", out woke);
+                string b = w.Core.OnFrame("{\"t\":\"error\",\"code\":\"rate_limited\",\"ref\":2}", out woke);
+                return Expect(first["t"], "find", "type") ?? Expect(first["id"], WakeRules.RemoteIdOf(w.File.Fp), "id") ?? Expect(((string)first["id"]).Length, 9, "nine digits")
+                    ?? Expect(first["ref"], 1.0, "first ref") ?? Expect(second["ref"], 2.0, "second ref")
+                    ?? Expect(a, null, "found is not answered") ?? Expect(b, null, "error is not answered") ?? Ok(!woke, "no wake");
+            });
             Case("core: a real wake is taken, answered with {ok:true} sealed under the relay's ref, and asks for the app start", () =>
             {
                 World w = new World();

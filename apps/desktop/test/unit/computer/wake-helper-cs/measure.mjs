@@ -56,7 +56,13 @@ async function fakeServer() {
     socket.send(JSON.stringify({ t: 'challenge', n: randomBytes(12).toString('hex') }));
     const timer = setInterval(() => { try { socket.ping(); } catch { /* closing */ } }, 30_000);
     socket.on('close', () => clearInterval(timer));
-    socket.on('message', (data) => { try { if (JSON.parse(data.toString('utf8')).t === 'hello') socket.send(JSON.stringify({ t: 'ready', online: [] })); } catch { /* not ours */ } });
+    socket.on('message', (data) => {
+      try {
+        const frame = JSON.parse(data.toString('utf8'));
+        if (frame.t === 'hello') socket.send(JSON.stringify({ t: 'ready', online: [] }));
+        else if (frame.t === 'find') socket.send(JSON.stringify({ t: 'found', ref: frame.ref, entries: [] })); // the helper's own keep-alive, answered like relay.ts does
+      } catch { /* not ours */ }
+    });
   });
   return { url: `ws://127.0.0.1:${server.address().port}/autark`, close: () => { for (const socket of server.clients) socket.terminate(); server.close(); } };
 }
@@ -162,8 +168,18 @@ try {
     stamp(`wake: ${JSON.stringify(wake)}`);
     client.stop();
   }
-  try { helperLog = readFileSync(path.join(session?.data ?? '', 'logs', 'sleeper.log'), 'utf8').trim().split('\n').slice(args.includes('--log') ? -300 : -12).join('\n'); } catch { /* no log */ }
-  result = { exe: exe ? path.basename(exe) : `pid ${attach}`, relay: session ? (fake ? 'stand-in server (plain ws)' : session.relay) : undefined, env: extraEnv, minutes, afterMinutes: { workingSetMB: last.workingSetMB, privateBytesMB: last.privateBytesMB, privateWorkingSetMB: last.privateWorkingSetMB, threads: last.threads, handles: last.handles, moduleCount: last.moduleCount }, modules: last.modules, samples: samples.map(({ modules: _modules, ...rest }) => rest), wake };
+  // How often the helper (re)connected while it idled: every "ready" logs one line, a watchdog drop logs "connection ended: IOException: ended".
+  // The server's protocol pings do not keep the helper's 90 s watchdog quiet (winhttp.dll answers them itself), so without the helper's own
+  // keep-alive it would drop and reconnect (with a new box key) about every 90 s.
+  let connections; let watchdogDrops;
+  try {
+    const lines = readFileSync(path.join(session?.data ?? '', 'logs', 'sleeper.log'), 'utf8').trim().split('\n');
+    connections = lines.filter((line) => line.includes('waiting for a wake at the meeting server')).length;
+    watchdogDrops = lines.filter((line) => line.includes('connection ended: IOException: ended')).length;
+    helperLog = lines.slice(args.includes('--log') ? -300 : -12).join('\n');
+  } catch { /* no log */ }
+  result = { connections: session ? { atTheMeetingServer: connections, watchdogDrops, idleMinutes: minutes } : undefined,
+ exe: exe ? path.basename(exe) : `pid ${attach}`, relay: session ? (fake ? 'stand-in server (plain ws)' : session.relay) : undefined, env: extraEnv, minutes, afterMinutes: { workingSetMB: last.workingSetMB, privateBytesMB: last.privateBytesMB, privateWorkingSetMB: last.privateWorkingSetMB, threads: last.threads, handles: last.handles, moduleCount: last.moduleCount }, modules: last.modules, samples: samples.map(({ modules: _modules, ...rest }) => rest), wake };
 } finally {
   if (child && child.exitCode === null) child.kill();
   stand?.close();
@@ -178,7 +194,11 @@ console.log(`**After ${minutes} min: working set ${result.afterMinutes.workingSe
 console.log('| idle | working set MB | private bytes MB | private working set MB | threads |\n|---|---|---|---|---|');
 for (const value of samples) console.log(row(value));
 if (result.modules?.length) console.log(`\nLargest modules: ${result.modules.join(', ')}`);
+if (result.connections) console.log(`\n**Connections: ${result.connections.atTheMeetingServer} registration(s) at the meeting server in ${minutes} min of idle, ${result.connections.watchdogDrops} dropped by the watchdog** (more than one registration means a reconnect with a new box key; a watchdog drop must be 0).`);
 if (result.wake) console.log(`\nWake: ${JSON.stringify(result.wake.reply)}; the stand-in app started ${result.wake.appStartedAfterMs ?? 'NEVER'} ms after the wake was sent.`);
 if (regionsText) console.log(`\nWhere the private memory sits:\n${regionsText}`);
 if (helperLog) console.log(`\nHelper log (tail):\n\`\`\`\n${helperLog}\n\`\`\``);
-process.exit(result.wake && (result.wake.reply?.ok !== true || result.wake.appStartedAfterMs === undefined) ? 1 : 0);
+const wakeFailed = result.wake && (result.wake.reply?.ok !== true || result.wake.appStartedAfterMs === undefined);
+const dropped = (result.connections?.watchdogDrops ?? 0) > 0;
+if (dropped) console.error('FAIL: the watchdog dropped an idle connection (the helper must keep its own connection alive)');
+process.exit(wakeFailed || dropped ? 1 : 0);

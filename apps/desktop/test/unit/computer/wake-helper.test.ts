@@ -42,6 +42,9 @@ test('source rules: it starts the one registered program, through no shell, and 
   assert.doesNotMatch(helper, /SHA(1|256|512)\.Create|SHA\d+Managed|SHA\d+Cng|HMACSHA|RandomNumberGenerator\.Create|System\.Linq/, 'hashes through bcrypt.dll (Digest), not the framework classes');
   assert.doesNotMatch(helper, /LocalSystem|CreateProcessAsUser|WTSQueryUserToken|TOKEN_|Impersonate/, 'it never handles tokens: it runs as the person it was started as');
   assert.doesNotMatch(helper, /Console\.Write|\bkey\b.*Log\(/, 'no key in a log line');
+  // the broker (Waker.cs) counts only a non-zero exit code as a failure: every intended end is 0, an exception is 1
+  assert.match(helper, /try \{ return Run\(argv\); \}\s*catch \(Exception e\) \{ Log\("failed: " \+ e\.GetType\(\)\.Name\); return 1; \}/);
+  assert.equal((helper.match(/return [2-9];/g) ?? []).length, 0, 'no other exit codes');
   // what a wake carries: only op, at, nonce and sig are read
   const check = helper.slice(helper.indexOf('public static bool Check('), helper.indexOf('const int MaxSeen'));
   assert.deepEqual([...check.matchAll(/(?:Str|Num)\(o, "(\w+)"\)/g)].map((match) => match[1]).sort(), ['at', 'nonce', 'op', 'sig']);
@@ -140,10 +143,16 @@ class FakeRelay {
   hello?: { pub: string; box: string; fp: string; wakeFp: string; findable: unknown; peers: unknown; signedOk: boolean };
   socket?: WebSocket;
   pongs = 0;
+  /** The 'find' frames the helper sent (its keep-alive probe; the real server answers a find with 'found'). */
+  readonly finds: Array<Record<string, unknown>> = [];
   private nextRef = 1;
   readonly listening: Promise<void>;
 
-  constructor() {
+  /** `pingMs`: protocol pings like the real server's (30 s there); `answerFind`: answer a 'find' with an empty 'found', as relay.ts does for the asker's own ID. */
+  private readonly options: { pingMs?: number; answerFind?: boolean };
+
+  constructor(options: { pingMs?: number; answerFind?: boolean } = {}) {
+    this.options = options;
     this.server = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: 70 * 1024 });
     this.listening = new Promise((resolve) => this.server.once('listening', () => resolve()));
     relays.add(this);
@@ -153,8 +162,9 @@ class FakeRelay {
       this.hello = undefined;
       const challenge = randomBytes(12).toString('hex');
       ws.send(JSON.stringify({ t: 'challenge', n: challenge }));
+      const pinger = this.options.pingMs ? setInterval(() => { try { ws.ping(); } catch { /* closing */ } }, this.options.pingMs) : undefined;
       ws.on('pong', () => { this.pongs++; });
-      ws.on('close', (code: number) => { this.closes.push(code); });
+      ws.on('close', (code: number) => { this.closes.push(code); if (pinger) clearInterval(pinger); });
       ws.on('message', (data: Buffer) => {
         const frame = JSON.parse(data.toString('utf8')) as Record<string, unknown>;
         if (frame.t === 'hello') {
@@ -163,6 +173,9 @@ class FakeRelay {
           this.hello = { pub: String(frame.pub), box: String(frame.box), fp: fingerprintOf(pub), wakeFp: wakeFpOf(String(frame.pub)), findable: frame.findable, peers: frame.peers, signedOk };
           if (signedOk) ws.send(JSON.stringify({ t: 'ready', online: [] }));
           else ws.close();
+        } else if (frame.t === 'find') {
+          this.finds.push(frame);
+          if (this.options.answerFind) ws.send(JSON.stringify({ t: 'found', ref: frame.ref, entries: [] }));
         } else if (frame.t === 'pairReply') this.replies.push(frame);
       });
     });
@@ -399,6 +412,51 @@ test('the connection: it answers pings, reconnects after a drop with a new box k
   await waitFor('the helper to end', () => s.exited(), 5_000);
   assert.equal(s.exitCode(), 0);
   assert.equal(s.stubLog().length, 0, 'it never started the app');
+});
+
+// The server's own pings never reach the helper's reader (winhttp.dll answers them), so they cannot keep the 90 s watchdog quiet; the
+// helper asks something the server answers every 60 s instead. Times shortened by the helper's two switches (a tenth of the real ones, and less).
+const SHORT = { AUTARK_WAKE_WATCHDOG_MS: '2000', AUTARK_WAKE_PROBE_MS: '700' };
+
+test('idle: a server that only pings (like the real one) does not make the helper reconnect – its own keep-alive is answered; the same box key still takes a wake after more than two watchdog intervals', { skip: !windows }, async (t) => {
+  const s = await session(t, { relay: new FakeRelay({ pingMs: 300, answerFind: true }) });
+  startHelper(s, ['--company=company-9'], undefined, SHORT);
+  await waitFor('the helper at the meeting server', () => s.relay.hello !== undefined);
+  const box = s.relay.hello!.box;
+  const idleFrom = Date.now();
+  await sleep(5_500); // 2.75 watchdog intervals
+  t.diagnostic(`idle ${Date.now() - idleFrom} ms: ${s.relay.connections} connection(s), ${s.relay.finds.length} keep-alive finds, closes [${s.relay.closes.join(',')}]`);
+  assert.equal(s.relay.connections, 1, 'one connection, no reconnect');
+  assert.deepEqual(s.relay.closes, []);
+  assert.ok(s.relay.finds.length >= 5, `its own keep-alive was sent (${s.relay.finds.length})`);
+  const own = remoteIdOf(s.relay.hello!.fp);
+  for (const frame of s.relay.finds) { assert.equal(frame.id, own, 'it asks for its own Remote ID: the server never lists the asker, so nothing is leaked'); assert.ok(Number.isInteger(frame.ref) && (frame.ref as number) >= 0); }
+  assert.equal(new Set(s.relay.finds.map((frame) => frame.ref)).size, s.relay.finds.length, 'a new ref each time');
+  assert.equal(s.relay.hello!.box, box, 'the box key of the session did not change');
+  assert.equal(s.exited(), false);
+  // a wake sealed to the box key found at the start still opens
+  const real = s.relay.pair(s.phone.fp, wakeBody(s.phone));
+  s.relay.deliver(real.frame);
+  await waitFor('the stand-in app', () => s.stubLog().length > 0);
+  assert.deepEqual(s.stubLog(), ['START --company=company-9 NODE=']);
+  await waitFor('the answer', () => s.relay.replies.length > 0);
+  assert.deepEqual(openJson(real.cipher, s.relay.replies[0]!.c), { ok: true });
+  await waitFor('the helper to end', () => s.exited(), 5_000);
+  assert.equal(s.exitCode(), 0);
+  assert.doesNotMatch(readFileSync(path.join(s.data, 'logs', 'sleeper.log'), 'utf8'), /connection ended/);
+});
+
+test('idle: a server that only pings and answers nothing is still dropped at the watchdog interval (a half-dead connection is found), and the helper comes back', { skip: !windows }, async (t) => {
+  const s = await session(t, { relay: new FakeRelay({ pingMs: 300, answerFind: false }) });
+  startHelper(s, ['--company=company-9'], undefined, SHORT);
+  await waitFor('the helper at the meeting server', () => s.relay.hello !== undefined);
+  const first = s.relay.hello!.box;
+  await waitFor('the watchdog and a second connection', () => s.relay.connections >= 2 && s.relay.hello !== undefined, 15_000);
+  assert.notEqual(s.relay.hello!.box, first, 'a new session has a new box key');
+  assert.ok(s.relay.finds.length >= 1, 'it asked first');
+  assert.match(readFileSync(path.join(s.data, 'logs', 'sleeper.log'), 'utf8'), /connection ended: IOException: ended/);
+  assert.equal(s.exited(), false);
+  s.helper!.kill();
 });
 
 // ------------------------------------------------------------------------------------------------ the real meeting server
