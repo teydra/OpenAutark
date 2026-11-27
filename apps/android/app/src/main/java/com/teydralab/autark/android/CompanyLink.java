@@ -44,7 +44,8 @@ final class CompanyLink {
 
     /** The company list on SharedPreferences ('companies'; 'pairing' holds 0.3.x's single record to move and the gate). */
     static Companies companies(Context context, SharedPreferences pairing) {
-        return new Companies(store(context.getSharedPreferences("companies", Context.MODE_PRIVATE)), store(pairing));
+        boolean preview = context.getPackageName().endsWith(".preview"); // the preview has its own ports (Companies.PREVIEW_FIRST_PORT)
+        return new Companies(store(context.getSharedPreferences("companies", Context.MODE_PRIVATE)), store(pairing), preview ? Companies.PREVIEW_FIRST_PORT : Companies.FIRST_PORT);
     }
 
     /** The local entrance's secret cookie value (one for all companies' origins), made once. */

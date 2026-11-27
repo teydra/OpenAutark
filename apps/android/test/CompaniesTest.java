@@ -117,6 +117,12 @@ public final class CompaniesTest {
         check(fresh.current() == null);
         equal("c1", fresh.add(new PhoneConnection.Paired("wss://relay.test", "s", "d", "t", Arrays.asList(a))));
         equal(47920, fresh.port());
+        // The preview takes its own run of ports, so it runs beside the released app (S9, 27.11.2026).
+        Companies preview = new Companies(new MapStore(), new MapStore(), Companies.PREVIEW_FIRST_PORT);
+        preview.add(new PhoneConnection.Paired("wss://relay.test", "s", "d", "t", Arrays.asList(a)));
+        equal(47520, preview.port());
+        preview.add(new PhoneConnection.Paired("wss://relay.test", "s2", "d2", "t2", Arrays.asList(b)));
+        equal(47521, preview.port());
         System.out.println(assertions + " company list assertions passed.");
     }
 

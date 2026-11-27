@@ -21,6 +21,9 @@ final class Companies {
     }
 
     static final int FIRST_PORT = 47920;
+    /** The preview (package ".preview") takes its own run of ports, so it and the released app can be installed side by side (S9, 27.11.2026: "Port 47920 … taken by another app"). */
+    static final int PREVIEW_FIRST_PORT = 47520;
+    private final int first;
     static final int AVATAR_LIMIT = 16 * 1024;
     private static final String[] OLD_KEYS = { "relay", "seed", "deviceId", "token", "pcs", "pcFingerprint", "pcPublicKey", "pcName" };
     private final Store store;
@@ -29,8 +32,11 @@ final class Companies {
     private int next;
 
     /** Loads the list; on the first start after 0.3.x it moves the old 'pairing' record (gate and askedNotifications stay there). */
-    Companies(Store store, Store pairing) {
+    Companies(Store store, Store pairing) { this(store, pairing, FIRST_PORT); }
+
+    Companies(Store store, Store pairing, int first) {
         this.store = store;
+        this.first = first;
         Object saved = parse(store.get("list"));
         if (saved instanceof List) for (Object row : (List<?>) saved) if (row instanceof Map) list.add(row(row));
         current = store.get("current");
@@ -47,7 +53,7 @@ final class Companies {
             if (pcs.isEmpty() && !oldFp.isEmpty()) pcs.add(new PhoneConnection.Pc(oldFp, or(pairing.get("pcPublicKey"), ""), or(pairing.get("pcName"), "PC"), ""));
             if (!pcs.isEmpty()) {
                 next = 2;
-                list.add(record("c1", FIRST_PORT, new PhoneConnection.Paired(or(pairing.get("relay"), ConnectionAddress.DEFAULT_RELAY), seed,
+                list.add(record("c1", first, new PhoneConnection.Paired(or(pairing.get("relay"), ConnectionAddress.DEFAULT_RELAY), seed,
                         or(pairing.get("deviceId"), ""), or(pairing.get("token"), ""), pcs)));
                 current = "c1";
             }
@@ -62,7 +68,7 @@ final class Companies {
     PhoneConnection.Paired current() { return paired(byId(current)); }
 
     /** The current company's local port (its own origin). */
-    int port() { Map<String, Object> row = byId(current); return row == null ? FIRST_PORT : (int) num(row.get("port"), FIRST_PORT); }
+    int port() { Map<String, Object> row = byId(current); return row == null ? first : (int) num(row.get("port"), first); }
 
     int size() { return list.size(); }
 
@@ -72,7 +78,7 @@ final class Companies {
         for (Map<String, Object> row : list) for (PhoneConnection.Pc pc : pcs(row)) for (PhoneConnection.Pc fresh : paired.pcs)
             if (pc.fingerprint.equals(fresh.fingerprint)) same = row;
         if (same != null) {
-            Map<String, Object> updated = record((String) same.get("id"), (int) num(same.get("port"), FIRST_PORT), paired);
+            Map<String, Object> updated = record((String) same.get("id"), (int) num(same.get("port"), first), paired);
             updated.put("name", same.get("name"));
             updated.put("avatar", same.get("avatar"));
             list.set(list.indexOf(same), updated);
@@ -81,7 +87,7 @@ final class Companies {
             int n = Math.max(next, 1);
             next = n + 1;
             current = "c" + n;
-            list.add(record(current, FIRST_PORT + n - 1, paired));
+            list.add(record(current, first + n - 1, paired));
         }
         save();
         return current;
