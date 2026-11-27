@@ -77,6 +77,16 @@ jobs:
           ditto -x -k "$RUNNER_TEMP/autark-mac-universal.zip" dist/mac-universal
           codesign --verify --deep --strict 'dist/mac-universal/Autark.app'
           lipo -archs 'dist/mac-universal/Autark.app/Contents/MacOS/Autark'
+          # app/build.json carries the build time; take the shipped one when it differs only in builtAt.
+          node -e '
+            const fs = require("node:fs"), path = require("node:path"), asar = require("@electron/asar");
+            const res = "dist/mac-universal/Autark.app/Contents/Resources";
+            const nested = path.join(res, "app-x64.asar"), archive = fs.existsSync(nested) ? nested : path.join(res, "app.asar");
+            const shipped = asar.extractFile(archive, "app/build.json"), local = fs.readFileSync("app/build.json");
+            const strip = b => { const o = JSON.parse(b); delete o.builtAt; return JSON.stringify(o); };
+            if (strip(shipped) !== strip(local)) throw new Error("app/build.json differs beyond builtAt: " + shipped);
+            fs.writeFileSync("app/build.json", shipped); console.log("Shipped build.json:", JSON.stringify(JSON.parse(shipped)));
+          '
           node scripts/native-release-check.cjs
       - name: Confirm the evidence describes the requested Intel package
         shell: pwsh
