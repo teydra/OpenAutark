@@ -140,7 +140,7 @@ public final class RelayLink implements WebSocketClient.Listener {
         byte[] toOpener = java.util.Arrays.copyOfRange(okm, 32, 64);
         String sealed = Crypto.b64url(Crypto.seal(toOwner, 0, Crypto.utf8(Json.write(body))));
         Map<String, Object> reply = ask(Json.map("t", "pair", "to", pc.fingerprint, "e", Crypto.b64url(eph[1]), "c", sealed), timeoutMs);
-        if (reply.get("error") instanceof String) throw new IOException("The meeting server could not deliver the request (" + reply.get("error") + ").");
+        if (reply.get("error") instanceof String) throw new IOException(refusal(String.valueOf(reply.get("error"))));
         String c = Json.str(reply, "c");
         byte[] raw = c == null ? null : Crypto.fromB64url(c);
         byte[] plain = raw == null ? null : Crypto.open(toOpener, 0, raw, 0, raw.length);
@@ -183,7 +183,7 @@ public final class RelayLink implements WebSocketClient.Listener {
         sendJson(frame);
         try {
             Map<String, Object> reply = future.get(timeoutMs, TimeUnit.MILLISECONDS);
-            if ("error".equals(reply.get("t"))) throw new IOException("The meeting server refused this (" + reply.get("code") + ").");
+            if ("error".equals(reply.get("t"))) throw new IOException(refusal(String.valueOf(reply.get("code"))));
             return reply;
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
@@ -191,10 +191,17 @@ public final class RelayLink implements WebSocketClient.Listener {
         } catch (ExecutionException error) {
             throw new IOException("The meeting server connection ended.");
         } catch (TimeoutException error) {
-            throw new IOException("The meeting server did not answer in time.");
+            throw new IOException("No answer in time. This PC may be switched off or Autark is not running on it. Switch it on, or use the ID of another PC.");
         } finally {
             pending.remove(ref);
         }
+    }
+
+    /** What a person reads when the meeting server refuses a request (25.11.2026): the code in words, never raw. */
+    static String refusal(String code) {
+        if ("unavailable".equals(code) || "offline".equals(code) || "not-found".equals(code))
+            return "This PC is not online right now. Switch it on, or use the ID of another PC.";
+        return "The meeting server could not complete this (" + code + "). Try again in a moment.";
     }
 
     private void sendJson(Map<String, Object> frame) {
