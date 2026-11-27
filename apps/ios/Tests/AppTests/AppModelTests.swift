@@ -81,10 +81,20 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.typed, "482913071")
     }
 
+    /// An interface of the app's own (a bundle folder with one page) – what the build's `ui` folder is in the app; no look for a newer one.
+    private func ownUi() throws -> PhoneUi {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("autark-test-ui-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try "<!doctype html><html><head><title>Autark</title></head><body>Autark phone UI from the app</body></html>"
+            .write(to: root.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+        return PhoneUi(shipped: BundleUi(root: root), dir: root.appendingPathComponent("fetched"), keys: [])
+    }
+
     func testTypingTheNineDigitsPairsAndOpensThePcsPageAndASecondLaunchGoesStraightThere() async throws {
         let w = world()
         let store = MemoryStore()
-        let model = AppModel(store: store, connector: w.relay)
+        let ui = try ownUi()
+        let model = AppModel(store: store, connector: w.relay, ui: ui)
         model.start(arguments: [])
         model.showCode()
         model.typed = w.pc.remoteId
@@ -101,7 +111,8 @@ final class AppModelTests: XCTestCase {
         XCTAssertFalse((store.get("gate") ?? "").isEmpty)
         await waitForDetailed("the PC's page in the web view", seconds: 30, detail: { "screen \(model.screen), connected \(model.connected), line '\(model.connectionLine)', offline \(model.offline ?? "-"), url \(model.bridge.webView.url?.absoluteString ?? "nil"), loading \(model.bridge.webView.isLoading)" }) { model.connected && model.bridge.webView.url?.absoluteString.hasPrefix("http://127.0.0.1:") == true && !model.bridge.webView.isLoading }
         let body = try await model.bridge.webView.evaluateJavaScript("document.body.innerText") as? String
-        XCTAssertTrue(body?.contains("Autark phone UI") == true, body ?? "nil")
+        XCTAssertTrue(body?.contains("Autark phone UI from the app") == true, "the page is the app's own, not the PC's: " + (body ?? "nil"))
+        XCTAssertGreaterThan(ui.files.served, 0)
         XCTAssertEqual(model.connectionLine, "Connected to Studio PC.")
         // the page was told whose offline data it may show: this company and this PC, no secret in it
         let ownerText = try XCTUnwrap(model.bridge.lastOwnerText)
@@ -112,7 +123,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(ownerText.range(of: "seed"))
 
         // a second launch with the stored pairing opens the page without asking again
-        let again = AppModel(store: store, connector: w.relay)
+        let again = AppModel(store: store, connector: w.relay, ui: ui)
         again.start(arguments: [])
         XCTAssertEqual(again.screen, .page)
 
@@ -120,7 +131,7 @@ final class AppModelTests: XCTestCase {
         again.forgetCurrent()
         XCTAssertEqual(again.screen, .start)
         XCTAssertEqual(again.bridge.lastOwnerText, "{\"owner\":null,\"t\":\"offline.owner\"}", "forgetting leaves no owner")
-        let third = AppModel(store: store, connector: w.relay)
+        let third = AppModel(store: store, connector: w.relay, ui: ui)
         third.start(arguments: [])
         XCTAssertEqual(third.screen, .start)
         model.forgetCurrent()

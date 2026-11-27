@@ -1,7 +1,8 @@
 // Owns: the screens – the native connect levels (1 "Connect to your PC" with the big "Scan QR code" and the small "Enter the code
 // instead"; 2 the full-height scanner; 2b the 9 digits grouped 3-3-3 with "Connect"; 3 the wait with the 4-digit code both
-// screens show and Cancel) and the page's frame (the PC's unchanged phone UI, edge to edge, with the bar areas in the page's
-// own colours and the "can't reach" cover). Light and dark follow the system; the palette is Android's PairLook.
+// screens show and Cancel), the entrance level (the company's local port is taken) and the page's frame (the phone UI the app
+// carries itself, edge to edge, with the bar areas in the page's own colours; no native cover: the page shows its own connection
+// state). Light and dark follow the system; the palette is Android's PairLook.
 // Never: pairs, stores or sends anything itself – every action is a call on AppModel.
 import SwiftUI
 import AutarkCore
@@ -32,6 +33,7 @@ struct RootView: View {
             case .scan: ScanScreen(model: model)
             case .code: CodeScreen(model: model)
             case .waiting: WaitingScreen(model: model)
+            case .entrance: EntranceScreen(model: model)
             }
         }
         .animation(.easeInOut(duration: 0.15), value: model.screen)
@@ -191,19 +193,6 @@ struct PageScreen: View {
         ZStack {
             model.topColor.ignoresSafeArea()
             PageView(bridge: model.bridge).ignoresSafeArea()
-            if let reason = model.offline {
-                VStack(spacing: 14) {
-                    Text("Can't reach").font(.system(size: 22, weight: .bold)).foregroundStyle(Look.ink)
-                    Text(reason).font(.system(size: 15)).foregroundStyle(Look.muted).multilineTextAlignment(.center)
-                    Text(model.connectionLine).font(.system(size: 13)).foregroundStyle(Look.muted).multilineTextAlignment(.center)
-                    Button("Try again") { model.retryPage() }
-                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 28).frame(minHeight: 48)
-                        .background(Look.accent, in: Capsule())
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Look.bg.ignoresSafeArea())
-            }
         }
         .preferredColorScheme(CssLight.isLight(model.topColor) ? .light : .dark)
         .confirmationDialog("Forget this phone?", isPresented: $model.askForget, titleVisibility: .visible) {
@@ -218,12 +207,28 @@ struct PageScreen: View {
         } message: {
             Text("A link asked Autark to send the newest screenshot of your photos to " + (QuickCenter.lastChat?.title ?? "your last chat") + ".")
         }
-        .confirmationDialog("Which PC?", isPresented: $model.choosingPc, titleVisibility: .visible) {
-            ForEach(model.pcChoices) { choice in
-                Button((choice.current ? "✓ " : "") + choice.name + (choice.online ? "" : " (offline)")) { model.pick(choice) }
-            }
-            Button("Cancel", role: .cancel) {}
+    }
+}
+
+// MARK: the entrance
+
+/// The company's local port is taken by another app: the page cannot open until it is free (the app tries again every 3 seconds).
+struct EntranceScreen: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            ProgressView()
+            Text("Autark is opening").font(.system(size: 22, weight: .bold)).foregroundStyle(Look.ink).accessibilityIdentifier("title")
+            Text("Another app on this phone is using the address Autark needs. Autark tries again by itself.")
+                .font(.system(size: 15)).foregroundStyle(Look.muted).multilineTextAlignment(.center)
+            Text(model.entranceLine).font(.system(size: 13)).foregroundStyle(Look.muted).multilineTextAlignment(.center)
+            Spacer()
         }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Look.bg.ignoresSafeArea())
     }
 }
 

@@ -1,9 +1,10 @@
 // Owns: what the app is doing – which level the person sees (connect, scanner, code, wait, page), the pairing run, the
 // companies and their one live connection (PhoneConnection with its local entrance), what the page asks of the app (bar
-// colours, haptics, switching, adding and forgetting a company, the PC picker, refusals) and the lifecycle (reconnect when the
-// app comes forward and when the network changes), the wake of a closed PC the page asks for ('wake' → 'woken', through the
-// meeting-server link) and the notification scaffold (Notifier, PushRegistration: nothing asks the person at launch). The decisions
-// are Android's MainActivity ones; the screens are SwiftUI.
+// colours, haptics, switching, adding and forgetting a company, refusals) and the lifecycle (reconnect when the app comes forward and
+// when the network changes, a look for a newer interface and its reload), the wake of a closed PC the page asks for ('wake' →
+// 'woken', through the meeting-server link) and the notification scaffold (Notifier, PushRegistration: nothing asks the person at
+// launch). The interface is the app's own (PhoneUi: the bundle's `ui` folder and signed files fetched since); no PC serves it and no
+// native screen covers it – the page shows its own connection state. The decisions are Android's MainActivity ones; the screens are SwiftUI.
 // Wave 2 (21.11.2026): beside the page the app keeps its own socket to the PC (UseLink, like Android's) for the AI's questions on the
 // Live Activity (PhoneUseResponder → LiveController, phoneUse.reply / phoneUse.control) and the quick ways in (QuickCenter: App Intents,
 // Control Center, Lock Screen widgets, share extension posts, dictation); one shared model (AppModel.shared) so an intent that launched
@@ -16,14 +17,8 @@ import AutarkCore
 
 @MainActor
 final class AppModel: ObservableObject {
-    enum Screen: Equatable { case start, scan, code, waiting, page }
-
-    struct PcChoice: Identifiable, Equatable {
-        let id: String
-        let name: String
-        let online: Bool
-        let current: Bool
-    }
+    /// `entrance`: the company's fixed local port is taken by another app – the app tries again every 3 seconds (Android's EntranceScreen).
+    enum Screen: Equatable { case start, scan, code, waiting, page, entrance }
 
     @Published var screen: Screen = .start
     /// "Add a company": the connect level has a back arrow that returns to the page.
@@ -31,14 +26,16 @@ final class AppModel: ObservableObject {
     @Published var typed = ""
     @Published var message = ""
     @Published var waiting = PairRun.Wait(line: "Connecting…", code: nil)
+    /// Why the page's document did not load (nothing is shown for it: the page, from the app's own copy, shows its connection state itself;
+    /// the app only loads it again in a moment). Kept for the logs and tests.
     @Published var offline: String?
     @Published var connectionLine = ""
     @Published var connected = false
     @Published var topColor = Palette.chromeLight
     @Published var bottomColor = Palette.chromeLight
     @Published var askForget = false
-    @Published var choosingPc = false
-    @Published var pcChoices = [PcChoice]()
+    /// What the entrance level says while the company's port is taken.
+    @Published var entranceLine = ""
     /// The dictation sheet is open (DictateIntent, the Control Center's Diktat, autark://dictate).
     @Published var dictating = false
     /// A short line about the last quick send ("Screenshot sent to …"), shown over the page for a moment.
@@ -70,6 +67,11 @@ final class AppModel: ObservableObject {
     private(set) var responder: PhoneUseResponder?
     private var liveTokens: LiveTokens?
     private var started = false
+    /// The interface the entrance answers from (the app's bundle, plus the signed files fetched since).
+    private let ui: PhoneUi
+    /// The page's voice is live (its 'voice.live'): a newer interface waits until the call ends (Android's voiceLive).
+    private var voiceLive = false
+    private var retryGeneration = 0
     /// Launch arguments of a CI run against a real PC (see start()).
     private var relayOverride: String?
     private var pendingChat: String?
@@ -80,16 +82,17 @@ final class AppModel: ObservableObject {
 
     /// `notices` and `pushPlatform` are the system's (the app passes them; a unit-test process has no notification center, so tests pass
     /// fakes or none).
-    init(store: StringStore = KeychainStore(), connector: WebSocketConnector = URLSessionConnector(), notices: NoticeCenter? = nil, pushPlatform: PushPlatform? = nil, useConnector: WebSocketConnector? = nil) {
+    init(store: StringStore = KeychainStore(), connector: WebSocketConnector = URLSessionConnector(), notices: NoticeCenter? = nil, pushPlatform: PushPlatform? = nil, useConnector: WebSocketConnector? = nil, ui: PhoneUi = PhoneUi.shared) {
         self.store = store
         self.connector = connector
         self.useConnector = useConnector
+        self.ui = ui
         self.companies = Companies(store: store)
         let secret = store.get("gate").flatMap { $0.isEmpty ? nil : $0 } ?? Crypto.b64url(Crypto.random(24))
         store.put("gate", secret)
         self.gate = secret
         bridge.onMessage = { [weak self] type, message in self?.fromPage(type, message) }
-        bridge.onOffline = { [weak self] reason in self?.offline = reason }
+        bridge.onOffline = { [weak self] reason in self?.pageOffline(reason) }
         bridge.onForgetAddress = { [weak self] in self?.askForget = true }
         if let notices = notices {
             let notifier = Notifier(center: notices)
@@ -158,7 +161,8 @@ final class AppModel: ObservableObject {
         pendingChat = argument("-AutarkChat")
         #if AUTARK_SIM_E2E && targetEnvironment(simulator)
         if let status = argument("-AutarkE2EStatus"), let chatId = pendingChat {
-            e2e = E2EDriver(web: bridge.webView, statusPath: status, chatId: chatId)
+            let files = ui.files
+            e2e = E2EDriver(web: bridge.webView, statusPath: status, chatId: chatId, uiServed: { files.served })
             e2e?.start()
         }
         #endif
@@ -196,12 +200,15 @@ final class AppModel: ObservableObject {
             }
             _ = announced.wait(timeout: .now() + 2)
         }
+        retryGeneration += 1
         do {
-            let origin = try link.start(port: companies.port, gate: gate)
+            // the interface is the app's own: the entrance answers it from `ui`, only the PC's data paths go through a channel
+            let origin = try link.start(port: companies.port, gate: gate, ui: ui.files)
             connection = link
             connectionLine = "Reaching the meeting server…"
             connected = false
             offline = nil
+            voiceLive = false
             announceOwner(paired.pcs.first?.fingerprint) // the locally chosen PC owns the offline cache; first, then the page
             bridge.load(origin: origin, token: paired.token, gate: gate)
             openUseLink(origin: origin, paired: paired)
@@ -209,12 +216,41 @@ final class AppModel: ObservableObject {
             cancelable = false
             pushCompanies()
         } catch {
-            screen = .start
-            message = (error as? AutarkError)?.message ?? error.localizedDescription
+            let reason = (error as? AutarkError)?.message ?? error.localizedDescription
+            if companies.port > 0 {
+                // the company's own port (the page's origin, so its storage stays) is taken by something else: wait for it, never pick another
+                entranceLine = reason
+                screen = .entrance
+                let generation = retryGeneration
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self = self, self.retryGeneration == generation, self.screen == .entrance else { return }
+                        self.open(paired)
+                    }
+                }
+            } else {
+                screen = .start
+                message = reason
+            }
+        }
+    }
+
+    /// The page's document did not load (the entrance died, the web view was cut off): the page is the app's own, so nothing is shown
+    /// for it – the app loads it again in a moment (the page shows its own connection state once it is there).
+    private func pageOffline(_ reason: String?) {
+        offline = reason
+        guard reason != nil, screen == .page else { return }
+        let generation = retryGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self = self, self.retryGeneration == generation, self.screen == .page, self.offline != nil else { return }
+                self.bridge.reload()
+            }
         }
     }
 
     private func closeConnection() {
+        retryGeneration += 1
         connection?.stop()
         connection = nil
         useLink?.stop()
@@ -307,7 +343,7 @@ final class AppModel: ObservableObject {
         case .scan, .code: message = ""; screen = .start
         case .waiting: cancelPairing()
         case .start: if cancelable { cancelable = false; screen = .page }
-        case .page: break
+        case .page, .entrance: break
         }
     }
 
@@ -388,7 +424,7 @@ final class AppModel: ObservableObject {
         case "switch": if let id = Json.str(message, "id") { switchCompany(id) }
         case "add": cancelable = true; typed = ""; self.message = ""; screen = .start
         case "forget": askForget = true
-        case "pcs": showPcPicker()
+        case "voice.live": voiceLive = message["on"] as? Bool == true
         case "refused": connection?.refused()
         case "wake": wakePc(message)
         case "notify.enable": enableNotifications()
@@ -440,18 +476,6 @@ final class AppModel: ObservableObject {
         open(paired)
     }
 
-    private func showPcPicker() {
-        guard let link = connection else { return }
-        pcChoices = link.pcs.map { PcChoice(id: $0.fingerprint, name: $0.name, online: link.online($0.fingerprint), current: $0.fingerprint == link.pc) }
-        choosingPc = !pcChoices.isEmpty
-    }
-
-    func pick(_ choice: PcChoice) {
-        guard let link = connection else { return }
-        link.prefer(choice.id)
-        if let id = companies.currentId, let current = companies.currentPaired { companies.setPcs(company: id, link.paired.pcs.isEmpty ? current.pcs : link.paired.pcs) }
-    }
-
     /// "Forget this phone": this company's keys, web storage and entrance go, then the next company or the connect level.
     func forgetCurrent() {
         let id = companies.currentId
@@ -471,6 +495,9 @@ final class AppModel: ObservableObject {
             connection?.check()
             useLink?.nudge()
             push?.deliverPending()
+            // a newer interface that a look found ready loads now – not while the page's voice is live (Android's onResume)
+            if screen == .page, !voiceLive, ui.reloadDue { bridge.reload() }
+            ui.resumed()
         }
     }
 
@@ -489,8 +516,6 @@ final class AppModel: ObservableObject {
         watcher.start(queue: DispatchQueue(label: "autark-network"))
         monitor = watcher
     }
-
-    func retryPage() { offline = nil; connection?.check(); bridge.reload() }
 }
 
 /// Runs `work` on the main thread, in order, as the main actor – for the callbacks of the core's threads.
