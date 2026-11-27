@@ -95,8 +95,8 @@ public final class LoopbackListener {
     private var closedFlag = false
     private var fdReleased = false
 
-    /// Listens on 127.0.0.1:`port` (0 or a taken port: any free one).
-    public init(port wanted: Int) throws {
+    /// Listens on 127.0.0.1:`port` (0: any free one; a taken port: any free one, or with `fallback` false an error – a port that must not change).
+    public init(port wanted: Int, fallback: Bool = true) throws {
         signal(SIGPIPE, SIG_IGN)
         func bound(_ port: Int) -> Int32? {
             let fd = socket(AF_INET, sockStream, 0)
@@ -115,7 +115,7 @@ public final class LoopbackListener {
         if wanted > 0 { // the port of a company just left may need a moment to come free
             for attempt in 0..<15 { first = bound(wanted); if first != nil { break }; if attempt < 14 { usleep(100_000) } }
         }
-        guard let fd = first ?? bound(0) else { throw AutarkError("The app could not open its local entrance.") }
+        guard let fd = first ?? (fallback || wanted == 0 ? bound(0) : nil) else { throw AutarkError("The app could not open its local entrance.") }
         var addr = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
         _ = withUnsafeMutablePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }

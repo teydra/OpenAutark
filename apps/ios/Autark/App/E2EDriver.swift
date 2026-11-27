@@ -14,10 +14,14 @@ final class E2EDriver {
     private var blankSince: Date?
     private var reloads = 0
 
-    init(web: WKWebView, statusPath: String, chatId: String) {
+    /// How many requests the app's own interface answered itself (UiFiles.served): the run's proof that the page came from the app.
+    private let uiServed: () -> Int
+
+    init(web: WKWebView, statusPath: String, chatId: String, uiServed: @escaping () -> Int) {
         self.web = web
         self.statusPath = statusPath
         self.chatRoute = "#/chat/" + chatId
+        self.uiServed = uiServed
     }
 
     func start() {
@@ -31,7 +35,7 @@ final class E2EDriver {
           }
         }, true);
         """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        report("{\"phase\":\"started\"}")
+        report("{\"phase\":\"started\",\"pid\":\(ProcessInfo.processInfo.processIdentifier)}")
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -73,6 +77,8 @@ final class E2EDriver {
             blankSince = nil
         }
         state["bootstrapReloads"] = reloads
+        state["uiServed"] = uiServed()
+        state["pid"] = Int(ProcessInfo.processInfo.processIdentifier)
         if let encoded = try? JSONSerialization.data(withJSONObject: state, options: .sortedKeys),
            let line = String(data: encoded, encoding: .utf8) {
             report(line)
@@ -116,7 +122,7 @@ final class E2EDriver {
           const blankShell = document.readyState === 'complete' && !!root && !root.children.length;
           const texts = atChat ? Array.from(document.querySelectorAll('.message-body')).filter(visible).map(el => el.innerText.trim()) : [];
           return JSON.stringify({
-            phase: 'page', blankShell, assetErrors: window.__autarkE2EAssetErrors || 0,
+            phase: 'page', blankShell, rendered: !!root && root.children.length > 0, poisoned: (document.documentElement.outerHTML || '').includes('POISONED-PC-UI'), textLength: (document.body?.innerText || '').length, assetErrors: window.__autarkE2EAssetErrors || 0,
             tokenPending: location.hash.startsWith('#token='),
             atChat, composer: canType, connectCard, sendReady, sent: s.sent,
             halloVisible: texts.includes('Hallo'),

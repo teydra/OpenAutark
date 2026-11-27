@@ -160,6 +160,15 @@ jobs:
           security default-keychain -d user -s "$KC"
           echo "SIGNING_KEYCHAIN=$KC" >> "$GITHUB_ENV"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: The app's own phone interface (apps/desktop's UI build and its ui.json go into the app)
+        run: |
+          bash Tools/build-ui.sh
+          test -f build/ui/index.html && test -f build/ui/ui.json
+
       - name: Install XcodeGen and generate the project
         run: |
           brew install xcodegen
