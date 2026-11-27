@@ -58,7 +58,9 @@ expect:   dialog "Export settings" appears
 - The stop button, its hotkey and the activity pill are the person's, not targets for me.
 - UAC prompts, firewall and other administrator windows and the lock screen I operate with these
   same tools through the desktop broker. An admin step I start elevated without waiting
-  (Start-Process -Verb RunAs), answer its Windows prompt myself and check the result.
+  (Start-Process -Verb RunAs), answer its Windows prompt myself and check the result. A UAC prompt's
+  Yes is the element with automationId `OkButton` (No: `CancelButton`) in every Windows language: computer.ui_tree
+  finds it, computer.act invoke presses it – never a click at coordinates read off a screenshot.
 
 ## Motion and other agents
 - The pointer really travels to every click, drag and wheel point. `motion: "human"` (default) is a

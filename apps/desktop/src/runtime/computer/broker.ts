@@ -38,6 +38,14 @@ export function lockedDesktop(): boolean {
   return brokerState.via === 'broker' && (brokerState.desktop ?? '').toLowerCase() === 'winlogon';
 }
 
+/**
+ * Owner 24.11.2026 ("ziemlich daneben geklickt bei der Windows-Abfrage … weiter links vom Ja-Button"): a UAC prompt is
+ * answered by its button element – Windows names them OkButton (Yes) and CancelButton (No) whatever its language; read
+ * live on teydra-server 27.11.2026 through the broker, invoke elevated –, never by a point read off a picture. Said by
+ * computer.screenshot and computer.click while the secure desktop takes input.
+ */
+export const UAC_BY_ELEMENT = 'A UAC prompt I answer by its button element, never by coordinates: computer.ui_tree with automationId "OkButton" (Yes) or "CancelButton" (No), then computer.act invoke on its ref – and I check the result.';
+
 /** F03: main's word on the setup (sticky: replayed to a restarted runtime) lands in brokerState. */
 export function followBrokerSetup(bus: Pick<Bus, 'on'>): () => void {
   return bus.on('broker.setup', (setup) => { brokerState.setup = setup; });

@@ -102,7 +102,29 @@ test('F03: on Windows without the broker, after a setup that got no Yes, the scr
   } finally { Object.assign(brokerState, saved); }
 });
 
-const CHROME_FRAME = "This Chrome window's UI tree holds its frame only: Chrome puts the page document into it once the page has loaded in a window that is not covered.";
+test('owner 24.11.2026: on the secure desktop the screenshot and a coordinate click name the UAC element way (OkButton, invoke); elsewhere nothing', async () => {
+  const rig = computerRig({
+    screenshot: () => ({ data: Buffer.from('x').toString('base64'), mime: 'image/jpeg', width: 4, height: 2, x: 0, y: 0, srcWidth: 4 }),
+    click: (args) => ({ x: args.x, y: args.y }),
+    move: (args) => ({ x: args.x, y: args.y }),
+  });
+  const saved = { via: brokerState.via, desktop: brokerState.desktop };
+  const element = /A UAC prompt I answer by its button element, never by coordinates: computer\.ui_tree with automationId "OkButton" \(Yes\) or "CancelButton" \(No\), then computer\.act invoke/;
+  try {
+    brokerState.via = 'broker';
+    brokerState.desktop = 'Winlogon';
+    const shot = await rig.run('computer.screenshot', {});
+    assert.match(shot, element);
+    assert.ok(shot.indexOf('OkButton') < shot.indexOf('desktop broker with these same tools'), 'the element way comes first');
+    const click = await rig.run('computer.click', { x: 808, y: 780, motion: 'instant' });
+    assert.match(click, /This click went to the Windows secure desktop\. A UAC prompt I answer by its button element/);
+    brokerState.desktop = 'Default';
+    assert.doesNotMatch(await rig.run('computer.screenshot', {}), /UAC prompt I answer/);
+    assert.doesNotMatch(await rig.run('computer.click', { x: 808, y: 780, motion: 'instant' }), /secure desktop/);
+  } finally { Object.assign(brokerState, saved); }
+});
+
+const CHROME_FRAME ="This Chrome window's UI tree holds its frame only: Chrome puts the page document into it once the page has loaded in a window that is not covered.";
 
 test('B-080: computer.ui_tree of a Chrome window without a page document says its tree holds the frame only and why; a page, another window or a cut tree say nothing', async () => {
   let answer: Record<string, unknown> = { hwnd: 41, title: 'Unbenannt - Google Chrome', truncated: false, nodes: FRAME };

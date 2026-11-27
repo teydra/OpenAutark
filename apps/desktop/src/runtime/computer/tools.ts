@@ -24,6 +24,8 @@
 // names that (tree.ts frameOnly), and a covered window's picture says a browser there may not draw its page (live 09.11.).
 // F03 (16.11.2026): on Windows without the desktop broker, a screenshot says that the secure desktop (UAC, lock screen) is out
 // of reach, why (the setup at the app's start: no Yes, or failed) and how one Yes at the Windows prompt changes it (broker.ts).
+// Owner 24.11.2026 (a coordinate click landed left of the UAC prompt's Yes): on the secure desktop the screenshot and a
+// coordinate click name the element way first (broker.ts UAC_BY_ELEMENT: OkButton / CancelButton, computer.act invoke).
 // KI-Runde 17.11.2026: computer.wait and computer.batch (flow-tools.ts) beside these; a ui_tree search finds up to maxNodes
 // matches (at most the helper's 100, default 20) and, when it stops early, says how to get the rest.
 
@@ -37,7 +39,7 @@ import { ANCHOR_SCHEMA, dragPoints, OFFSET_SCHEMA, resolveAnchor, type Anchor, t
 import { WorkforceError } from '../../shared/errors.ts';
 import { judgeTyped, typedText } from '../secrets/handles.ts';
 import { callerOf } from './lease.ts';
-import { lockedDesktop, secureDesktopLine } from './broker.ts';
+import { lockedDesktop, secureDesktopLine, UAC_BY_ELEMENT } from './broker.ts';
 import { MOTION_ARG, withNotes, withOthers } from './tool-notes.ts';
 import { frameOnly, TREE_DEPTH } from './tree.ts';
 import { batchTool, waitTool } from './flow-tools.ts';
@@ -101,7 +103,7 @@ export function computerTools(computer: ComputerService): ToolDef[] {
       // B-080: a window draws itself into its picture, also where a click by coordinates would hit another window; a covered
       // browser draws no page (live 09.11.: the person's Chrome behind their app read as blank).
       if (shot.covered) lines.push('This window is behind another one or off the screen: the picture is the window itself, and a click by coordinates lands on what is in front there – I bring it forward first with computer.act focus_window. A browser behind another window may not draw its page.');
-      if (!computer.usesSecureWindowsHelper() && lockedDesktop()) lines.push('This is the Windows secure desktop (locked screen or UAC prompt). I reach it through the desktop broker with these same tools; on the sign-in screen "Sign-in options" leads to the password, which I type as its secret:// handle.');
+      if (!computer.usesSecureWindowsHelper() && lockedDesktop()) lines.push(`This is the Windows secure desktop (locked screen or UAC prompt). ${UAC_BY_ELEMENT} I reach it through the desktop broker with these same tools; on the sign-in screen "Sign-in options" leads to the password, which I type as its secret:// handle.`);
       const outOfReach = computer.usesSecureWindowsHelper() ? undefined : secureDesktopLine(); // F03: no broker after the setup at the app's start – why, and the one Yes that changes it
       if (outOfReach) lines.push(outOfReach);
       if (shot.ocr?.length) {
@@ -186,7 +188,9 @@ export function computerTools(computer: ComputerService): ToolDef[] {
       }
       ctx.status('clicking');
       const point = await computer.click({ x: args.x, y: args.y, button: args.button, count: args.count, ...step });
-      return withNotes(text(`Clicked ${args.button ?? 'left'}${args.count && args.count > 1 ? ` ×${args.count}` : ''} at screen ${point.x},${point.y}. Not verified – observe the result.`), point.shared);
+      // Owner 24.11.2026: a click by coordinates on the secure desktop missed the UAC prompt's Yes – the element way follows it.
+      const secure = !computer.usesSecureWindowsHelper() && lockedDesktop() ? `\nThis click went to the Windows secure desktop. ${UAC_BY_ELEMENT}` : '';
+      return withNotes(text(`Clicked ${args.button ?? 'left'}${args.count && args.count > 1 ? ` ×${args.count}` : ''} at screen ${point.x},${point.y}. Not verified – observe the result.${secure}`), point.shared);
     },
   });
 
