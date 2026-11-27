@@ -1,7 +1,9 @@
 // Owns: turning the screen on for the AI (phone.key wakeup): an invisible activity that may show over the lock screen,
 // asks Android to turn the screen on (the system's own way – ACQUIRE_CAUSES_WAKEUP needs a permission apps do not get
-// since Android 14) and leaves again, so the lock screen is in front for the AI's swipe. Never: unlocks, dismisses the
-// lock screen, or shows anything.
+// since Android 14; the manifest sets showWhenLocked/turnScreenOn too, so Android 8.1–10 wakes while starting it) and
+// leaves again, so the lock screen is in front for the AI's swipe. Below Android 14 UseService.wake() follows with a short
+// wake lock when the screen stayed dark (27.11.2026: Samsung S9, Android 10, Always-on Display). Never: unlocks,
+// dismisses the lock screen, or shows anything.
 package com.teydralab.autark.android.phoneuse;
 
 import android.app.Activity;

@@ -45,6 +45,8 @@ public final class TodoTest {
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleSettings.java"),
                 source("app/src/main/AndroidManifest.xml"));
         typingKeyboard(source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleTyping.java"));
+        wakeWiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/UseService.java"),
+                source("app/src/main/AndroidManifest.xml"));
         System.out.println(assertions + " to-do button place, post and wiring assertions passed.");
     }
 
@@ -556,6 +558,23 @@ public final class TodoTest {
         check(manifest.contains("android:name=\".phoneuse.BubbleSettings\" android:exported=\"true\"") && manifest.contains("android.intent.action.APPLICATION_PREFERENCES"));
         check(settings.contains("keyguard.isKeyguardLocked()") && settings.indexOf("isKeyguardLocked()") < settings.indexOf("putString(BubbleLock.KEY")
                 && settings.contains("setSingleChoiceItems(") && settings.contains("BubbleLock.ORDER[which]"));
+    }
+
+    /** phone.key wakeup (27.11.2026, S9 on Android 10 with Always-on Display stayed dark): the activity first, below Android 14 a short wake lock, the error last. */
+    private static void wakeWiring(String service, String manifest) {
+        String wake = service.substring(service.indexOf("private String wake()"), service.indexOf("private static void waitInteractive("));
+        int activity = wake.indexOf("new Intent(this, WakeActivity.class)");
+        int lock = wake.indexOf("wakeByLock(power)");
+        int error = wake.indexOf("Android did not turn the screen on.");
+        check(activity >= 0 && lock > activity && error > lock);
+        check(wake.contains("!power.isInteractive() && Build.VERSION.SDK_INT < 34"));
+        String byLock = service.substring(service.indexOf("private static void wakeByLock("), service.indexOf("private static final long WAKE_ON_MS = 3_000;"));
+        check(byLock.contains("SCREEN_BRIGHT_WAKE_LOCK") && byLock.contains("ACQUIRE_CAUSES_WAKEUP") && byLock.contains("ON_AFTER_RELEASE")
+                && byLock.contains("on.acquire(WAKE_ON_MS)") && !byLock.contains("on.acquire()"));
+        check(manifest.contains("android.permission.WAKE_LOCK"));
+        String activityEntry = manifest.substring(manifest.indexOf("android:name=\".phoneuse.WakeActivity\""));
+        activityEntry = activityEntry.substring(0, activityEntry.indexOf("/>"));
+        check(activityEntry.contains("android:showWhenLocked=\"true\"") && activityEntry.contains("android:turnScreenOn=\"true\""));
     }
 
     private static Map<String, Object> map(Object... pairs) {

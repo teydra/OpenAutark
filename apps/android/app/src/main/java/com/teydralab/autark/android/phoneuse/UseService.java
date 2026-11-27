@@ -4,7 +4,8 @@
 // while nothing happened – in a WebView, and on Samsung's app search, where Konrad's taps on "SimplySign" never opened it
 // on 19.11.2026), swipe (a curved, jittered finger path, Gestures), type (ACTION_SET_TEXT on the focused field, Enter
 // between lines; answers what the field reads afterwards, TypedText.readback), key (wakeup – the dark screen goes on,
-// WakeActivity; Awake keeps the phone reachable and a woken screen lit –, back, home, recents, notifications,
+// WakeActivity, below Android 14 a short wake lock when the screen stayed dark; Awake keeps the phone reachable and a
+// woken screen lit –, back, home, recents, notifications,
 // quick_settings, enter), open (an app by its package or by the name under its icon – AppNames –, or a link) and say
 // (16.11.2026: the AI's short line in the
 // bubble, or with ask its question with ✓ and ✕ – {answer: yes|no|none}, none after ASK_MS; a ✓ makes the job active;
@@ -344,20 +345,50 @@ public final class UseService extends AccessibilityService {
         gesture(Gestures.path(through, ms, screen[0], screen[1], random));
     }
 
-    /** phone.key wakeup: the screen goes on (WakeActivity) and stays on between the AI's steps; the lock stays. */
+    /**
+     * phone.key wakeup: the screen goes on (WakeActivity) and stays on between the AI's steps; the lock stays. Below
+     * Android 14 a screen that stayed dark (27.11.2026, Samsung S9 on Android 10 with Always-on Display: the activity
+     * started but the screen stayed dozing) gets a short wake lock that turns it on (wakeByLock); from Android 14 on that
+     * flag needs a permission apps do not get, so there the activity is the only way.
+     */
     private String wake() throws UseError {
         android.os.PowerManager power = getSystemService(android.os.PowerManager.class);
         if (!power.isInteractive()) {
+            RuntimeException blocked = null;
             try { startActivity(new Intent(this, WakeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
-            catch (RuntimeException error) { throw new UseError("conflict", "Android did not turn the screen on: " + error.getClass().getSimpleName()); }
-            for (int i = 0; i < 30 && !power.isInteractive(); i++) SystemClock.sleep(100);
-            if (!power.isInteractive()) throw new UseError("conflict", "Android did not turn the screen on.");
+            catch (RuntimeException error) { blocked = error; }
+            if (blocked == null) waitInteractive(power, 3_000);
+            if (!power.isInteractive() && Build.VERSION.SDK_INT < 34) {
+                wakeByLock(power);
+                waitInteractive(power, 3_000);
+            }
+            if (!power.isInteractive()) {
+                throw new UseError("conflict", blocked != null
+                        ? "Android did not turn the screen on: " + blocked.getClass().getSimpleName()
+                        : "Android did not turn the screen on.");
+            }
             SystemClock.sleep(1_000); // the activity leaves and the lock screen draws
         }
         Awake hold = awake;
         if (hold != null) hold.keepLit();
         return "wakeup";
     }
+
+    private static void waitInteractive(android.os.PowerManager power, long ms) {
+        for (long i = 0; i < ms / 100 && !power.isInteractive(); i++) SystemClock.sleep(100);
+    }
+
+    /** Below Android 14: the screen goes on through a wake lock that ends by itself (WAKE_ON_MS); Awake keeps it lit afterwards. */
+    @SuppressWarnings("deprecation") // SCREEN_BRIGHT_WAKE_LOCK with ACQUIRE_CAUSES_WAKEUP: the one way a service turns the screen on before Android 14
+    private static void wakeByLock(android.os.PowerManager power) {
+        android.os.PowerManager.WakeLock on = power.newWakeLock(android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK
+                | android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP | android.os.PowerManager.ON_AFTER_RELEASE, "autark:phone-use-wakeup");
+        on.setReferenceCounted(false);
+        try { on.acquire(WAKE_ON_MS); }
+        catch (RuntimeException refused) { Log.w("autark", "wakeup wake lock refused: " + refused.getClass().getSimpleName()); }
+    }
+
+    private static final long WAKE_ON_MS = 3_000;
 
     /** Types `text`; what the field reads afterwards (TypedText.readback: null for a password field). */
     private String type(String job, String text) throws UseError {
