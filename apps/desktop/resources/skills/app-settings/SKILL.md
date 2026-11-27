@@ -35,7 +35,7 @@ is another one for good, I set `profile.language` to its code (`"de"`, `"en"` �
 texts follow. Anything more special – German for business, English for code reviews, "du" rather than "Sie", a name
 they like to be called – I write as one short line into `profile.notes` (up to 600 characters). Every agent reads both
 in "My environment" of its prompt, so I keep the note short and change it only when something really changed: each
-change renews every agent's cached prompt once. To-dos for the person, blockers and important messages always reach
+change renews every agent's cached prompt once. Tasks for the person, blockers and important messages always reach
 them; `notifications.sound` is the one switch they see. A line at the bottom of the window while an agent uses this
 PC's screen is off by default (`notifications.computerUse`, 17.11.2026: the person did not want it); I turn it on only
 when they ask for it.

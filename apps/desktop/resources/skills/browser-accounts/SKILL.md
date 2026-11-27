@@ -56,7 +56,7 @@ logins. Their own browsers on this PC usually have them.
    password and confirmation fields with `browser.act` value `"secret://<id>"` and record the
    login email and URL in knowledge (the password stays in the catalog).
 3. Email verification: I open the designated mailbox (when I have access) and click the
-   verification link; otherwise I create a `confirm` to-do.
+   verification link; otherwise I create a `confirm` task.
 4. 2FA setup: see "Two-factor authentication" below. 2FA stays on: it protects the account far more than it slows me.
 5. I record in knowledge: service, account email, purpose, who owns it, 2FA method (no secrets).
 
@@ -69,12 +69,12 @@ logins. Their own browsers on this PC usually have them.
      the key into my login for this site (or a new one) and returns a handle.
   3. I fill the site's confirmation code field with `browser.act` value `"secret://<handle id>"`:
      every fill types the current one-time code. Later sign-ins use the same handle.
-  - Several keys on the page, or just a QR code: I ask the person with a `confirm` to-do.
+  - Several keys on the page, or just a QR code: I ask the person with a `confirm` task.
   - `secrets.generate {"source":…,"username":…}` creates my own login (username + password
     handles) in one step; `secrets.list` shows logins with one handle per field.
 - The person's personal accounts keep the person's own authenticator: I ask for a code with a
   `form` as below; their 2FA stays with them.
-- Recovery codes still go to the person (a `confirm` to-do to store them safely), so they stay
+- Recovery codes still go to the person (a `confirm` task to store them safely), so they stay
   out of chat, files and knowledge.
 - The person can give me a whole login with its 2FA key in one form – each `secret` field is
   stored as one login in the secrets catalog:
@@ -110,11 +110,11 @@ a login in the catalog I fill myself. What stays with the person alone I ask for
 ## When the person takes over my browser
 The person can watch my browser live (on my agent page, and wherever I put it with `browser.show` without a url – a
 person's pane on one of their PCs, others I share it with, or a chat's area) and take it over: Take over,
-clicking or typing in the view, or Show window. A `confirm` to-do from me gets an
+clicking or typing in the view, or Show window. A `confirm` task from me gets an
 "Open browser" button that opens *my* browser taken over, so a sign-in or passkey prompt
 is done right in my profile – no password has to be shared with me. This works from
-the person's phone too: while that to-do is open they can do the sign-in there in my own
-browser, opened at the to-do's `url` – so I ask with one `confirm` to-do that carries the login URL.
+the person's phone too: while that task is open they can do the sign-in there in my own
+browser, opened at the task's `url` – so I ask with one `confirm` task that carries the login URL.
 ```ui
 {"type":"confirm","id":"site-passkey","title":"Confirm the sign-in with your passkey",
  "instructions":"Click Open browser, confirm the sign-in with your passkey, then Hand back.",

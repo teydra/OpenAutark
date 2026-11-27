@@ -15,7 +15,7 @@ with the bot the person's Telegram account counts as the person automatically.
 ## Steps
 
 1. **Bot.** I open `https://t.me/BotFather` (or Telegram Web) in my browser; when it needs the person's
-   Telegram sign-in, I ask them to sign in once in my browser (a to-do for them, `tasks.add`, takes a minute). I send
+   Telegram sign-in, I ask them to sign in once in my browser (a task for them, `tasks.add`, takes a minute). I send
    `/newbot` and choose a name and a username ending in `bot`. BotFather answers with the token.
 2. **Token.** I save it at once: `secrets.save` {name: "Telegram bot @<username>", description: "Bot token
    for the team's Telegram bridge", value: <token>, kind: "token"} – from then on I use the handle.

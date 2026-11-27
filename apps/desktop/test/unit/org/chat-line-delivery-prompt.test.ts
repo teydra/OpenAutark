@@ -20,7 +20,7 @@ for (const file of ['resources/prompts/standard-agent.md', 'resources/prompts/st
     assert.match(text, /when I catch myself composing "I tell Lena: …", that is the moment to write the block/);
     // The old wording that let "thinking" read as the place to word a message is gone.
     assert.doesNotMatch(text, /What I write is my thinking and stays in my run log/);
-    assert.match(text, /a chat or a to-do's thread \(`task_…`\) gets only `<chat to="ch_…">text<\/chat>`/);
+    assert.match(text, /a chat or a task's thread \(`task_…`\) gets only `<chat to="ch_…">text<\/chat>`/);
   });
 }
 
