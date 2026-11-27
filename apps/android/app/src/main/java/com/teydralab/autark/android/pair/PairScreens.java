@@ -136,7 +136,7 @@ public final class PairScreens {
         if (play != null) page.addView(look.quiet("How feedback works", look.link, play), look.spaced(8, 0));
         page.addView(new View(activity), PairLook.fill());
         if (usageOn != null && usageSet != null) page.addView(look.check("Anonymous usage count", UsageText.SENTENCE, usageOn.getAsBoolean(), usageSet), look.spaced(8, 0));
-        page.addView(slot(), PairLook.row(look.dp(44)));
+        page.addView(slot(), PairLook.row(look.dp(64)));
         page.addView(look.primary("Scan QR code", PairScreens::scan), PairLook.row(look.dp(56)));
         page.addView(look.quiet("Enter the code instead", look.link, PairScreens::code), look.spaced(8, 0));
         put(page, look.bg, look.bg);
@@ -184,7 +184,7 @@ public final class PairScreens {
         TextView connect = look.primary("Connect", () -> typedId(field[0]));
         field[0] = CodeField.create(look, typed, connect, () -> typedId(field[0]), () -> { if (message != null) message.setText(""); });
         page.addView(field[0], look.spaced(24, 72));
-        page.addView(slot(), PairLook.row(look.dp(44)));
+        page.addView(slot(), PairLook.row(look.dp(64)));
         page.addView(new View(activity), PairLook.fill());
         page.addView(connect, PairLook.row(look.dp(56)));
         put(page, look.bg, look.bg);
@@ -267,7 +267,7 @@ public final class PairScreens {
     /** The level's status line: two lines high, empty until something is said. */
     private static TextView slot() {
         message = look.text("", 14, look.muted, false);
-        message.setMaxLines(2);
+        message.setMaxLines(3); // the meeting server's refusal is three lines at 14 sp on a 360 dp phone (S9, 27.11.2026: "connection requests?" was cut off)
         return message;
     }
 }
