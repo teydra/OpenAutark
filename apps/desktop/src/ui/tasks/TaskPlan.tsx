@@ -16,7 +16,7 @@ import { openDetail, type PageScope } from './page-state.ts';
 export function PlanSummary(props: { task: Task }) {
   const { done, total, next } = planProgress(props.task.ledger.plan);
   if (!total) return null;
-  return <span class="task-plan-summary" title={next ? `Next: ${next}` : undefined}>☑ {done}/{total}{next ? ` · ${next}` : ''}</span>;
+  return <span class="task-plan-summary" title={next ? `Next step: ${next}` : undefined}>☑ {done}/{total}{next ? ` · ${next}` : ''}</span>;
 }
 
 export function TaskPlan(props: { task: Task; scope?: PageScope }) {
@@ -64,7 +64,7 @@ export function TaskPlan(props: { task: Task; scope?: PageScope }) {
               </select>
             )}
             {item.owner && (
-              <button type="button" class="task-plan-owner" title={item.taskId ? `${agentName(item.owner)} · open their task` : agentName(item.owner)}
+              <button type="button" class="task-plan-owner" title={item.taskId ? `Owner: ${agentName(item.owner)} · open their task` : `Owner: ${agentName(item.owner)}`}
                 aria-label={item.taskId ? `Handed to ${agentName(item.owner)} – open their task` : `Handed to ${agentName(item.owner)}`}
                 disabled={!item.taskId} onClick={() => { if (item.taskId) openDetail(props.scope ?? 'main', item.taskId); }}>
                 <AgentAvatar agentId={item.owner} size={24} />
