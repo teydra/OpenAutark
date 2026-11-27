@@ -57,6 +57,8 @@ test('settings: voice.localTtsSteps offers 3 and 6, keeps no stored default, tak
   const withSteps = (localTtsSteps: unknown) => ({ ...fresh, voice: { ...fresh.voice, localTtsSteps } }) as Settings;
   for (const ok of [3, 6, undefined]) assert.doesNotThrow(() => validateSettings(withSteps(ok)), String(ok));
   for (const bad of [4, '3', 0]) assert.throws(() => validateSettings(withSteps(bad)), /voice\.localTtsSteps/, String(bad));
-  const synced = syncedSettings({ ...fresh, voice: { ...fresh.voice, localTtsSteps: 3 } }) as { voice?: { localTtsSteps?: number } };
-  assert.equal(synced.voice?.localTtsSteps, 3, 'the choice goes to the person\'s other PCs with the voice');
+  // a key added after 22.11.2026 travels as its own unit, never inside the frozen voice section (older PCs would drop it)
+  const synced = syncedSettings({ ...fresh, voice: { ...fresh.voice, localTtsSteps: 3 } } as Settings) as Record<string, unknown> & { voice?: Record<string, unknown> };
+  assert.equal(synced['voice.localTtsSteps'], 3, 'the choice goes to the person\'s other PCs as its own unit');
+  assert.equal('localTtsSteps' in (synced.voice ?? {}), false, 'not inside the frozen voice section');
 });

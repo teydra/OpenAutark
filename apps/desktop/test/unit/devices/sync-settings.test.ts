@@ -152,7 +152,7 @@ test('an older single settings stamp counts for every section; then a change sta
   edit(a, { voice: { realtime: 'auto' } });
   assert.ok(a.stamps.get('settings/voice')!.at > 5000, 'the changed section is stamped now');
   assert.equal(a.stamps.get('settings/profile')?.at, 5000, 'the others keep theirs');
-  assert.deepEqual(Object.keys(a.sync.current().sections).sort(), ['profile', 'profile.notes', 'routing', 'voice'], 'the link-up sends every section (and the unit profile.notes)');
+  assert.deepEqual(Object.keys(a.sync.current().sections).sort(), ['profile', 'profile.notes', 'routing', 'voice', 'voice.localTtsSteps'], 'the link-up sends every section (and the units profile.notes, voice.localTtsSteps)');
   off();
 });
 
