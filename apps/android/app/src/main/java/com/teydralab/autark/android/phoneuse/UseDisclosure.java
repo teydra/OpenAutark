@@ -1,7 +1,9 @@
 // Owns: the prominent disclosure screen for phone use – shown inside the app before Android's Accessibility settings are
 // opened (the enable notification and a service the person switched on by hand both lead here first). "Agree and continue"
 // stores the agreement (UseConsent) and opens Accessibility settings; "Not now" stores nothing, and if the service is
-// already on it is switched off again. Wording: DisclosureText. Never: opens settings without the tap, or reads anything.
+// already on it is switched off again. Someone who agreed before (the service off again, e.g. the app's pull) goes
+// straight on to the settings with a toast that says what to switch there (S9 check 27.11.2026: no silent jump).
+// Wording: DisclosureText. Never: opens settings without the tap, or reads anything.
 package com.teydralab.autark.android.phoneuse;
 
 import android.app.Activity;
@@ -14,13 +16,19 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import java.util.Locale;
 
 public final class UseDisclosure extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (UseConsent.agreed(this)) { openSettings(); finish(); return; }
         boolean german = UiLang.german(this);
+        if (UseConsent.agreed(this)) { // agreed before, the service is off: settings with one line of what to do there
+            Toast.makeText(getApplicationContext(), DisclosureText.turnOn(german), Toast.LENGTH_LONG).show();
+            openSettings();
+            finish();
+            return;
+        }
         float density = getResources().getDisplayMetrics().density;
         int pad = (int) (20 * density);
         LinearLayout column = new LinearLayout(this);

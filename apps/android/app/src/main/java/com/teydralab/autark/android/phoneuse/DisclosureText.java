@@ -42,6 +42,12 @@ public final class DisclosureText {
 
     public static String agree(boolean german) { return german ? "Zustimmen und weiter" : "Agree and continue"; }
 
+    /** The short hint as Android's Accessibility settings open for someone who already agreed (no silent jump there). */
+    public static String turnOn(boolean german) {
+        return german ? "Die Blase braucht die Bedienungshilfe: tippe in der Liste auf Autark und schalte sie ein."
+                : "The bubble needs the accessibility service: tap Autark in the list and turn it on.";
+    }
+
     public static String decline(boolean german) { return german ? "Nicht jetzt" : "Not now"; }
 
     public static boolean isGerman(String language) { return "de".equalsIgnoreCase(language); }
