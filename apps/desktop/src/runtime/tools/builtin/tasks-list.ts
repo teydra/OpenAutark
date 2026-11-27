@@ -2,7 +2,7 @@
 // without an id my quests one line each as "## My quests" shows them (context/quest-text.ts); `who` another owner's,
 // the person's or everyone's quests and lone to-dos; `search` the open work a text is about (tasks/related.ts – the word
 // index that finds a to-do's quest); `done` what ended in the last two weeks; with an id one quest or to-do whole – its
-// notes and plan (context/task-text.ts), every to-do in its quest with who, when and since when, the finished ones, and
+// notes and plan (context/task-text.ts), its quest's next note (anyone's, as on every quest line), every to-do in its quest with who, when and since when, the finished ones, and
 // its thread (context/render.ts). No time is printed on agent work.
 // Owns: this tool and its line format for a lone to-do. Never: writes anything.
 
@@ -15,7 +15,7 @@ import { isPersonId } from '../../../shared/model/people.ts';
 import { profileZone, dueText } from '../../context/time.ts';
 import { humanLabel, renderMessages } from '../../context/render.ts';
 import { checklistSuffix, renderTask, taskAge } from '../../context/task-text.ts';
-import { isQuest, myQuestsSection, ownerOf, questLine, questSnapshot, todoState } from '../../context/quest-text.ts';
+import { isQuest, myQuestsSection, nextNoteOn, nextNoteWords, noteIdsOf, ownerOf, questLine, questSnapshot, todoState } from '../../context/quest-text.ts';
 import { namesFor, type NoteNames } from '../../tasks/names.ts';
 import { relatedWork } from '../../tasks/related.ts';
 import { defineTool, internal } from './util.ts';
@@ -41,6 +41,9 @@ function whole(ctx: ToolContext, id: string): string {
   const names = namesFor(s, zone);
   const quest = isQuest(task);
   const lines = [renderTask(s, task, zone, quest ? '## Quest' : '## To-do'), quest ? 'Now:' : task.parentId ? 'Its quest now:' : 'Now:', ...questSnapshot(s, task, ctx.agent.id, zone, true)];
+  const holder = quest ? task : task.parentId ? s.tasks.get(task.parentId) ?? task : task; // the quest its snapshot shows
+  const note = nextNoteWords(nextNoteOn(s, noteIdsOf(holder)), ctx.agent.id, names, now);
+  lines.push(`${note.charAt(0).toUpperCase()}${note.slice(1)}${holder.id === task.id ? '' : ` (on ${holder.id})`}.`);
   const ended = quest ? task.steps.filter((todo) => isFinished(todo.status)) : [];
   if (ended.length) lines.push('Ended:', ...ended.map((todo) => `  - "${excerpt(todo.title, 100)}" · ${todo.id} · ${names.nameOf(ownerOf(todo))} · ${todo.status} ${dueText(todo.completedAt ?? todo.updatedAt, zone, now)}`));
   const thread = s.chats.get(task.id) ? s.chats.messages(task.id, { limit: THREAD_LINES }) : [];
@@ -74,7 +77,7 @@ function openLines(ctx: ToolContext, found: TaskView[], ownerId: string | undefi
     else lone.push(task);
   }
   const quests = [...ids].map((id) => s.tasks.get(id)).filter((quest): quest is TaskView => !!quest && !isFinished(quest.status));
-  const lines = quests.map((quest) => questLine(quest, ctx.agent.id, names, now));
+  const lines = quests.map((quest) => questLine(quest, ctx.agent.id, names, now, nextNoteOn(s, noteIdsOf(quest))));
   if (lone.length) lines.push('Other:', ...lone.slice(0, LONE_MAX).map((task) => todoLine(task, ctx.agent.id, names, now)));
   if (lone.length > LONE_MAX) lines.push(`(+${lone.length - LONE_MAX} more)`);
   return lines;
@@ -113,7 +116,7 @@ export const listTool = defineTool<{ id?: string; who?: string; search?: string;
     if (args.search?.trim()) {
       const hits = relatedWork(s, args.search, 10, ownerId === undefined ? undefined : (row) => ownerOf(row) !== ownerId);
       const found = hits.map((hit) => s.tasks.get(hit.id)).filter((task): task is TaskView => !!task);
-      return text(found.length ? found.map((task) => (isQuest(task) ? questLine(task, ctx.agent.id, names, now) : todoLine(task, ctx.agent.id, names, now))).join('\n') : 'No open work fits these words.');
+      return text(found.length ? found.map((task) => (isQuest(task) ? questLine(task, ctx.agent.id, names, now, nextNoteOn(s, noteIdsOf(task))) : todoLine(task, ctx.agent.id, names, now))).join('\n') : 'No open work fits these words.');
     }
     if (who === 'me') return text(myQuestsSection(s, ctx.agent.id, zone, true));
     const found = s.tasks.list({ ...owner, status: [...UNFINISHED], includeSteps: true, limit: 500 });

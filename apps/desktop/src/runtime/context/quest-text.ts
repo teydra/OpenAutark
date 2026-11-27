@@ -1,6 +1,6 @@
 // Quests as the agent reads them (Quests round 20.11.2026, CONTRACT "AI" and "Against forgetting and invented dates"):
 // "## My quests" – one line per open quest I own, hold an open to-do in or gave, without a cap (title · id · the person's
-// open to-dos with the next one · mine · each colleague's count · my next note), then "Other:" my open to-dos without a
+// open to-dos with the next one · mine · each colleague's count · the next note on it, whoever set it), then "Other:" my open to-dos without a
 // quest and the lone ones I gave (five and a count), and one line for my notes and posts outside them; the quest as it
 // stands now (the snapshot: done-when, every owner's open to-dos with their waits and since when, the person's done ones
 // counted, the thread lines since my last line there) – for the turn's own work, the morning pass, tasks.list and under a
@@ -69,6 +69,36 @@ function myNotes(s: QuestDeps, agentId: string): { byTask: Map<string, number>; 
   return { byTask, rest };
 }
 
+/** A quest's next note: when it fires and whose it is. */
+export interface NextNote { at: number; ownerId: string }
+
+/**
+ * The next running reminder about any of `ids` (a quest and its to-dos), whoever set it (27.11.2026: tasks.list who=all,
+ * search and the id view printed "no next note" while a note stood on the quest – they read no note, the live head only
+ * the reader's own). One reading for every view; undefined when none runs.
+ */
+export function nextNoteOn(s: Partial<Pick<RuntimeServices, 'scheduler'>>, ids: readonly string[]): NextNote | undefined {
+  let next: NextNote | undefined;
+  for (const id of new Set(ids)) {
+    let found: Schedule[] = [];
+    try { found = s.scheduler?.list({ taskId: id }) ?? []; } catch { found = []; }
+    for (const schedule of found) {
+      if (schedule.kind !== 'reminder' || schedule.taskId !== id || !stillRuns(schedule) || schedule.nextAt === undefined) continue;
+      if (!next || schedule.nextAt < next.at) next = { at: schedule.nextAt, ownerId: schedule.ownerId };
+    }
+  }
+  return next;
+}
+
+/** The ids a quest's next note may be about: the quest and every to-do in it. */
+export const noteIdsOf = (quest: Pick<TaskView, 'id' | 'steps'>): string[] => [quest.id, ...(quest.steps ?? []).map((todo) => todo.id)];
+
+/** "next note Fri 27 Nov 15:14" – "(Mika's)" after it when the note is another's; "no next note". */
+export function nextNoteWords(note: NextNote | undefined, me: string, names: NoteNames, now: number): string {
+  if (!note) return 'no next note';
+  return `next note ${dueText(note.at, names.zone, now)}${note.ownerId === me ? '' : ` (${names.nameOf(note.ownerId)}'s)`}`;
+}
+
 /** The open to-do the person does next: the earliest time, else the oldest – "title, Tue 24 Nov 11:00". */
 function nextOfPerson(open: Task[], zone: string, now: number): string {
   const next = [...open].sort((a, b) => (a.at ?? Infinity) - (b.at ?? Infinity) || a.createdAt - b.createdAt)[0];
@@ -76,7 +106,7 @@ function nextOfPerson(open: Task[], zone: string, now: number): string {
 }
 
 /** One quest as a line of "## My quests" (see the header). */
-export function questLine(quest: TaskView, me: string, names: NoteNames, now: number, nextNote?: number, showAge = true): string {
+export function questLine(quest: TaskView, me: string, names: NoteNames, now: number, nextNote?: NextNote, showAge = true): string {
   const open = quest.steps.filter((todo) => !isFinished(todo.status));
   const parts = [excerpt(quest.title, 100), quest.id];
   const checklist = checklistSuffix(quest);
@@ -97,7 +127,7 @@ export function questLine(quest: TaskView, me: string, names: NoteNames, now: nu
   for (const todo of open) { const who = ownerOf(todo); if (who !== me && who !== HUMAN_ID) others.set(who, (others.get(who) ?? 0) + 1); }
   if (others.size) parts.push([...others].map(([who, count]) => `${names.nameOf(who)} ${count}`).join(', '));
   if (!open.length) parts.push('no open to-dos');
-  parts.push(nextNote !== undefined ? `next note ${dueText(nextNote, names.zone, now)}` : 'no next note');
+  parts.push(nextNoteWords(nextNote, me, names, now));
   if (showAge) parts.push(taskAge(quest, names.zone, now));
   return `- ${parts.join(' · ')}`;
 }
@@ -129,10 +159,9 @@ export function myQuestsSection(s: QuestDeps, agentId: string, zone: string, sho
   const notes = myNotes(s, agentId);
   const covered = new Set<string>();
   const lines = quests.map((quest) => {
-    const ids = [quest.id, ...quest.steps.map((todo) => todo.id)];
+    const ids = noteIdsOf(quest);
     ids.forEach((id) => covered.add(id));
-    const next = Math.min(...ids.map((id) => notes.byTask.get(id) ?? Infinity));
-    return questLine(quest, agentId, names, now, Number.isFinite(next) ? next : undefined, showAge);
+    return questLine(quest, agentId, names, now, nextNoteOn(s, ids), showAge);
   });
   if (other.length) {
     lines.push('Other:');
