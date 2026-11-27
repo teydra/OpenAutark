@@ -1,5 +1,5 @@
 // Owns: the phone's channels to the PCs of its company (B-084 M1) – one per pinned PC that is online, at most CAP – with
-// the version each PC runs (PcVersion), the pause before a failed PC is tried again (PhoneConnection.backoff per PC,
+// the pause before a failed PC is tried again (PhoneConnection.backoff per PC,
 // short while the app is in front; a minute once the backoff ran out while another channel is up) and which one the
 // page uses (owner 27.11.2026: no PC picker, every PC is the same): the first channel that is up, in the phone's order;
 // the page stays on it for as long as it is open, and when it drops the page goes to the next open one at once. A PC
@@ -27,7 +27,6 @@ final class PcLinks<C> {
 
     private final Predicate<C> closed;
     private final Map<String, C> channels = new LinkedHashMap<>();
-    private final Map<String, String> versions = new HashMap<>();
     private final Map<String, Integer> fails = new HashMap<>();
     private final Map<String, Long> retryAt = new HashMap<>();
     private final Set<String> refused = new HashSet<>();
@@ -38,10 +37,9 @@ final class PcLinks<C> {
     /** `fp` refused the page's token; true when that is news (null: no PC, nothing changes). */
     synchronized boolean refuse(String fp) { return fp != null && refused.add(fp); }
 
-    /** A new channel to `fp` running `version` (null: unknown). */
-    synchronized void put(String fp, C channel, String version) {
+    /** A new channel to `fp`. */
+    synchronized void put(String fp, C channel) {
         channels.put(fp, channel);
-        versions.put(fp, version);
         fails.remove(fp);
         retryAt.remove(fp);
     }
@@ -107,9 +105,6 @@ final class PcLinks<C> {
 
     /** The page's PC now, or null. */
     synchronized String usedPc() { return used != null && live(used) ? used : null; }
-
-    /** The version of the page's PC, or null. */
-    synchronized String usedVersion() { return used != null && live(used) ? versions.get(used) : null; }
 
     /** True when the channel to `fp` is open. */
     synchronized boolean live(String fp) {

@@ -5,7 +5,9 @@
 // Two stores (flavors): site – the APK from the website, which downloads and installs its own update (SelfUpdate,
 // REQUEST_INSTALL_PACKAGES); play – the bundle for Google Play, which has neither and sends the person to Play.
 // Feedback 16.11.2026 (F15): build.ps1 writes the feedback video page (assets/tour.html – the PC tour's example video,
-// no copy of the PC's UI) into build/generated/tour, which the main assets include.
+// no copy of the PC's UI) into build/generated/tour, which the main assets include. Owner 27.11.2026: the app carries its
+// own interface – build.ps1 copies apps/desktop's built app/ui into build/generated/ui/ui (assets/ui, relay/UiFiles), so
+// every flavour and build type has it; nothing of it is committed.
 // F25 stage 2 (16.11.2026): the WebRTC way to the PC (relay/WebRtc) runs on Threema's libwebrtc build, pinned exactly; the
 // APK carries its native library for arm64-v8a and armeabi-v7a only (phones; on an x86 emulator the app stays on its
 // tunnel), compressed (useLegacyPackaging: ~7.8 MB more download instead of 14.5 MB; Android unpacks it at install – its
@@ -13,7 +15,7 @@
 // Owner 25.11.2026 (anonymous usage count, README › What Autark counts): copyUsageReceiver puts the feedback receiver's file (project and
 // public web key of the Firestore counter, public by design – no secret) into assets/usage/receiver.json, so the phone's count reaches
 // the same counter as the PCs' (usage/UsageCount).
-// Never: bundles desktop credentials or web UI copies, or holds a key or password itself.
+// Never: bundles desktop credentials, or holds a key or password itself.
 plugins { id 'com.android.application' }
 def releaseKeystore = System.getenv('AUTARK_ANDROID_KEYSTORE')
 android {
@@ -41,7 +43,7 @@ android {
         versionName = '0.3.21'
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' } // F25: libwebrtc for phones only (x86 would add ~20 MB)
     }
-    sourceSets { main { assets.srcDir('build/generated/tour'); assets.srcDir('build/generated/usage') } } // the feedback video page (build.ps1); the usage counter's address
+    sourceSets { main { assets.srcDir('build/generated/tour'); assets.srcDir('build/generated/ui'); assets.srcDir('build/generated/usage') } } // the feedback video page and the interface (build.ps1); the usage counter's address
     flavorDimensions = ['store']
     productFlavors {
         site { dimension = 'store' }

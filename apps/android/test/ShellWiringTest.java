@@ -2,8 +2,9 @@
 // the old company's link closes off the main thread with its entrance freed first (the S23 crash), the connection
 // notice is fixed and never re-posted, every notification carries the Autark mark, the camera capture and its files,
 // the page's 'shot'/'refused'/'crash' messages, the user agent's device group, the feedback video before pairing
-// (IntroTour over the pairing screens, "How feedback works", build.ps1 bundling assets/tour.html) and the volume pair
-// (VolumePair in dispatchKeyEvent, the page's 'feedback').
+// (IntroTour over the pairing screens, "How feedback works", build.ps1 bundling assets/tour.html), the volume pair
+// (VolumePair in dispatchKeyEvent, the page's 'feedback') and, owner 27.11.2026, the interface in the APK (assets/ui)
+// with the entrance screen as the only native screen left besides pairing.
 // Never: a device test (the screen, the camera, the notices and the keys are checked on a phone).
 package com.teydralab.autark.android;
 
@@ -52,12 +53,17 @@ public final class ShellWiringTest {
         check(port.contains("message(\"crash\", \"text\", crash)") && port.contains("CrashReport.clear(activity)"), "a reported crash goes to the page once, then its file");
         String main = source("MainActivity.java");
         check(main.contains("port.crash(crash)") && main.contains("@Override public void refused() { if (link != null) link.refused(); }"), "the activity wires Report and refused");
-        // Owner 27.11.2026: no PC picker and no Try again – the app retries by itself while the "can't reach" screen shows.
-        String offline = source("OfflineScreen.java");
-        check(!offline.contains("android.widget.Button") && !offline.contains("setOnClickListener"), "the can't-reach screen has no button");
+        // Owner 27.11.2026: no PC picker and no Try again; the page is the app's own, so the one native screen left is a
+        // company port that stays taken, and the app retries by itself while it shows.
+        String entrance = source("EntranceScreen.java");
+        check(!entrance.contains("android.widget.Button") && !entrance.contains("setOnClickListener"), "the entrance screen has no button");
         check(!port.contains("case \"pcs\"") && !main.contains("pickPc") && !source("CompanyLink.java").contains("AlertDialog"), "no PC picker anywhere in the shell");
-        check(offline.contains("form.postDelayed(again[0], RETRY_MS);") && offline.contains("if (form.getParent() != content || !form.isAttachedToWindow()) return;"), "the screen retries by itself while it shows, and stops once it is gone");
-        check(main.contains("if (link.pcName() != null && paired != null) open(paired);"), "its retry loads the page again once a PC is linked");
+        check(entrance.contains("form.postDelayed(again[0], RETRY_MS);") && entrance.contains("if (form.getParent() != content || !form.isAttachedToWindow()) return;"), "the screen retries by itself while it shows, and stops once it is gone");
+        check(main.contains("catch (IOException error) { entranceClosed(error.getMessage()); return; }") && main.contains("if (!paused && link == null && paired != null) open(paired);"), "a taken port shows the screen, whose retry opens the company again");
+        String navigation = source("PhoneNavigation.java");
+        check(!navigation.contains("offline") && !navigation.contains("onReceivedHttpError") && !main.contains("offline("), "a page load never swaps the page for a native screen");
+        check(!main.contains("version()") && !main.contains("web.reload()") && main.contains("@Override public void linked() { on(shown -> shown.port.resume()); }"), "another PC or its version never reloads the page; it hears resume");
+        check(link.contains("assets.open(\"ui/\" + path)") && link.contains("connection.start(port, gate, interfaceOf(app))"), "the entrance answers the interface from the APK's assets/ui");
         check(main.contains("link.connection.front(true)") && main.contains("link.connection.front(false)"), "the link hears whether the app is in front");
         String web = source("PhoneWeb.java");
         check(web.contains("\" AutarkAndroid/\" + UpdateCheck.installedName(activity) + device()") && web.contains("\" (Android \" + release"), "the user agent names Android and the device");
@@ -75,6 +81,8 @@ public final class ShellWiringTest {
         String gradle = new String(Files.readAllBytes(Paths.get(System.getProperty("autark.android"), "app/build.gradle")), StandardCharsets.UTF_8);
         String build = new String(Files.readAllBytes(Paths.get(System.getProperty("autark.android"), "build.ps1")), StandardCharsets.UTF_8);
         check(gradle.contains("assets.srcDir('build/generated/tour')") && build.contains("'app/build/generated/tour/tour.html'") && build.contains("apps/desktop/scripts/tour-page.mjs") && build.contains("'assets/tour.html'"), "build.ps1 bundles the page into the assets and a release checks it");
+        check(gradle.contains("assets.srcDir('build/generated/ui')") && build.contains("@('scripts/build.mjs', '--only', 'ui')") && build.contains("'app/build/generated/ui'")
+                && build.contains("(Join-Path $uiAssets 'ui')") && build.contains("'assets/ui/index.html'"), "build.ps1 bundles the interface as assets/ui and a release checks its index.html");
         // Volume up + down together on the page: the feedback cell's press, one key alone the volume.
         check(main.contains("@Override public boolean dispatchKeyEvent(KeyEvent event)") && main.contains("volume.key(code == KeyEvent.KEYCODE_VOLUME_UP ? VolumePair.UP : VolumePair.DOWN,"), "the activity reads both volume keys first");
         check(main.contains("if (port == null || !pageUp || setup) { volumeStep(volume.reset()); return super.dispatchKeyEvent(event); }"), "only on the page; elsewhere the keys stay Android's");

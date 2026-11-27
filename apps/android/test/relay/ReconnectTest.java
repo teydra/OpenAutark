@@ -123,7 +123,7 @@ public final class ReconnectTest {
             AtomicReference<String> status = new AtomicReference<>("");
             PhoneConnection connection = new PhoneConnection(paired, (text, connected) -> status.set(text));
             connection.front(false); // behind: the long steps (in front they stop at 2 s)
-            connection.start(0, "gate");
+            connection.start(0, "gate", new UiFiles(path -> null));
             try {
                 for (int i = 0; i < 4; i++) check(server.acceptTimes.poll(6, TimeUnit.SECONDS) != null, "try " + (i + 1) + " reached the stand-in");
                 long fourth = System.currentTimeMillis(); // the next pause is 5 s

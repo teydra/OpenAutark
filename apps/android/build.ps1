@@ -5,7 +5,9 @@
 # APKs are the site flavor (they download and install their own update: REQUEST_INSTALL_PACKAGES, UpdateReceiver); Play
 # bundles are the play flavor (neither – Play updates them). Every build first bundles the feedback video page
 # (16.11.2026 F15: apps/desktop/scripts/tour-page.mjs, esbuild as the desktop build) into app/build/generated/tour/tour.html,
-# which the APK carries as assets/tour.html (app/build.gradle); a release APK without it fails. Never: installs,
+# which the APK carries as assets/tour.html (app/build.gradle), and the interface (owner 27.11.2026: apps/desktop's
+# `node scripts/build.mjs --only ui`, its app/ui copied to app/build/generated/ui/ui, carried as assets/ui/); a release
+# APK without either fails. Never: installs,
 # publishes or restarts Autark, or prints or stores the key's password.
 param(
     [switch]$Release,
@@ -44,6 +46,18 @@ try {
     $tour = Invoke-Native 'node' @((Join-Path $repository 'apps/desktop/scripts/tour-page.mjs'), $tourPage)
     $tour.output | ForEach-Object { $_ }
     if ($tour.code -ne 0 -or -not (Test-Path -LiteralPath $tourPage -PathType Leaf)) { throw 'The feedback video page (tour.html) was not built; run npm install in apps/desktop once.' }
+    # The app's own interface (owner 27.11.2026; relay/UiFiles answers it on the company's origin): the desktop's UI build,
+    # copied whole to app/build/generated/ui/ui, which the APK carries as assets/ui/.
+    $desktop = Join-Path $repository 'apps/desktop'
+    Push-Location $desktop
+    try { $ui = Invoke-Native 'node' @('scripts/build.mjs', '--only', 'ui') } finally { Pop-Location }
+    $ui.output | ForEach-Object { $_ }
+    $uiBuilt = Join-Path $desktop 'app/ui'
+    if ($ui.code -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $uiBuilt 'index.html') -PathType Leaf)) { throw 'The interface (apps/desktop/app/ui) was not built; run npm install in apps/desktop once.' }
+    $uiAssets = Join-Path $root 'app/build/generated/ui'
+    if (Test-Path -LiteralPath $uiAssets) { Remove-Item -LiteralPath $uiAssets -Recurse -Force }
+    [IO.Directory]::CreateDirectory($uiAssets) | Out-Null
+    Copy-Item -LiteralPath $uiBuilt -Destination (Join-Path $uiAssets 'ui') -Recurse
     $gradle = Join-Path $root 'gradlew.bat'
     if (-not (Test-Path -LiteralPath $gradle -PathType Leaf)) { throw 'Gradle wrapper is missing.' }
     $signer = Join-Path $env:ANDROID_HOME 'build-tools/36.0.0/apksigner.bat'
@@ -84,8 +98,12 @@ try {
             # The feedback video before pairing travels in the APK (IntroTour shows none without it).
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             $zip = [IO.Compression.ZipFile]::OpenRead($apkFile)
-            try { $hasTour = @($zip.Entries | Where-Object { $_.FullName -eq 'assets/tour.html' }).Count -gt 0 } finally { $zip.Dispose() }
+            try {
+                $hasTour = @($zip.Entries | Where-Object { $_.FullName -eq 'assets/tour.html' }).Count -gt 0
+                $hasUi = @($zip.Entries | Where-Object { $_.FullName -eq 'assets/ui/index.html' }).Count -gt 0
+            } finally { $zip.Dispose() }
             if (-not $hasTour) { throw "$apkFile lacks assets/tour.html (the feedback video)." }
+            if (-not $hasUi) { throw "$apkFile lacks assets/ui/index.html (the app's own interface)." }
         }
         $check = Invoke-Native $signer @('verify', '--verbose', '--print-certs', $built)
         $check.output | ForEach-Object { $_ }

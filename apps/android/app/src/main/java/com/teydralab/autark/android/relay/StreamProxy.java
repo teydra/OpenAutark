@@ -1,7 +1,10 @@
-// Owns: the phone's local entrance to its PC – a listener on 127.0.0.1 only the app's own WebView passes (its first
-// request carries the app's private gate cookie), each TCP connection one stream over the encrypted peer channel to the
-// PC's own runtime port (rendezvous/phone.ts: o/d/a/e messages, at most WINDOW unacknowledged bytes per direction).
-// The WebView therefore shows the PC's unchanged phone UI at http://127.0.0.1:<port>, a secure context like https.
+// Owns: the company's local entrance – a listener on 127.0.0.1:<the company's port> only the app's own WebView passes
+// (its first request carries the app's private gate cookie), the page's one origin, a secure context like https. Owner
+// 27.11.2026: a request of the interface is answered here from the app's own copy (UiFiles), with no channel; any other
+// (the PC's data paths, a socket, a POST) is one stream over the encrypted peer channel to the PC's own runtime port
+// (rendezvous/phone.ts: o/d/a/e messages, at most WINDOW unacknowledged bytes per direction), sent with Connection:
+// close so the WebView never asks a PC for an interface file on a kept-alive connection. The port never changes (the
+// page's storage lives on its origin): when it is taken the entrance tries BIND_TRIES times and then says so.
 // B-084: a request whose channel dies before the PC answered gets a 503 instead of hanging; one that hears nothing for
 // 4 s has the link probed once (Channels.probe), so a dead link is found within seconds. M1: the phone holds channels
 // to several PCs; a new stream takes the page's one (Channels.await) and retire() – the page moved to another PC – ends
@@ -51,9 +54,14 @@ public final class StreamProxy {
     /** The channel died: a stream the PC has not answered yet answers 503 itself. */
     private static final byte[] DEAD = new byte[0];
 
+    /** Binding the company's port: tries, BIND_PAUSE_MS apart, before the entrance says it is taken. */
+    static final int BIND_TRIES = 5;
+    private static final long BIND_PAUSE_MS = 100;
+
     private final ServerSocket server;
     private final String gate;
     private final Channels channels;
+    private final UiFiles ui;
     private final Map<PeerChannel, Map<Integer, Stream>> live = new ConcurrentHashMap<>();
     private final AtomicInteger nextId = new AtomicInteger(1);
     /** Moves of the page to another PC (retire), so a stream that raced one ends. */
@@ -62,17 +70,30 @@ public final class StreamProxy {
     private final Set<PeerChannel> draining = ConcurrentHashMap.newKeySet();
     private volatile boolean closed;
 
-    /** Listens on 127.0.0.1:`port` (0 or a taken port: any free one). */
-    public StreamProxy(int port, String gate, Channels channels) throws IOException {
+    /** Listens on 127.0.0.1:`port` (0: any free one, for a test); a port still taken after BIND_TRIES throws. */
+    public StreamProxy(int port, String gate, Channels channels, UiFiles ui) throws IOException {
         this.gate = gate;
         this.channels = channels;
-        ServerSocket socket = new ServerSocket();
-        try { socket.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 32); }
-        catch (IOException taken) { socket.close(); socket = new ServerSocket(); socket.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 32); }
-        server = socket;
+        this.ui = ui;
+        server = bind(port);
         Thread accept = new Thread(this::acceptLoop, "autark-proxy");
         accept.setDaemon(true);
         accept.start();
+    }
+
+    private static ServerSocket bind(int port) throws IOException {
+        for (int attempt = 1; ; attempt++) {
+            ServerSocket socket = new ServerSocket();
+            try {
+                socket.setReuseAddress(true); // a closed entrance's connections in TIME_WAIT never hold the port
+                socket.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 32);
+                return socket;
+            } catch (IOException taken) {
+                socket.close();
+                if (attempt >= BIND_TRIES) throw new IOException("Port " + port + " on this phone is taken by another app.", taken);
+                try { Thread.sleep(BIND_PAUSE_MS); } catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new IOException("Interrupted.", error); }
+            }
+        }
     }
 
     public int port() { return server.getLocalPort(); }
@@ -152,14 +173,18 @@ public final class StreamProxy {
             socket.setSoTimeout(15_000);
             InputStream in = socket.getInputStream();
             byte[] head = readHead(in);
-            if (head == null || !hasGate(new String(head, StandardCharsets.ISO_8859_1))) {
+            String text = head == null ? null : new String(head, StandardCharsets.ISO_8859_1);
+            if (text == null || !hasGate(text)) {
                 socket.getOutputStream().write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
                 socket.close();
                 return;
             }
+            if (UiFiles.ours(text)) { ui.answer(text, socket.getOutputStream()); socket.close(); return; } // the app's own interface
+            boolean upgrade = upgrade(text);
+            if (!upgrade) head = closing(text).getBytes(StandardCharsets.ISO_8859_1);
             socket.setSoTimeout(0);
             int moved = moves.get();
-            PeerChannel channel = channels.await(upgrade(new String(head, StandardCharsets.ISO_8859_1)) ? SOCKET_WAIT_MS : REQUEST_WAIT_MS);
+            PeerChannel channel = channels.await(upgrade ? SOCKET_WAIT_MS : REQUEST_WAIT_MS);
             if (channel == null || channel.isClosed()) {
                 unavailable(socket.getOutputStream());
                 socket.close();
@@ -194,6 +219,19 @@ public final class StreamProxy {
             if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("upgrade") && line.substring(colon + 1).trim().equalsIgnoreCase("websocket")) return true;
         }
         return false;
+    }
+
+    /** `head` with Connection: close in place of its own Connection and Keep-Alive lines: the PC ends the connection
+     *  after its answer, so the WebView's next request opens a new one and passes UiFiles.ours again. */
+    static String closing(String head) {
+        StringBuilder out = new StringBuilder();
+        String[] lines = head.split("\r\n");
+        for (String line : lines) {
+            int colon = line.indexOf(':');
+            String name = colon > 0 ? line.substring(0, colon).trim().toLowerCase(Locale.ROOT) : "";
+            if (!line.isEmpty() && !name.equals("connection") && !name.equals("keep-alive")) out.append(line).append("\r\n");
+        }
+        return out.append("Connection: close\r\n\r\n").toString();
     }
 
     private boolean hasGate(String head) {

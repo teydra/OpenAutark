@@ -1,5 +1,6 @@
 // Owns: the one live link of the current company for the whole app process (B-084, decisions 7 and 8): its connection
-// (relay/PhoneConnection) behind the company's own local port (its own origin), the phone-use socket (phoneuse/UseLink),
+// (relay/PhoneConnection) behind the company's own local port (its own origin, where the APK's own interface answers,
+// assets/ui – owner 27.11.2026), the phone-use socket (phoneuse/UseLink),
 // the network callback pointed at it (relay/NetworkWake), and which PC the page is on and how many are linked – the page
 // takes whichever PC of the company answers (owner 27.11.2026: no PC picker). A PC that refused the page's token (the
 // page's 'refused', 16.11.2026) gives the page to the next PC of the company that has not refused in this link.
@@ -13,19 +14,24 @@ package com.teydralab.autark.android;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.AssetManager;
 import com.teydralab.autark.android.phoneuse.UseLink;
 import com.teydralab.autark.android.relay.Crypto;
 import com.teydralab.autark.android.relay.NetworkWake;
 import com.teydralab.autark.android.relay.PhoneConnection;
+import com.teydralab.autark.android.relay.UiFiles;
 import com.teydralab.autark.android.relay.WebRtc;
+import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 final class CompanyLink {
     /** What the link reports (any thread). */
     interface Events {
         void status(String text, boolean connected);
-        /** A new channel to a PC is up (after a pause, a network change or a PC switch): the page refreshes. */
+        /** The page has a PC again (another one, or its own after a drop): the page hears 'resume' and refreshes its data. */
         void linked();
         /** The company's PCs changed (phoneUse.attach): the caller stores them for `company`. */
         void pcs(String company, List<PhoneConnection.Pc> pcs);
@@ -59,12 +65,12 @@ final class CompanyLink {
         };
     }
 
-    /** Starts the company's connection on its port (any free one when taken) and its phone-use socket. */
+    /** Starts the company's connection on its own port (an IOException when that stays taken) and its phone-use socket. */
     static CompanyLink open(Context context, String company, PhoneConnection.Paired paired, int port, String gate, Events events) throws IOException {
         Context app = context.getApplicationContext();
         PhoneConnection connection = new PhoneConnection(paired, events::status, new WebRtc(app)); // F25: WebRTC way
         connection.onLinked(events::linked);
-        String origin = connection.start(port, gate);
+        String origin = connection.start(port, gate, interfaceOf(app));
         UseLink use = new UseLink(app, origin, gate, paired.token, paired.deviceId, Crypto.fromB64url(paired.seed), (pcs) -> {
             connection.updatePcs(pcs);
             events.pcs(company, connection.paired().pcs);
@@ -72,6 +78,19 @@ final class CompanyLink {
         use.start();
         NetworkWake.register(app, connection);
         return new CompanyLink(company, origin, connection, use);
+    }
+
+    /** The interface this APK carries (assets/ui, build.ps1): a file's bytes, or null when there is no such file. */
+    private static UiFiles interfaceOf(Context app) {
+        AssetManager assets = app.getAssets();
+        return new UiFiles(path -> {
+            try (InputStream in = assets.open("ui/" + path)) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buffer = new byte[64 * 1024];
+                for (int read; (read = in.read(buffer)) > 0; ) out.write(buffer, 0, read);
+                return out.toByteArray();
+            } catch (FileNotFoundException missing) { return null; }
+        });
     }
 
     /** Ends the network callback's target and the local entrance at once (its port is free for the same company opened

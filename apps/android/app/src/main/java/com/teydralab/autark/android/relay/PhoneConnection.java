@@ -1,7 +1,7 @@
 // Owns: pairing this phone with a PC by its Remote ID (B-078, the steps in PhonePairing), and afterwards keeping an
 // encrypted channel to EVERY PC of the company that is online (B-084 M1, at most PcLinks.CAP), each a tunnel through the
 // one meeting-server connection – the phone belongs to the company, not to one PC: it pins every PC it knows (the list
-// grows with phoneUse.attach, phoneuse/UseLink), learns each PC's version (PcVersion), reconnects at once after the
+// grows with phoneUse.attach, phoneuse/UseLink), reconnects at once after the
 // server or a PC went away and, when a try fails, with backoff per PC (0.5 s … 2 s while the app is in front, front();
 // up to 10 s behind; a PC that comes online is tried at once), and hands the local entrance (StreamProxy) the channel
 // the page uses (PcLinks: the first one up – owner 27.11.2026, no PC picker; the page takes it as soon as it is up, not
@@ -30,7 +30,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 public final class PhoneConnection implements StreamProxy.Channels {
     /** One PC of the company as the phone keeps it. */
@@ -126,7 +125,6 @@ public final class PhoneConnection implements StreamProxy.Channels {
     /** F29: after check(), the page's PC reached through the tunnel is tried directly once. */
     private volatile boolean directNow;
     private volatile Runnable linked;
-    private static final long VERSION_MS = 4_000;
     /** F25: the WebRTC way to the page's PC, or null when this phone has no libwebrtc. */
     private final PageRtc rtc;
 
@@ -143,9 +141,9 @@ public final class PhoneConnection implements StreamProxy.Channels {
         });
     }
 
-    /** Opens the local entrance (127.0.0.1:`port`, else any free port) and starts connecting; returns its origin. */
-    public String start(int port, String gate) throws IOException {
-        proxy = new StreamProxy(port, gate, this);
+    /** Opens the local entrance on 127.0.0.1:`port` with the app's own interface `ui` and starts connecting; returns its origin. */
+    public String start(int port, String gate, UiFiles ui) throws IOException {
+        proxy = new StreamProxy(port, gate, this, ui);
         worker = new Thread(this::run, "autark-connection");
         worker.setDaemon(true);
         worker.start();
@@ -230,9 +228,6 @@ public final class PhoneConnection implements StreamProxy.Channels {
 
     /** Open channels to PCs of the company (the page's one included). */
     public int linkedCount() { return links.live(); }
-
-    /** The Autark version of the page's PC, or null (none, or it did not say). */
-    public String version() { return links.usedVersion(); }
 
     @Override public PeerChannel await(long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
@@ -369,18 +364,13 @@ public final class PhoneConnection implements StreamProxy.Channels {
         RelayLink relay = link;
         Route.Opener tunnel = directOnly ? null : () -> relay.open(fp);
         PeerChannel[] holder = new PeerChannel[1];
-        AtomicReference<PcVersion> asking = new AtomicReference<>(); // read on the pipe's reader thread
         PeerChannel.Listener listener = new PeerChannel.Listener() {
             @Override public void message(Map<String, Object> message) {
-                PcVersion question = asking.get();
-                if (PcVersion.mine(message)) { if (question != null) question.deliver(message); return; }
                 PeerChannel current = holder[0];
                 if (RtcSignal.mine(message)) { if (rtc != null) rtc.signal(current, message); return; } // F25: the PC's side of a try
                 if (current != null) proxy.deliver(current, message);
             }
             @Override public void closed() {
-                PcVersion question = asking.get();
-                if (question != null) question.deliver(Json.map("t", "e")); // the version wait ends with the channel
                 PeerChannel current = holder[0];
                 if (current != null) proxy.channelClosed(current);
                 if (rtc != null) rtc.closed(current); // F25: a way on this channel ends with it
@@ -390,12 +380,8 @@ public final class PhoneConnection implements StreamProxy.Channels {
         PeerChannel next = Route.open(DirectPipe.openers(addressesOf(fp)), Route.DIRECT_MS, tunnel,
                 (pipe) -> PeerChannel.connect(pipe, seed, paired.deviceId, pcPub, listener));
         holder[0] = next;
-        PcVersion question = new PcVersion(next::send);
-        asking.set(question);
-        String version = question.fetch(paired.token, VERSION_MS); // one small request: which Autark this PC runs
-        asking.set(null);
         if (next.isClosed()) throw new IOException(nameOf(fp) + " closed the connection."); // waits its backoff, never a tight loop
-        synchronized (lock) { links.put(fp, next, version); }
+        synchronized (lock) { links.put(fp, next); }
         if (next.isClosed()) proxy.channelClosed(next);
     }
 
