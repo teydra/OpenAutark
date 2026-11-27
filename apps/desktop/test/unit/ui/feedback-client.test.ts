@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FEEDBACK_CLIENT_MAX } from '../../../src/shared/model/feedback-delivery.ts';
-import { androidShell, clientFacts, versionAtLeast } from '../../../src/ui/feedback/client.ts';
+import { androidShell, clientFacts } from '../../../src/ui/feedback/client.ts';
 import type { ClientEnv } from '../../../src/ui/feedback/client.ts';
 
 const WEBVIEW = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36';
@@ -20,16 +20,6 @@ test('the Android shell names its version and, from 0.3.15 on, its system and de
   assert.deepEqual(androidShell(NEW_APP), { version: '0.3.15', system: 'Android 16', device: 'samsung SM-S918B' });
   assert.deepEqual(androidShell(OLD_APP), { version: '0.3.12' }, 'an older app: only its version');
   assert.equal(androidShell(IPHONE), null);
-});
-
-test('versions compare by their three numbers; anything unreadable is not new enough', () => {
-  assert.equal(versionAtLeast('0.3.15', '0.3.15'), true);
-  assert.equal(versionAtLeast('0.3.16-local.2', '0.3.15'), true);
-  assert.equal(versionAtLeast('0.4.0', '0.3.15'), true);
-  assert.equal(versionAtLeast('0.3.14', '0.3.15'), false);
-  assert.equal(versionAtLeast('0.3.9', '0.3.15'), false, 'numbers, not text');
-  assert.equal(versionAtLeast(undefined, '0.3.15'), false);
-  assert.equal(versionAtLeast('dev', '0.3.15'), false);
 });
 
 test('one line: where, screen, language, user agent', () => {

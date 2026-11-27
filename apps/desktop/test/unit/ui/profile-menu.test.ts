@@ -43,7 +43,7 @@ test('one section: the companies (the current one ticked), then Settings; B-078:
 });
 
 test('B-084 the phone sheet inside the Android app: photo, name, one status line, the paired companies, Add a company, Settings', () => {
-  assert.match(source, /const phone = isAndroidApp\(\) && hasNativePort\(\);/, 'an older app without the port keeps the plain menu');
+  assert.match(source, /const phone = isAndroidApp\(\);/, 'the page is the app\'s own: no path for an app without the port');
   assert.match(source, /sections=\{phone \? phoneSections\(phoneCompanies\.value\) : \[\.\.\.companySections\(companies\.value, setActing\), \{ items: ITEMS \}\]\}/, 'the desktop path is unchanged');
   assert.match(source, /return \[\{ items: \[\.\.\.rows, ADD_COMPANY\] \}, \{ items: ITEMS \}\];/, 'companies, Add a company, then Settings');
   assert.match(source, /lead: <CompanyPic company=\{company\} \/>/, 'each company with its picture');
@@ -51,7 +51,8 @@ test('B-084 the phone sheet inside the Android app: photo, name, one status line
   assert.match(source, /\{avatar \? <img src=\{avatar\} alt="" \/> : <span>\{avatarInitials\(name\)\}<\/span>\}/, 'the card photo, else initials');
   assert.match(source, /data-color=\{paletteIndex\(id\)\}/, 'on a colour from the id');
   assert.match(source, /const ADD_COMPANY: MenuItem = \{ label: 'Add a company', icon: 'plus', description: 'Scan or type another company\\'s code', onSelect: \(\) => \{ addCompany\(\); \} \};/);
-  assert.match(source, /<button type="button" class="profile-status" onClick=\{\(\) => \{ setOpen\(false\); showPcs\(\); \}\}>\{statusLine\(current\?\.name \?\? companyLabel\(profile, null\), phoneStatus\.value\)\}<\/button>/, 'the status line shows the PC picker');
+  assert.match(source, /<span class="profile-status">\{statusLine\(current\?\.name \?\? companyLabel\(profile, null\), phoneStatus\.value\)\}<\/span>/, 'the status line is words only: there is no PC picker (owner 27.11.2026)');
+  assert.doesNotMatch(source, /showPcs/);
   assert.match(source, /<HumanAvatar size=\{40\} \/>/);
 });
 

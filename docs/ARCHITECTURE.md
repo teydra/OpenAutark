@@ -2172,7 +2172,54 @@ or as employee; one row per device with right-click Rename and Remove (a PC behi
   `lan`. Web push with VAPID: one push request (`push.ts pushOne`: encrypt, headers, 404/410 = gone) and one signer
   (`vapid.ts vapidHeader`) for the own subscriptions and the held ones (`devices/sync/held-push.ts`),
   `webpush-crypto.ts`; the service
-  worker is `ui/pwa/sw.ts`. **Back on screen at once** (B-077, `ui/lib/rpc.ts` `checkAlive`): when the page becomes
+  worker is `ui/pwa/sw.ts`, registered by browsers only: inside a phone app (user agent `AutarkAndroid/` or `AutarkIOS/`,
+  `ui/pwa/native.ts` `inNativeApp`) the app's own files are the interface and the page registers none (owner 27.11.2026).
+  **The interface and its PC** (owner 27.11.2026): the interface names the oldest PC version it works with, `OLDEST_PC`
+  in `ui/lib/pc-floor.ts`; a socket's first ask after the Hello is `system.info` (`ui/lib/rpc.ts`), and the connection
+  counts as open only for a PC at least that old – an older one gets nothing else, the quiet state says "Update Autark on
+  <PC>" (`shell/connection-line.ts`), the phone app hears `refused` and moves to the company's next PC, and it is asked
+  again every 10 s. The constant goes up in the change that makes the interface need something newer of a PC; there is
+  no path for older versions. The floor holds back only that connection, never the interface: the app's page starts
+  from its own files whatever PC answers (Konrad 27.11.2026; `test/unit/ui/rpc-pc-floor.test.ts`).
+  **The interface updates file by file** (owner 27.11.2026: an app update fetches only the files that changed, the
+  others stay; the rules both phone apps follow – Android `relay/UiUpdate.java` + `PhoneUi.java`, the iPhone app the
+  same in Swift). *The list* (`apps/desktop/scripts/ui-list.mjs`): `ui.json` beside a built `app/ui`, compact JSON
+  `{"n":<int>,"shell":<int>,"needs":"<version>","files":{"<path>":{"sha256":"<64 lower-case hex>","bytes":<int>}}}`,
+  paths posix below the interface, without `ui.json`, `ui.json.sig` and dot-led names. `n` is the build time in whole
+  seconds since 1970 (it only grows); `shell` is `SHELL` of `ui/pwa/native-port.ts`, the lowest bridge number of the
+  app the interface needs (today 1); `needs` is `OLDEST_PC` (information; the page checks its PC itself).
+  `ui.json.sig` is the raw 64-byte Ed25519 signature over the exact bytes of `ui.json`, made with the interface key
+  (Konrad 27.11.2026: two keys, the active one and a reserve, so a lost active key is replaced without a new app; the
+  private halves in the secrets catalog – `sec_autark-ui-key-active`, `sec_autark-ui-key-reserve`, PKCS8 DER as one line
+  of base64 – and the release step signs; the public halves as base64url of their raw 32 bytes in each app, Android
+  `UiUpdate.PUBLIC_KEYS`: active `LdtLJGLSC54dj8bVrHxKxe4KCkYKofJMu5FvHjPfbnw`, reserve
+  `Haes-56_0BQE7NuBsZqlQVqkRObOjRWv34weAzbuGuc`; a list counts when its signature verifies under either). Each app carries
+  its own interface with its unsigned list (Android `assets/ui/` and `assets/ui/ui.json`, `build.ps1`), which is trusted
+  as part of the signed app. *The place* (Konrad 27.11.2026: beside the APK in the versioned release): assets of the
+  release `vX.Y.Z` of `teydra/OpenAutark` – `ui.json`, `ui.json.sig` and each file under its sha256 as the name; the
+  apps read `https://github.com/teydra/OpenAutark/releases/latest/download/` + those names, so every app takes the newest
+  interface its `shell` fits and each release carries the whole interface. `node scripts/ui-publish.mjs --tag vX.Y.Z
+  --key-env AUTARK_UI_KEY` in `apps/desktop` (`AUTARK_UI_KEY` = the catalog's active key, `GITHUB_TOKEN` with write
+  access) builds the interface, writes and signs the list, uploads into that release (a draft or a published one) only
+  the sha256 names it lacks, then the signature and the list, then removes the sha256 names the list no longer has – the
+  APK and every other asset stay (a phone mid-fetch of an older list fails and takes the new one at its next look).
+  *The app's rules*: (1) On return to the app, at most once a minute (and at once when the clock went back), with a
+  public key: read `ui.json` (at most 1 MB) and `ui.json.sig`; take the list only when the signature verifies,
+  it parses (`index.html` among the files; every path safe – no empty, `.`-led or backslashed segment; sha256 64 lower-case
+  hex; each file at most 32 MB, all at most 128 MB), `n` is above the newest list the app has (its own or a ready
+  fetched one) and `shell` is at most the app's own number (Android `UiUpdate.SHELL`, 1). With no public key the app
+  never looks and runs its own interface. (2) Fetch only files whose sha256 the app has neither in its own interface nor
+  among the files it fetched before; each goes to `<sha256>.part`, and only exactly the announced size with the announced
+  sha256 becomes `<sha256>` in the app's private files (`files/ui/blobs` on Android). (3) When every file of the list is
+  there, write the list (`files/ui/lists/<n>.json`): it is ready. Anything else – no network, a cut fetch, a wrong
+  signature, size or hash – changes nothing; files already checked stay for the next look. (4) Which list answers: a page
+  starts with its document request (`Sec-Fetch-Dest: document`; without that header, a request for the shell) and gets
+  the newest ready list from then on; requests in between get the list their page started with, so a running page never
+  mixes two builds. A path is answered from `<sha256>` in the app's files, else from the app's own file with that sha256.
+  (5) With a newer ready list whose files differ, the app loads the page anew at the next return to the app – not while
+  the page's voice is live (Android `MainActivity`: `voiceLive`; then at a later return). (6) Lists other than the running
+  page's and the newest ready one are removed, and so are the fetched files neither names; an app update whose own list
+  has a higher `n` makes every fetched list and file go. **Back on screen at once** (B-077, `ui/lib/rpc.ts` `checkAlive`): when the page becomes
   visible, is shown again (`pageshow`), the network returns or a push arrives (`wf.wake` from the service worker), a
   closed socket reconnects at once and an open one is asked `session.info`; no answer within 3 s ends it as dead and a
   new one opens – its `onOpen` reloads chats, tasks and the open chat (a socket a sleeping phone kept "open" stopped all
@@ -2452,7 +2499,7 @@ phone path, the employee push and the HTTPS route via `tailscale serve`.
   other, the side browser's native view hidden under it, the shot at 1:1 with a transparent canvas on top – Pen, Box,
   Undo – and a slim dock at the bottom, `FeedbackPanel.tsx`: Screenshot box, Recording and crash rows, the field with the
   mic, Send or Save, the privacy line); holding talks. The report image is the shot flattened with its marks at Send.
-  The Android app gives the shot natively over its port (`requestNativeShot`, app 0.3.15); the iPhone web app and
+  The Android app gives the shot natively over its port (`requestNativeShot`); the iPhone web app and
   browsers lay the dock over the live screen with "Add photo". Dictation in the form keeps its recording (`recording.ts`,
   WebM Opus 12 kbit/s, MP4 on the iPhone; up to 4 takes, sealed with the report when they fit, else the warning
   `AUDIO_DROPPED`); an Android crash report rides as `clientDiagnostics`; every report carries its origin line `client`

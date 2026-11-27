@@ -9,17 +9,22 @@
 // bubble.pull {x?, y?}, bubble.move {x, y}, bubble.drop {x, y} (CSS px of the viewport); app → page bubble.state
 // {available, out}. The last 'companies', 'status', 'crash' and 'bubble.state' are
 // replayed to a late subscriber, and the local type 'port' tells a subscriber that a (new) port arrived – right away when
-// one is already here. Feedback 16.11.2026: {t:'shot'} asks the app (0.3.15+) for a picture of its own window
+// one is already here. Feedback 16.11.2026: {t:'shot'} asks the Android app for a picture of its own window
 // (PixelCopy) and requestNativeShot waits at most SHOT_WAIT_MS for {t:'shot', data} – a JPEG data URL – or {t:'shot',
 // error}; the app sends {t:'crash', text} once the person tapped "Report" on its crash screen (the feedback form takes
 // it), and {t:'feedback', down} for its quick way in – volume up and volume down pressed together go down (true) and are
 // let go (false); feedbackKeySteps reads it, the feedback cell answers it as its own press (FeedbackButton.tsx).
-// STIMME 21.11.2026: page → app {t:'hear', id, data, mime, language?} – a dictation piece (base64) the app (0.3.18+, its
-// 'status' says hear:true – nativeCan('hear')) posts to the person's ChatGPT plan itself; app → page {t:'heard', id, text}
+// STIMME 21.11.2026: page → app {t:'hear', id, data, mime, language?} – a dictation piece (base64) the app (its
+// 'status' says hear:true – nativeCan('hear'); the iPhone app does not) posts to the person's ChatGPT plan itself; app → page {t:'heard', id, text}
 // or {t:'heard', id, error} (lib/dictation-direct.ts).
 // USAGE 25.11.2026: page → app {t:'usage', on?} sets this phone's anonymous usage count switch (when `on` is given) and asks
 // for its state; app → page {t:'usage', on, text} (replayed; settings/phone-usage.ts).
-// Owns: the port, parsing and dispatch. Never: what a message means (phone-companies.ts, share.ts, … decide).
+// Owns: the port, parsing and dispatch, and SHELL. Never: what a message means (phone-companies.ts, share.ts, … decide).
+
+/** The lowest bridge number of the phone app this interface needs (owner 27.11.2026: an app takes a fetched interface
+ *  only when its own number, Android relay/UiUpdate.SHELL, is at least this; scripts/ui-list.mjs writes it into
+ *  ui.json). Raised in the change that makes the page need a message or ability of the app that older apps lack. */
+export const SHELL = 1;
 
 type NativeMessage = Record<string, unknown>;
 type Handler = (msg: NativeMessage) => void;

@@ -31,16 +31,6 @@ export function androidShell(userAgent: string): { version: string; system?: str
   return { version: match[1]!, ...(system ? { system } : {}), ...(device ? { device } : {}) };
 }
 
-/** True when `version` ("0.3.15", "0.3.15-local.2") is at least `min` ("0.3.15"); false for anything unreadable. */
-export function versionAtLeast(version: string | undefined, min: string): boolean {
-  const parts = (text: string) => (/^(\d+)\.(\d+)\.(\d+)/.exec(text) ?? []).slice(1).map(Number);
-  const have = parts(version ?? '');
-  const need = parts(min);
-  if (have.length !== 3 || need.length !== 3) return false;
-  for (let i = 0; i < 3; i++) if (have[i] !== need[i]) return have[i]! > need[i]!;
-  return true;
-}
-
 /** Where the page runs: the first part of the line. */
 function origin(env: ClientEnv): string {
   const android = androidShell(env.userAgent);

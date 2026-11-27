@@ -163,24 +163,3 @@ test('the response parser: until the end, chunks split at every byte, a short bo
   assert.match(short.failed, /early/);
   assert.match(latin1(requestHead({ method: 'POST', path: '/rpc', headers: [['Host', 'evil'], ['X\r\nY', 'z']], body: new Uint8Array(3) })), /^POST \/rpc HTTP\/1\.1\r\nHost: 127\.0\.0\.1\r\nConnection: close\r\nContent-Length: 3\r\n\r\n$/);
 });
-
-// Owner 19.11.2026 (the phone stopped showing that the AI works): a socket that hears nothing from the PC – no message,
-// no ping – for its silence wait closes with 1006 (lib/rpc.ts reconnects and reloads); every frame starts the wait over.
-test('WebSocket over a stream: silence from the PC closes it with 1006, each frame starts the wait over', async (t) => {
-  const { mux } = await rig(t);
-  const socket = new StreamSocket(async () => mux, '/ws', 8_000, 400);
-  const got: string[] = [];
-  socket.onmessage = (event) => got.push(String(event.data));
-  let closed: { code: number } | undefined;
-  socket.onclose = (event) => { closed = event; };
-  await new Promise<void>((resolve) => { socket.onopen = () => resolve(); });
-  for (let i = 0; i < 3; i++) { // 3 × 250 ms > 400 ms: the answers keep it open
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    socket.send(`n${i}`);
-  }
-  await until(() => got.length, (n) => n === 3, 'answers');
-  assert.equal(closed, undefined, 'frames kept it open');
-  await until(() => closed, Boolean, 'silence');
-  assert.equal(closed!.code, 1006);
-  assert.equal(socket.readyState, 3);
-});

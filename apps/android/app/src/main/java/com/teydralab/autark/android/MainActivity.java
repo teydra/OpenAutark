@@ -1,14 +1,14 @@
 // Owns: the native shell – the companies this phone is paired with (Companies; each its own local port and origin) and
 // the switch between them, pairing by the PC's Remote ID through the native screens (pair/PairScreens: scanner, photo
 // strip, code; the same screens for "Add a company", where Back returns), the one live link of the current company
-// (CompanyLink; linked to every PC of the company, the page on one of them – a move to a PC with another Autark version
-// reloads the page, B-084 M1), the WebView (PhoneWeb) that shows the PC's unchanged phone UI and its one page↔app channel (NativePort),
+// (CompanyLink; linked to every PC of the company, the page's data on one of them, B-084 M1), the WebView (PhoneWeb)
+// that shows the app's own interface on the company's origin (owner 27.11.2026) and its one page↔app channel (NativePort),
 // the system bar strips (SystemBars), places opened from notifications, shortcuts and a recreation (PhoneRoutes), shares
 // into Autark (ShareIn), the foreground service while paired (KeepAlive), the phone-use upgrade's dialog and a crashed
 // renderer's recovery. Back goes back layer by layer in the web UI (window.autarkBack) and, with nothing left, puts the
-// app in the background – it never closes itself. Its own screen besides pairing: "can't reach" (OfflineScreen: Try again,
-// Choose PC – no Forget there since 19.11.2026), which
-// opens the page again by itself once a PC of the company is linked.
+// app in the background – it never closes itself. Its own screen besides pairing: "can't open its page" (EntranceScreen,
+// no button – owner 27.11.2026) when the company's port stays taken, which opens the company again every few seconds
+// while it shows; the link hears whether the app is in front (short pauses between its tries then).
 // Above them all, the update line (UpdateBar, UpdateCheck) when a newer Autark is there. Before everything, the last
 // start's crash report when there is one (CrashReport; its Report hands the trace to the page through NativePort); a
 // failing optional part (bar colours, the foreground service, the notification question, the update line) never keeps
@@ -21,8 +21,9 @@
 // Owner/Konrad 24.11.2026 (#821): the AI's request to use the phone is an ongoing notification until tapped (PhoneUseAsk)
 // and, while this screen is open in front (inFront), the large native card (PhoneUseCard); the Lite build's tap or button
 // goes through PhoneUseUpgrade.begin, and resumed() continues it after Android's "install unknown apps" switch.
-// Today the page is the PC's own phone UI, loaded through the tunnel from the PC the page is on (one PC per page; the app is linked to every PC of the company and no PC outranks another); target 0.3.21: the app brings its own UI and talks to any PC.
-// Never: needs a VPN or a reachable PC address, reads the UI's storage, or runs agents; it holds no copy of the UI until that bundled UI exists.
+// The page loads with every PC off; its data paths go through the PC it is on (one PC per page; the app is linked to
+// every PC of the company and no PC outranks another).
+// Never: needs a VPN or a reachable PC address, reads the UI's storage, or runs agents.
 package com.teydralab.autark.android;
 
 import android.annotation.SuppressLint;
@@ -44,7 +45,6 @@ import android.webkit.CookieManager;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 import com.teydralab.autark.android.pair.PairRun;
@@ -62,8 +62,8 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     /** The activity on screen: the process-wide link reports there. */
     private static volatile MainActivity current;
     private static final CompanyLink.Events EVENTS = new CompanyLink.Events() {
-        @Override public void status(String text, boolean connected) { on(shown -> shown.linkStatus(text, connected)); }
-        @Override public void linked() { on(MainActivity::moved); }
+        @Override public void status(String text, boolean connected) { on(shown -> shown.linkStatus(connected)); }
+        @Override public void linked() { on(shown -> shown.port.resume()); }
         @Override public void pcs(String company, List<PhoneConnection.Pc> pcs) { on(shown -> { shown.companies.setPcs(company, pcs); shown.sendCompanies(); }); }
     };
 
@@ -71,7 +71,6 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     private PhoneChrome chrome;
     private FrameLayout content;
     private UpdateBar updates;
-    private TextView status;
     private SharedPreferences preferences;
     private Companies companies;
     private NativePort port;
@@ -82,8 +81,6 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     private PhoneConnection.Pairing pairing;
     private String pendingRoute;
     private ShareIn.Shared pendingShare;
-    /** The Autark version of the PC that served the page on screen (null: unknown). */
-    private String pageVersion;
     /** The feedback video over the pairing screens while it shows (null: none). */
     private IntroTour tour;
     /** Volume up + down together on the page: the feedback cell's press; its wait runs on `keys`. */
@@ -175,12 +172,12 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         if (link == null || !link.company.equals(companies.currentId())) {
             teardown();
             try { link = CompanyLink.open(this, companies.currentId(), paired, companies.port(), gate, EVENTS); }
-            catch (IOException error) { showPair(null, false); PairScreens.status("The app could not open its local entrance: " + error.getMessage()); return; }
+            catch (IOException error) { entranceClosed(error.getMessage()); return; }
             catch (IllegalArgumentException error) { showPair(null, false); PairScreens.status("This phone's stored pairing could not be read; pair it once more."); return; }
         }
         optional(() -> KeepAlive.start(this));
         origin = link.origin;
-        linkStatus(null, link.pcName() != null);
+        linkStatus(link.pcName() != null);
         PhoneWeb.admit(origin, gate);
         chrome.cancelMedia();
         setup = false;
@@ -189,7 +186,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         content.addView(web, new FrameLayout.LayoutParams(-1, -1));
         web.onResume();
         resetHistory = true;
-        // The phone UI keeps the token itself (lib/rpc-token.ts reads #token=, stores it and clears the address); a place follows in pageReady.
+        // The page keeps the token itself (lib/rpc-token.ts reads #token=, stores it and clears the address); a place follows in pageReady.
         web.loadUrl(origin + "/#token=" + Uri.encode(paired.token));
         optional(() -> AppNotices.askOnce(this, preferences));
     }
@@ -213,7 +210,6 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     private void showPair(String remoteId, boolean adding) {
         closeTour();
         leaveWeb();
-        status = null;
         if (pairing != null) { pairing.cancel(); pairing = null; } // a new pair link replaces a running pairing
         PairScreens.show(this, content, remoteId, adding, this::pairOrCancel, adding ? () -> { PhoneConnection.Paired p = companies.current(); if (p != null) open(p); else showPair(null, false); } : null);
     }
@@ -240,16 +236,14 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         });
     }
 
-    /** The web UI could not load (no page of it on this phone yet): the reason, Try again and Choose PC – no Forget (19.11.2026). */
-    @Override public void offline(String reason) {
-        if (setup) return;
+    /** The company's local entrance could not open its port: the reason, and the company opens again every few seconds. */
+    private void entranceClosed(String reason) {
         leaveWeb();
         PairScreens.stop();
-        status = OfflineScreen.show(this, content, reason, () -> {
+        EntranceScreen.show(this, content, reason, () -> {
             PhoneConnection.Paired paired = companies.current();
-            if (link != null) link.connection.check();
-            if (paired != null) open(paired);
-        }, this::pickPc);
+            if (!paused && link == null && paired != null) open(paired);
+        });
     }
 
     /** "Forget this phone" (the profile menu: autark-app:forget or the port's 'forget') – the current company only. */
@@ -285,22 +279,13 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         SystemBars.apply(null, null);
     }
 
-    /** The link's line: the "can't reach" screen's text and the page's 'status' and 'companies'. */
-    private void linkStatus(String text, boolean connected) {
-        if (status != null && text != null) status.setText(text);
+    /** The link's state: the page's 'status' and 'companies'. */
+    private void linkStatus(boolean connected) {
         port.status(connected && link != null ? link.pcName() : null, connected, link == null ? 0 : link.online(), link == null ? 0 : link.total());
         sendCompanies();
     }
 
     private void sendCompanies() { port.companies(companies.listJson(link == null ? null : link.pcName())); }
-
-    /** The page moved to another channel (B-084 M1): a PC with another Autark version shows its own UI, else the page reconnects. */
-    private void moved() {
-        if (setup && status != null && pairing == null) { PhoneConnection.Paired paired = companies.current(); if (paired != null) open(paired); return; } // the "can't reach" screen: the page opens again on the PC now linked
-        String now = link == null ? null : link.connection.version();
-        if (pageUp && now != null && pageVersion != null && !now.equals(pageVersion)) { pageUp = false; web.reload(); }
-        else port.resume();
-    }
 
     private static void on(Consumer<MainActivity> step) {
         MainActivity shown = current;
@@ -324,7 +309,6 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         if (!newDocument) return;
         port.pageLoaded(view, url);
         pageUp = true;
-        pageVersion = link == null ? null : link.connection.version();
         if (pendingShare != null) { port.share(pendingShare.text, pendingShare.files); pendingShare = null; }
         if (pendingRoute != null) { web.evaluateJavascript("location.hash='" + pendingRoute + "'", null); pendingRoute = null; }
     }
@@ -352,8 +336,6 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     @Override public void addCompany() { showPair(null, true); }
 
     @Override public void forget() { confirmForget(); }
-
-    @Override public void pickPc() { if (link != null) link.pick(this, EVENTS); }
 
     @Override public void refused() { if (link != null) link.refused(); }
 
@@ -401,14 +383,16 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         optional(() -> com.teydralab.autark.android.phoneuse.UseService.appFront(true)); // the resting to-do dot steps aside (DotDodge)
         AppNotices.resumed(true);
         optional(() -> AppNotices.clear(this));
-        if (link != null) { link.connection.check(); optional(() -> KeepAlive.start(this)); }
+        if (link != null) { link.connection.front(true); link.connection.check(); optional(() -> KeepAlive.start(this)); }
         if (web != null && !setup) web.onResume();
         optional(() -> SelfUpdate.resumed(this, updates::step));
         optional(() -> PhoneUseUpgrade.resumed(this, updates::step)); // back from Android's "install unknown apps" switch
         optional(() -> PhoneUseAsk.settle(this)); // phone use there and agreed (or the full build after the upgrade): the request goes
         optional(() -> UpdateCheck.start(this, updates));
+        // Owner 27.11.2026: a newer interface fetched file by file loads now, unless the page's voice is live (PhoneUi).
+        optional(() -> { if (pageUp && !setup && !voiceLive && PhoneUi.store(this).reloadDue()) web.reload(); PhoneUi.resumed(this); });
     }
-    @Override protected void onPause() { paused = true; optional(() -> com.teydralab.autark.android.phoneuse.UseService.appFront(false)); UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
+    @Override protected void onPause() { paused = true; optional(() -> com.teydralab.autark.android.phoneuse.UseService.appFront(false)); if (link != null) link.connection.front(false); UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         String place = web == null || setup ? null : PhoneRoutes.place(web.getUrl());

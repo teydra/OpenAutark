@@ -8,10 +8,12 @@ export const PROTOCOL_VERSION = 1;
 
 /**
  * Fest round 22.11.2026: a page's socket hears a frame from the PC at least every 15 s (its beat, runtime/http/keepalive.ts),
- * so an open socket that heard nothing this long lost its way without an end (ui/lib/rpc.ts; the iPhone tunnel's
- * ui/hosted/ws.ts waits as long).
+ * so an open socket that heard nothing this long lost its way without an end (ui/lib/rpc.ts).
  */
 export const SILENT_MS = 60_000;
+
+/** How long a page's socket gets to open (ui/lib/rpc.ts; the iPhone tunnel's ui/hosted/ws.ts waits as long for its channel). */
+export const OPEN_LIMIT_MS = 5_000;
 
 export interface RpcRequest {
   id: number;

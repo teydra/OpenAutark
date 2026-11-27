@@ -1,8 +1,9 @@
 // Owns: the one live link of the current company for the whole app process (B-084, decisions 7 and 8): its connection
-// (relay/PhoneConnection) behind the company's own local port (its own origin), the phone-use socket (phoneuse/UseLink),
-// the network callback pointed at it (relay/NetworkWake) and the PC picker – the PCs of the company in the phone's order,
-// which one the page uses and which are online; a pick makes the page use that PC. A PC that refused the page's token
-// (the page's 'refused', 16.11.2026) gives the page to the next PC of the company that has not refused in this link.
+// (relay/PhoneConnection) behind the company's own local port (its own origin, where the app's own interface answers –
+// the APK's assets/ui or a newer list fetched file by file, PhoneUi – owner 27.11.2026), the phone-use socket (phoneuse/UseLink),
+// the network callback pointed at it (relay/NetworkWake), and which PC the page is on and how many are linked – the page
+// takes whichever PC of the company answers (owner 27.11.2026: no PC picker). A PC that refused the page's token (the
+// page's 'refused', 16.11.2026) gives the page to the next PC of the company that has not refused in this link.
 // Also where the company list and the entrance's gate secret are kept (SharedPreferences under Companies).
 // Events go to the activity on screen (MainActivity forwards them); the connection's state shows in the page's status
 // line only (the KeepAlive notice is fixed). stop() ends the sockets on a thread of its own – Android refuses network
@@ -11,14 +12,13 @@
 // touches the WebView, or keeps two companies' links at once.
 package com.teydralab.autark.android;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import com.teydralab.autark.android.phoneuse.UseLink;
 import com.teydralab.autark.android.relay.Crypto;
 import com.teydralab.autark.android.relay.NetworkWake;
 import com.teydralab.autark.android.relay.PhoneConnection;
+import com.teydralab.autark.android.relay.UiFiles;
 import com.teydralab.autark.android.relay.WebRtc;
 import java.io.IOException;
 import java.util.List;
@@ -27,9 +27,9 @@ final class CompanyLink {
     /** What the link reports (any thread). */
     interface Events {
         void status(String text, boolean connected);
-        /** A new channel to a PC is up (after a pause, a network change or a PC switch): the page refreshes. */
+        /** The page has a PC again (another one, or its own after a drop): the page hears 'resume' and refreshes its data. */
         void linked();
-        /** The company's PCs changed (phoneUse.attach or the picker): the caller stores them for `company`. */
+        /** The company's PCs changed (phoneUse.attach): the caller stores them for `company`. */
         void pcs(String company, List<PhoneConnection.Pc> pcs);
     }
 
@@ -61,12 +61,12 @@ final class CompanyLink {
         };
     }
 
-    /** Starts the company's connection on its port (any free one when taken) and its phone-use socket. */
+    /** Starts the company's connection on its own port (an IOException when that stays taken) and its phone-use socket. */
     static CompanyLink open(Context context, String company, PhoneConnection.Paired paired, int port, String gate, Events events) throws IOException {
         Context app = context.getApplicationContext();
         PhoneConnection connection = new PhoneConnection(paired, events::status, new WebRtc(app)); // F25: WebRTC way
         connection.onLinked(events::linked);
-        String origin = connection.start(port, gate);
+        String origin = connection.start(port, gate, new UiFiles(PhoneUi.store(app)));
         UseLink use = new UseLink(app, origin, gate, paired.token, paired.deviceId, Crypto.fromB64url(paired.seed), (pcs) -> {
             connection.updatePcs(pcs);
             events.pcs(company, connection.paired().pcs);
@@ -109,25 +109,4 @@ final class CompanyLink {
     /** How many of the company's PCs have a channel now, and how many are paired. */
     int online() { return connection.linkedCount(); }
     int total() { return connection.pcs().size(); }
-
-    /** The PC picker: one row per PC; a pick puts that PC first (the link moves when it is online). */
-    void pick(Activity activity, Events events) {
-        List<PhoneConnection.Pc> pcs = connection.pcs();
-        String now = connection.pcName() == null ? null : connection.pc();
-        String[] rows = new String[pcs.size()];
-        int checked = -1;
-        for (int i = 0; i < rows.length; i++) {
-            PhoneConnection.Pc pc = pcs.get(i);
-            boolean here = pc.fingerprint.equals(now);
-            if (here) checked = i;
-            rows[i] = pc.name + (here ? " · connected" : connection.online(pc.fingerprint) ? " · online" : " · offline");
-        }
-        new AlertDialog.Builder(activity).setTitle("Connect through")
-                .setSingleChoiceItems(rows, checked, (dialog, which) -> {
-                    dialog.dismiss();
-                    connection.prefer(pcs.get(which).fingerprint);
-                    events.pcs(company, connection.paired().pcs);
-                })
-                .setNegativeButton("Cancel", null).show();
-    }
 }

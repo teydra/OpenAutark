@@ -1,7 +1,7 @@
 // Owns: the static half of PhoneConnection (B-084 split, kept out so that file stays under 300 lines) – pairing a new
 // phone key with a PC under its Remote ID (the PC's own connect request with role "phone", relay/RemotePair), reading
-// the pinned PCs back from storage or phoneUse.attach (F29: with their direct addresses), trying the PC the person picked before the others (`preferring`; only the order of the dial attempts, no PC outranks another), and
-// whether two lists pin the same PCs.
+// the pinned PCs back from storage or phoneUse.attach (F29: with their direct addresses), and whether two lists pin the
+// same PCs.
 // Never: keeps state, stores anything, or reaches a PC outside the pairing request.
 package com.teydralab.autark.android.relay;
 
@@ -71,17 +71,5 @@ final class PhonePairing {
         for (PhoneConnection.Pc pc : a) x.add(pc.fingerprint + " " + pc.publicKey);
         for (PhoneConnection.Pc pc : b) y.add(pc.fingerprint + " " + pc.publicKey);
         return x.equals(y);
-    }
-
-    /** `pcs` with `fp` tried before the others (the person's pick), or `pcs` itself when `fp` is not among them. */
-    static List<PhoneConnection.Pc> preferring(List<PhoneConnection.Pc> pcs, String fp) {
-        for (PhoneConnection.Pc pc : pcs) {
-            if (!pc.fingerprint.equals(fp)) continue;
-            List<PhoneConnection.Pc> out = new ArrayList<>(pcs);
-            out.remove(pc);
-            out.add(0, pc);
-            return out;
-        }
-        return pcs;
     }
 }

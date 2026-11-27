@@ -7,7 +7,7 @@
 
 import type { RpcRequest } from '../../shared/api/protocol.ts';
 
-/** How long a call made while not connected waits for the connection (the same 8 s a socket gets to open). */
+/** How long a call made while not connected waits for the connection (a socket gets OPEN_LIMIT_MS to open, and the next attempt goes out at once). */
 export const QUEUE_LIMIT_MS = 8_000;
 
 /** The timers the queue uses (the window's in the app, a fake in unit tests). */

@@ -1,12 +1,12 @@
 // B-084 (decision 7) the Android app's companies on the page (ui/pwa/phone-companies.ts): the 'companies' list is
 // parsed defensively (rows without an id skipped, a picture only as a small image data URL), the status line reads
-// "<company> · <PC>" or "Connecting…", and a pick / "Add a company" / the PC picker are one port message each.
+// "<company> · <PC>" or "Connecting…", and a pick / "Add a company" are one port message each (no PC picker, 27.11.2026).
 // Owns: these assertions with a fake port. Never: a WebView or a runtime.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { adoptPort, resetNativePort } from '../../../src/ui/pwa/native-port.ts';
-import { addCompany, parseCompanies, parseStatus, showPcs, statusLine, switchCompany } from '../../../src/ui/pwa/phone-companies.ts';
+import { addCompany, parseCompanies, parseStatus, statusLine, switchCompany } from '../../../src/ui/pwa/phone-companies.ts';
 
 const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==';
 
@@ -42,7 +42,7 @@ test('status and the one status line', () => {
   assert.equal(statusLine('Teydra Lab', null), 'Connecting…');
 });
 
-test('switch, add and the PC picker are one message each; nothing without the port', () => {
+test('switch and add are one message each, there is no PC picker; nothing without the port', () => {
   resetNativePort();
   assert.equal(switchCompany('c2'), false);
   assert.equal(addCompany(), false);
@@ -50,7 +50,6 @@ test('switch, add and the PC picker are one message each; nothing without the po
   adoptPort({ postMessage: (data: unknown) => sent.push(data), close: () => undefined, onmessage: null } as unknown as MessagePort);
   assert.equal(switchCompany('c2'), true);
   assert.equal(addCompany(), true);
-  assert.equal(showPcs(), true);
-  assert.deepEqual(sent.map((data) => JSON.parse(String(data))), [{ t: 'switch', id: 'c2' }, { t: 'add' }, { t: 'pcs' }]);
+  assert.deepEqual(sent.map((data) => JSON.parse(String(data))), [{ t: 'switch', id: 'c2' }, { t: 'add' }]);
   resetNativePort();
 });

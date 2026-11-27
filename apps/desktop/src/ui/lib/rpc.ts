@@ -2,40 +2,48 @@
 //   desktop     – MessagePort posted by the preload after `window.workforce.connect()`, owner scope
 //   PWA/web     – WebSocket to `/ws`, first frame is a Hello with the device token (inside the iPhone web app the
 //                 shell's tunnel socket, window.autarkHosted – pwa/hosted.ts)
-// Auto-reconnects with backoff (on desktop also as soon as the bridge reports the runtime 'up'
-// again after a restart), re-subscribes topics, rejects pending calls on disconnect. A socket the
+// Re-subscribes topics, rejects pending calls on disconnect. A socket the
 // runtime closes on purpose (4401: token refused, this device is no longer paired, 4403: this device
 // was removed) is remembered in `refused` until the runtime answers again, so the app can say so
 // instead of showing "offline"; a later 4401 for a token the runtime revoked stays 4403, also
-// after a reload (lib/refusal.ts). Reconnecting goes on with backoff, which only an answer from
-// the runtime resets (a refused socket opens, then closes). A socket gets 8 s to open (a dead phone
-// tunnel would leave it 'connecting' for minutes). When the phone/browser page comes back (visible,
-// pageshow, online, a push, the Android app's `resume`, the iPhone shell's new channel – autarkResume),
-// checkAlive connects a socket that is not open at once (replacing an attempt older than 8 s, whose timer a sleeping phone froze)
-// and gives an open one 3 s to answer `session.info`, else replaces it as half-open. refresh()
-// (pull-down) does the same and reloads everything once a live socket answers. A call made while not open waits up to
-// 8 s for the connection (rpc-queue.ts; the desktop window's before its runtime first answered: until it does), then
-// rejects 'unavailable' with NOT_SENT – none of it went out (D6, 19.11.).
-// A PC that does not know this phone's token at all closes with 4404 (runtime/http/ws.ts), kept in `refused` like 4401.
-// Fest round 22.11.2026 – one silence rule for every socket (browser, Android, iPhone): the PC sends a page's socket a
-// frame at least every 15 s (its beat, runtime/http/keepalive.ts – a page cannot see pings), so an open socket that hears
-// nothing for SILENT_MS (shared/api/protocol.ts) lost its way without an end: it is replaced like a probe without an
-// answer, and the new one reloads everything (rpc.open). One timer, started again by every frame. While a call of this
-// page waits for its answer the wait stretches to WAIT_LIMIT silent minutes: a page cannot see a large answer arriving on
-// a slow link (the beats queue behind it), and cutting under it would reload, ask again and cut again – but a page that
-// always has a call out (a file tab's look every 2 s, a pull) on a dead socket still ends it (review 22.11.2026; a long
-// poll answers within its own wait, so it never holds the stretch). The desktop port reports its own end.
-// Owns: framing, request ids, the event fan-out, connection status, the socket's liveness check and silence wait.
+// after a reload (lib/refusal.ts). A PC that does not know this phone's token at all closes with 4404 (runtime/http/ws.ts),
+// kept in `refused` like 4401.
+// Reconnecting (owner 27.11.2026: "when the link drops for a moment it simply reconnects fast by itself"): after a close
+// the first attempt goes out at once, then short steps (retryDelay: 250 ms doubling to 2 s while the page is in front,
+// to 10 s while it is hidden or the PC refuses this device); any frame from the runtime starts the steps over. On desktop
+// also as soon as the bridge reports the runtime 'up' again after a restart. A socket gets OPEN_LIMIT_MS to open (a dead
+// phone tunnel would leave it 'connecting' for minutes). When the phone/browser page comes back (visible, pageshow,
+// online, a push, the Android app's `resume`, the iPhone shell's new channel – autarkResume), checkAlive connects a
+// socket that is not open at once (replacing an attempt older than OPEN_LIMIT_MS, whose timer a sleeping phone froze)
+// and gives an open one 3 s to answer `session.info`, else replaces it as half-open. refresh() (pull-down) does the same
+// and reloads everything once a live socket answers. A call made while not open waits up to 8 s for the connection
+// (rpc-queue.ts; the desktop window's before its runtime first answered: until it does), then rejects 'unavailable' with
+// NOT_SENT – none of it went out (D6, 19.11.).
+// Liveness of an open socket (browser, Android, iPhone): the PC sends it a frame at least every 15 s (its beat,
+// runtime/http/keepalive.ts – a page cannot see pings). A call that heard nothing back for ANSWER_QUIET_MS – no frame of
+// any kind since it went out – sends the one probe (3 s for `session.info`), so a half-open socket under a waiting call
+// is replaced within seconds, never minutes; an idle socket that hears nothing for SILENT_MS (shared/api/protocol.ts) is
+// replaced too; while a file's bytes are on the way (MOVING) neither cuts before MOVING_LIMIT silent minutes. The new
+// socket reloads everything (rpc.open). The desktop port reports its own end.
+// The PC's version (owner 27.11.2026: the phone app carries its own interface): a socket's first ask, right behind the
+// Hello, is system.info, and the socket counts as open only once its PC names a version this interface works with
+// (lib/pc-floor.ts) – queued calls, subscriptions and loads wait for that. An older PC gets nothing more: its name stays in
+// `outdated` (the quiet state says "Update Autark on <PC>"), the socket closes and it is asked again every
+// OUTDATED_RETRY_MS. `turnedAway` counts the sockets that opened and were sent off – refused by their PC (4401/4403/4404)
+// or found too old – so the phone app can move the page to the company's next PC (pwa/native.ts reportRefusals).
+// Owns: framing, request ids, the event fan-out, connection status, the reconnect steps and the socket's liveness checks.
 // Never: holds app state (see store.ts) or retries calls itself (callers decide; effects
 // must never be blindly repeated).
 
 import { signal } from '@preact/signals';
 import type { EventMap, EventName } from '../../shared/api/events.ts';
 import type { MethodName, ParamsOf, ResultOf } from '../../shared/api/methods.ts';
-import { PROTOCOL_VERSION, SILENT_MS, isEvent, isResponse } from '../../shared/api/protocol.ts';
+import { OPEN_LIMIT_MS, PROTOCOL_VERSION, SILENT_MS, isEvent, isResponse } from '../../shared/api/protocol.ts';
 import type { Hello, RpcRequest, Topic } from '../../shared/api/protocol.ts';
+import type { SystemInfo } from '../../shared/model/system.ts';
 import { hostedShell } from '../pwa/hosted.ts';
 import { onNative } from '../pwa/native-port.ts';
+import { pcFits } from './pc-floor.ts';
 import { bridge, platform } from './platform.ts';
 import { RefusalMemory } from './refusal.ts';
 import type { Refusal } from './refusal.ts';
@@ -62,13 +70,20 @@ const status = signal<ConnectionStatus>('connecting');
 /** Close code of the last socket the runtime refused (4401), revoked (4403) or did not know (4404); null once it answers. */
 const refused = signal<Refusal | null>(null);
 const refusals = new RefusalMemory();
+/** The name of the PC whose socket said a version older than this interface works with; null once a fitting PC answered. */
+const outdated = signal<string | null>(null);
+/** How many sockets opened and were sent off (refused or too old); the phone app moves on at each. */
+const turnedAway = signal(0);
+/** How often a PC that is too old is asked again (it may be updated meanwhile). */
+const OUTDATED_RETRY_MS = 10_000;
 const pending = new Map<number, Pending>();
 const queue = new CallQueue(); // requests issued while not connected
 const listeners = new Map<string, Set<(data: unknown) => void>>();
 const topics = new Set<Topic>();
 let transport: Transport | null = null;
 let nextId = 1;
-let retryDelay = 500;
+let failures = 0; // reconnect attempts since the runtime last answered
+let frames = 0; // frames heard in this page life (a waiting call compares)
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let started = false;
 let connecting = false; // one connect attempt at a time
@@ -78,9 +93,19 @@ let giveUp: (() => void) | null = null; // ends the current socket attempt now
 let probing = false; // one liveness probe at a time
 let reloadOnAnswer = false; // refresh(): the probe's answer reloads everything
 let everOpen = false; // the connection was open once in this page life
-const OPEN_LIMIT = 8_000;
-/** Silent minutes a waiting call gets before the socket counts as dead: a large answer on a slow link has five minutes. */
-const WAIT_LIMIT = 5;
+const OPEN_LIMIT = OPEN_LIMIT_MS;
+/** A call that heard no frame at all for this long since it went out probes the socket (probe: 3 s more for the answer). */
+export const ANSWER_QUIET_MS = 4_000;
+const PROBE_MS = 3_000;
+/**
+ * Calls that carry a file's bytes in one frame (lib/files.ts: a preview up to 8 MB, an upload chunk of 4 MB): on a slow
+ * link that frame takes longer than a probe, and every frame behind it – the probe's answer and the beats – waits too.
+ * While one is out the socket gets up to MOVING_LIMIT silent minutes and is not probed (review 27.11.2026: cutting under it
+ * would reload, ask again and cut again).
+ */
+const MOVING = new Set<string>(['files.read', 'files.upload', 'files.uploadChunk']);
+const MOVING_LIMIT = 5;
+const moving = (): boolean => [...pending.values()].some((call) => MOVING.has(call.method));
 /** A pending call's error when the connection went away under it (the status line says the rest, never as a line of its own). */
 export const LOST_TEXT = LOST;
 /** A queued call's error after QUEUE_LIMIT_MS without a connection (also never a line of its own: rpc-error.ts connectionFailure). */
@@ -88,7 +113,8 @@ export const NOT_SENT = platform === 'desktop' ? NOT_SENT_DESKTOP : NOT_SENT_PHO
 const epochs = new RuntimeEpochs();
 
 function handleFrame(raw: unknown): void {
-  retryDelay = 500; // the runtime answered: this connection was accepted
+  failures = 0; // the runtime answered: this connection was accepted
+  frames += 1;
   if (refused.peek() !== null) { refused.value = null; refusals.answered(); }
   let frame = raw;
   if (typeof raw === 'string') {
@@ -115,8 +141,15 @@ function onOpen(next: Transport): void {
   status.value = 'open';
   everOpen = true;
   if (topics.size) next.send({ id: nextId++, method: 'events.subscribe', params: { topics: [...topics] } });
-  for (const request of queue.take()) next.send(request);
+  for (const request of queue.take()) { next.send(request); watchAnswer(request.id); }
   emitLocal('rpc.open');
+}
+
+/** A sent call: when no frame at all came in for ANSWER_QUIET_MS while it waits, the socket is probed (phone/browser). */
+function watchAnswer(id: number): void {
+  if (bridge) return;
+  const seen = frames;
+  setTimeout(() => { if (pending.has(id) && frames === seen && status.peek() === 'open' && !probing && !moving()) probe(); }, ANSWER_QUIET_MS);
 }
 
 function onClosed(): void {
@@ -128,10 +161,17 @@ function onClosed(): void {
   scheduleReconnect();
 }
 
+/** The wait before the next attempt: none after a close, then 250 ms doubling to 2 s – to 10 s while hidden or refused. */
+export function retryDelay(failed: number, slow: boolean): number {
+  if (failed <= 0) return 0;
+  return slow ? Math.min(500 * 2 ** (failed - 1), 10_000) : Math.min(250 * 2 ** (failed - 1), 2_000);
+}
+
 function scheduleReconnect(): void {
   if (retryTimer) return;
-  retryTimer = setTimeout(() => { retryTimer = null; void connect(); }, retryDelay);
-  retryDelay = Math.min(retryDelay * 2, 10_000);
+  const slow = refused.peek() !== null || (typeof document !== 'undefined' && document.visibilityState === 'hidden');
+  const wait = outdated.peek() !== null ? OUTDATED_RETRY_MS : retryDelay(failures++, slow);
+  retryTimer = setTimeout(() => { retryTimer = null; void connect(); }, wait);
 }
 
 async function connectPort(): Promise<void> {
@@ -152,12 +192,11 @@ function connectSocket(): Promise<void> {
     const hosted = hostedShell();
     const socket = hosted ? (hosted.socket('/ws') as unknown as WebSocket) : new WebSocket(`${scheme}://${location.host}/ws`);
     let silent: ReturnType<typeof setTimeout> | undefined;
-    let waits = 0; // silent minutes in a row a waiting call was given
-    let beatSupported = false; // legacy PCs send no application heartbeat
-    /** SILENT_MS without a frame: replaced – unless a call waits for its answer, which may be arriving slowly: up to WAIT_LIMIT silent minutes. */
+    let waits = 0; // silent minutes in a row a file's bytes were given (MOVING)
+    /** SILENT_MS without a frame replaces the socket – unless a file's bytes are on the way: up to MOVING_LIMIT minutes. */
     const quiet = () => {
       if (transport !== next) return;
-      if (pending.size && ++waits < WAIT_LIMIT) silent = setTimeout(quiet, SILENT_MS);
+      if (moving() && ++waits < MOVING_LIMIT) silent = setTimeout(quiet, SILENT_MS);
       else reconnectNow();
     };
     /** Heard from the PC (or just opened): the silence wait starts over. */
@@ -167,36 +206,57 @@ function connectSocket(): Promise<void> {
       silent = setTimeout(quiet, SILENT_MS);
     };
     const next: Transport = { send: (frame) => socket.send(JSON.stringify(frame)), close: () => { clearTimeout(silent); socket.onmessage = null; socket.close(); } };
-    let opened = false;
+    let opened = false; // the socket opened (its Hello went out)
+    let admitted = false; // its PC named a version this interface works with: the connection is open
     let token = '';
-    const end = () => {
+    let ask = 0; // the version ask's request id
+    const end = (why = 'socket did not open') => {
       clearTimeout(limit);
+      clearTimeout(silent);
+      pending.delete(ask);
       socket.onopen = socket.onmessage = socket.onclose = null;
       try { socket.close(); } catch { /* never opened */ }
-      reject(new Error('socket did not open'));
+      reject(new Error(why));
     };
-    const limit = setTimeout(end, OPEN_LIMIT); // event-armed once; open or close clears it
+    let limit = setTimeout(end, OPEN_LIMIT); // event-armed; open restarts it for the version ask, admission or a close clears it
     giveUp = end;
+    /** The version ask's answer: a fitting PC opens the connection, an older one is sent off (an error answer cannot tell: open). */
+    const answered = (info: SystemInfo | null) => {
+      if (info && !pcFits(info.version)) {
+        outdated.value = (typeof info.deviceName === 'string' ? info.deviceName.trim().slice(0, 40) : '') || 'your PC';
+        turnedAway.value += 1;
+        end('PC too old');
+        return;
+      }
+      clearTimeout(limit);
+      admitted = true;
+      outdated.value = null;
+      onOpen(next);
+      resolve();
+    };
     socket.onopen = () => {
       clearTimeout(limit);
       opened = true;
       token = readToken();
       const hello: Hello = { protocol: PROTOCOL_VERSION, token, client: 'pwa', deviceName: navigator.userAgent.slice(0, 80) };
       socket.send(JSON.stringify(hello));
-      onOpen(next);
-      resolve();
+      heard();
+      limit = setTimeout(end, PROBE_MS); // a PC that never says its version is as dead as one that never opens
+      ask = nextId++;
+      pending.set(ask, { method: 'system.info', resolve: (info) => answered(info as SystemInfo), reject: () => answered(null) });
+      socket.send(JSON.stringify({ id: ask, method: 'system.info' }));
     };
     socket.onmessage = (event) => {
-      if (event.data === '{}') beatSupported = true;
-      if (beatSupported) heard();
+      heard();
       handleFrame(event.data);
     };
     socket.onclose = (event) => {
       clearTimeout(limit);
       clearTimeout(silent);
       const refusal = refusals.closed(event.code, token);
-      if (refusal !== null) refused.value = refusal;
-      if (!opened) reject(new Error('socket closed'));
+      if (refusal !== null) { refused.value = refusal; outdated.value = null; } // the newest PC's word stands
+      if (opened && refusal !== null) turnedAway.value += 1;
+      if (!admitted) { pending.delete(ask); reject(new Error('socket closed')); }
       else if (transport === next) onClosed();
     };
   });
@@ -233,7 +293,7 @@ function reconnectNow(): void {
     try { stale.close(); } catch { /* already closed */ }
   }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  retryDelay = 500;
+  failures = 0;
   void connect();
 }
 
@@ -247,7 +307,7 @@ function watchRuntime(): void {
 
 /**
  * Phone/browser (the desktop port reports its own end): a socket that is not open connects now
- * (a connect attempt older than 8 s is replaced); an open one answers `session.info` within 3 s, or
+ * (a connect attempt older than OPEN_LIMIT_MS is replaced); an open one answers `session.info` within 3 s, or
  * it is half-open (events stopped, calls hang) and is replaced at once. Runs on visible, pageshow,
  * online, a push (pwa/install.ts), the Android app's `resume` and the iPhone shell's new channel (autarkResume).
  */
@@ -260,7 +320,7 @@ export function checkAlive(): void {
 
 function probe(): void {
   probing = true;
-  const dead = setTimeout(reconnectNow, 3_000); // every close rejects the probe first, which clears this
+  const dead = setTimeout(reconnectNow, PROBE_MS); // every close rejects the probe first, which clears this
   void call('session.info').then(() => { if (reloadOnAnswer) emitLocal('rpc.open'); }, () => undefined)
     .finally(() => { clearTimeout(dead); probing = false; reloadOnAnswer = false; });
 }
@@ -286,7 +346,7 @@ function call<M extends MethodName>(method: M, params?: ParamsOf<M>): Promise<Re
   return new Promise<ResultOf<M>>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject, method });
     if (transport && status.value === 'open') {
-      try { transport.send(request); } catch (error) { pending.delete(id); reject(error); }
+      try { transport.send(request); watchAnswer(id); } catch (error) { pending.delete(id); reject(error); }
     } else {
       const expired = () => { if (pending.delete(id)) reject(new RpcError({ code: 'unavailable', message: NOT_SENT })); };
       queue.add(request, platform !== 'desktop' || everOpen ? expired : undefined); // a desktop cold start waits
@@ -337,4 +397,4 @@ function start(): void {
   onNative('resume', checkAlive);
 }
 
-export const rpc = { call, on, subscribe, unsubscribe, onOpen: onOpenEvent, start, status, refused, refresh };
+export const rpc = { call, on, subscribe, unsubscribe, onOpen: onOpenEvent, start, status, refused, outdated, turnedAway, refresh };

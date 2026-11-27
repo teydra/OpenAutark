@@ -28,8 +28,12 @@ public final class ReconnectTest {
     }
 
     private static void backoff() {
-        long[] expected = { 500, 1_000, 2_000, 5_000, 10_000, 10_000, 10_000 };
-        for (int i = 0; i < expected.length; i++) check(PhoneConnection.backoff(i) == expected[i], "backoff step " + i);
+        long[] behind = { 500, 1_000, 2_000, 5_000, 10_000, 10_000, 10_000 };
+        long[] front = { 500, 1_000, 2_000, 2_000, 2_000, 2_000, 2_000 }; // owner 27.11.2026: in front the steps stay short
+        for (int i = 0; i < behind.length; i++) {
+            check(PhoneConnection.backoff(i, false) == behind[i], "backoff step " + i + " behind");
+            check(PhoneConnection.backoff(i, true) == front[i], "backoff step " + i + " in front");
+        }
     }
 
     private static WebSocketClient.Listener quiet(AtomicInteger closes) {
@@ -118,7 +122,8 @@ public final class ReconnectTest {
             PhoneConnection.Paired paired = new PhoneConnection.Paired(server.url(), Crypto.b64url(Crypto.newSeed()), "dev_phone", "token", pcs);
             AtomicReference<String> status = new AtomicReference<>("");
             PhoneConnection connection = new PhoneConnection(paired, (text, connected) -> status.set(text));
-            connection.start(0, "gate");
+            connection.front(false); // behind: the long steps (in front they stop at 2 s)
+            connection.start(0, "gate", new UiFiles(path -> null));
             try {
                 for (int i = 0; i < 4; i++) check(server.acceptTimes.poll(6, TimeUnit.SECONDS) != null, "try " + (i + 1) + " reached the stand-in");
                 long fourth = System.currentTimeMillis(); // the next pause is 5 s

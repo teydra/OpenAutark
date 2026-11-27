@@ -3,8 +3,8 @@
 // (F-52: #join=, pwa/JoinRequest.tsx), a phone the PC removed (4403: AccessRequest removed) and the runtime's repair mode.
 // Sicher-Runde 19.11.2026 (D1, D4, D5, D7 – "am Handy nur My Day, keine Knöpfe"): a PC that is out of reach, does not
 // know this phone yet (4404) or no longer accepts it (4401) never replaces the shell – the frame keeps its destination tabs
-// and the last data (pwa/offline-cache.ts), and the status line says it in one calm line with Try now, Choose PC and
-// Pair again (shell/connection-line.ts); Forget this phone stays in Settings › Devices. Inside the Android app a refusal
+// and the last data (pwa/offline-cache.ts), and it is said in one calm line – Pair again where it needs the person; the
+// page reconnects by itself (shell/connection-line.ts); Forget this phone stays in Settings › Devices. Inside the Android app a refusal
 // first goes to the app, which tries the company's next PC (pwa/native.ts reportRefusals).
 // Owns: those screens and the top-level error boundary. Never: data loading itself (main.tsx starts it) or any write to
 // the PC while offline (feedback written then waits in the page's outbox).

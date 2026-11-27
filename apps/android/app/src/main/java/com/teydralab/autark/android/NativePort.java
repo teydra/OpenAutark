@@ -3,7 +3,7 @@
 // only, so opaque-origin agent frames never get it), keeps the other and drops the previous one. Messages are JSON
 // {t, …} both ways. Page → app: 'colors' (SystemBars), 'speak'/'stopSpeech' (PhoneSpeech), 'download' (PhoneDownloads),
 // 'haptic' and 'shot' (16.11.2026: a picture of the app's own window for a feedback report – PixelCopy, longest side
-// SHOT_SIDE, JPEG 85, answered as 'shot' {data} or {error}) are handled here; 'card', 'switch', 'add', 'forget', 'pcs',
+// SHOT_SIDE, JPEG 85, answered as 'shot' {data} or {error}) are handled here; 'card', 'switch', 'add', 'forget',
 // 'refused' (the PC refused the page's token) and 'wake' {id, key, name} (W 19.11.2026: wake a closed PC through the
 // phone's own meeting-server link, answered 'woken' {id} or {id, error}; 'status' says wake:true so the page knows) go to
 // the activity (Listener). App → page: send(), with the latest
@@ -60,8 +60,6 @@ final class NativePort {
         void addCompany();
         /** Forget this phone (the current company): the same confirm as autark-app:forget. */
         void forget();
-        /** Show the PC picker of the current company. */
-        void pickPc();
         /** The PC refused the page's token (4401): the page goes to the next PC of the company that has not refused. */
         void refused();
         /** W: wake the PC `id` whose wake helper key is `key`; the answer goes back with woken(). */
@@ -224,7 +222,6 @@ final class NativePort {
             case "switch": { String id = text(in, "id"); if (id != null) listener.switchCompany(id); break; }
             case "add": listener.addCompany(); break;
             case "forget": listener.forget(); break;
-            case "pcs": listener.pickPc(); break;
             case "refused": listener.refused(); break;
             case "wake": { String id = text(in, "id"); if (id != null) listener.wake(id, text(in, "key"), text(in, "name")); break; }
             case "shot": shot(); break;

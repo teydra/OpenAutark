@@ -1,10 +1,11 @@
 // Owns: the phone's channels to the PCs of its company (B-084 M1) – one per pinned PC that is online, at most CAP – with
-// the version each PC runs (PcVersion), the pause before a failed PC is tried again (PhoneConnection.backoff per PC;
-// a minute once the backoff ran out while another channel is up) and which one the page uses: the PC picked in the app while its channel is up, else the newest version (among equal versions the one earlier in the paired list – only a
-// fallback order, no PC outranks another); the page stays where it is until its PC drops or a newer one is linked. A PC that refused the
-// page's token (refuse) is passed over for as long as another linked PC has not refused – each PC refuses at most once
-// per connection, so the page never circles; with every linked PC refused, the page stays where it is (it says 'Not
-// paired'). The person's pick of a PC forgives its refusal.
+// the pause before a failed PC is tried again (PhoneConnection.backoff per PC,
+// short while the app is in front; a minute once the backoff ran out while another channel is up) and which one the
+// page uses (owner 27.11.2026: no PC picker, every PC is the same): the first channel that is up, in the phone's order;
+// the page stays on it for as long as it is open, and when it drops the page goes to the next open one at once. A PC
+// that refused the page's token (refuse) is passed over for as long as another linked PC has not refused – each PC
+// refuses at most once per connection, so the page never circles; with every linked PC refused, the page stays where
+// it is (it says 'Not paired').
 // Never: opens or closes a channel itself (PhoneConnection does), or knows what a channel is beyond "closed".
 package com.teydralab.autark.android.relay;
 
@@ -26,7 +27,6 @@ final class PcLinks<C> {
 
     private final Predicate<C> closed;
     private final Map<String, C> channels = new LinkedHashMap<>();
-    private final Map<String, String> versions = new HashMap<>();
     private final Map<String, Integer> fails = new HashMap<>();
     private final Map<String, Long> retryAt = new HashMap<>();
     private final Set<String> refused = new HashSet<>();
@@ -37,22 +37,18 @@ final class PcLinks<C> {
     /** `fp` refused the page's token; true when that is news (null: no PC, nothing changes). */
     synchronized boolean refuse(String fp) { return fp != null && refused.add(fp); }
 
-    /** The person picked `fp`: a refusal of it no longer counts; true when there was one. */
-    synchronized boolean forgive(String fp) { return fp != null && refused.remove(fp); }
-
-    /** A new channel to `fp` running `version` (null: unknown). */
-    synchronized void put(String fp, C channel, String version) {
+    /** A new channel to `fp`. */
+    synchronized void put(String fp, C channel) {
         channels.put(fp, channel);
-        versions.put(fp, version);
         fails.remove(fp);
         retryAt.remove(fp);
     }
 
-    /** Opening a channel to `fp` failed: it waits its backoff before the next try. */
-    synchronized void failed(String fp, long now) {
+    /** Opening a channel to `fp` failed: it waits its backoff (short while the app is in front) before the next try. */
+    synchronized void failed(String fp, long now, boolean front) {
         int count = fails.merge(fp, 1, Integer::sum);
         boolean spare = count > BACKOFF_STEPS && live() > 0; // the page has a PC: a PC that keeps failing never keeps the radio awake
-        retryAt.put(fp, now + (spare ? SPARE_MS : PhoneConnection.backoff(count - 1)));
+        retryAt.put(fp, now + (spare ? SPARE_MS : PhoneConnection.backoff(count - 1, front)));
     }
 
     /** Forgets closed channels; returns the open ones of PCs that are no longer pinned (the caller closes them). */
@@ -86,21 +82,16 @@ final class PcLinks<C> {
         return next;
     }
 
-    /** The app came back or the network changed: every failed PC is due again, its backoff starts over. */
+    /** The app came back, the network changed or a PC came online: every failed PC is due again, its backoff starts over. */
     synchronized void retryNow() { fails.clear(); retryAt.clear(); }
 
     /** Settles the page's PC (see the header) and returns its channel, or null when none is up. */
-    synchronized C pick(List<String> order, String preferred) {
+    synchronized C pick(List<String> order) {
         boolean willing = false; // a linked PC that has not refused the page's token
         for (String fp : order) willing |= live(fp) && !refused.contains(fp);
-        if (!willing && used != null && live(used)) return channels.get(used); // every linked PC refused: the page stays
-        if (preferred != null && usable(preferred, willing)) used = preferred;
-        else {
-            String best = null;
-            for (String fp : order) if (usable(fp, willing) && (best == null || PcVersion.compare(versions.get(fp), versions.get(best)) > 0)) best = fp;
-            boolean stay = used != null && usable(used, willing) && (best == null || PcVersion.compare(versions.get(best), versions.get(used)) <= 0);
-            if (!stay) used = best;
-        }
+        if (used != null && usable(used, willing)) return channels.get(used); // the page stays on an open channel
+        used = null;
+        for (String fp : order) if (usable(fp, willing)) { used = fp; break; }
         return used == null ? null : channels.get(used);
     }
 
@@ -114,9 +105,6 @@ final class PcLinks<C> {
 
     /** The page's PC now, or null. */
     synchronized String usedPc() { return used != null && live(used) ? used : null; }
-
-    /** The version of the page's PC, or null. */
-    synchronized String usedVersion() { return used != null && live(used) ? versions.get(used) : null; }
 
     /** True when the channel to `fp` is open. */
     synchronized boolean live(String fp) {

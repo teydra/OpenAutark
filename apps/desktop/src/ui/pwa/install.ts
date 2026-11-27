@@ -1,6 +1,6 @@
 // PWA page-side helpers: pairing (#pair=<secret>[&to=<route>] or the PC's 6-digit code → device token, then the route),
 // the tokenless `POST /rpc` call (pairing, an employee's join: pwa/join.ts),
-// service worker registration, install prompt, Web Push subscription, this device's copy of the last data (offline-cache.ts),
+// service worker registration (never inside a phone app: its files are the interface), install prompt, Web Push subscription, this device's copy of the last data (offline-cache.ts),
 // SW navigation and the socket check on every push ('wf.wake'), and Back layer by layer (back.ts).
 // Inside the iPhone web app (pwa/hosted.ts): the shell's worker instead of /sw.js, /rpc under the shell's base, and the
 // notices of read chats and calls closed while the app is in front (Apple gets no clear pushes).
@@ -22,6 +22,7 @@ import { watchPersonMark } from './person-access.ts';
 import { startBack } from './back.ts';
 import { hostedPath, hostedShell } from './hosted.ts';
 import { requestBadgeSync } from './badge.ts';
+import { inNativeApp } from './native.ts';
 
 const TOKEN_KEY = 'wf.token';
 
@@ -107,7 +108,9 @@ let registration: ServiceWorkerRegistration | null = null;
 const live = (): boolean => loaded.peek() && cachedAt.peek() === null;
 
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (platform === 'desktop' || !('serviceWorker' in navigator) || !isSecureContext) return null;
+  // Inside a phone app the app's own files are the interface (owner 27.11.2026): no worker of this page – the app serves
+  // a small /sw.js that only removes the one a PC-served page registered before.
+  if (platform === 'desktop' || inNativeApp() || !('serviceWorker' in navigator) || !isSecureContext) return null;
   try {
     // Inside the iPhone web app the shell's own worker controls this page (ui/hosted/sw.ts): no /sw.js of the PC here.
     registration = hostedShell() ? await navigator.serviceWorker.ready : await navigator.serviceWorker.register('/sw.js', { scope: '/' });

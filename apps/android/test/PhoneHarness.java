@@ -5,6 +5,7 @@ package com.teydralab.autark.android;
 
 import com.teydralab.autark.android.relay.Json;
 import com.teydralab.autark.android.relay.PhoneConnection;
+import com.teydralab.autark.android.relay.UiFiles;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -32,7 +33,7 @@ public final class PhoneHarness {
                     Json.str(saved, "token"), PhoneConnection.Paired.pcsOf(saved.get("pcs")));
             PhoneConnection connection = new PhoneConnection(paired, (text, connected) ->
                     System.out.println(Json.write(Json.map("status", text, "connected", connected))));
-            String origin = connection.start(Integer.parseInt(args[2]), args[3]);
+            String origin = connection.start(Integer.parseInt(args[2]), args[3], new UiFiles(path -> null)); // no interface: data paths only
             System.out.println(Json.write(Json.map("origin", origin, "phone", connection.self())));
             BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
             String line;

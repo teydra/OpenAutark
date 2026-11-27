@@ -1,6 +1,6 @@
-// Feedback 16.11.2026 (F15, F22): the Android app (0.3.15+) takes the feedback shot of its own window over the port –
-// the page asks {t:'shot'} and waits at most 2 s for {t:'shot', data} (a JPEG data URL) or {t:'shot', error}; an
-// older app, an error or anything that is no image gives no shot. The app's crash report ({t:'crash', text}) is
+// Feedback 16.11.2026 (F15, F22): the Android app takes the feedback shot of its own window over the port –
+// the page asks {t:'shot'} and waits at most 2 s for {t:'shot', data} (a JPEG data URL) or {t:'shot', error}; no
+// port, an error or anything that is no image gives no shot. The app's crash report ({t:'crash', text}) is
 // replayed to a late subscriber until it is taken once (src/ui/pwa/native-port.ts, src/ui/feedback/bridge.ts).
 // Owns: these assertions. Never: a real WebView or app.
 
@@ -39,7 +39,7 @@ test('the app answers with its window as a JPEG data URL', async (t) => {
   assert.equal(await requestNativeShot(2000), 'data:image/jpeg;base64,/9j/AAAA');
   assert.deepEqual(app.seen, [{ t: 'shot' }]);
   assert.equal(nativeShotHere(APP('0.3.15')), true);
-  assert.equal(nativeShotHere(APP('0.3.14')), false, 'an older app never answers: the picker, no 2 s wait');
+  assert.equal(nativeShotHere(APP('0.3.14')), true, 'the page is the app\'s own: no version of the app is checked');
   assert.equal(nativeShotHere('Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X)'), false);
 });
 

@@ -1,7 +1,9 @@
 // One chat: the chat header (ChatHeader.tsx) as one row over the whole view, under it the chat column
 // (the chat's area when open – ChatArea.tsx, its tabs –, message list, the important-question strip – AskStrip.tsx,
 // B-078 –, the live bar of who works for the chat – LiveBar.tsx –, composer) and the optional details panel –
-// content below the header row, so opening either moves no header cell. Loads the newest page on open and
+// content below the header row, so opening either moves no header cell. Shows at once the lines this page already holds
+// (lib/store.ts – a chat of the list caught up its new line when its preview changed) and loads the newest page behind
+// them without blanking (takeNewest; a load the connection took is asked again on the next open socket, loadAll), and
 // marks the chat read while visible. Chats the list leaves out (agent-only rooms, the To-do chat) are
 // fetched on demand. Before the first markRead it captures the person's read cursor (catch-up.ts), so
 // the list can show the "New messages" divider.
