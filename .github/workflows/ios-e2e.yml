@@ -1,6 +1,9 @@
-# The iPhone app against a REAL PC (23.11.2026 snapshot of apps/desktop, release/0.3.18): the headless runtime with the fake engine and the
-# real meeting server run on the same runner; the app pairs with them in the Simulator (Remote ID through the meeting server, the PC
-# accepts), shows the PC's own phone UI through the tunnel with an open chat, and screenshots land in the artifact.
+# The iPhone app against a REAL PC (this commit's apps/desktop and services/remote-relay): the headless runtime with the fake engine and
+# the real meeting server run on the same runner; the app pairs with them in the Simulator (Remote ID through the meeting server, the PC
+# accepts) and shows the phone UI it carries ITSELF (Tools/build-ui.sh puts apps/desktop's UI build into the app; the PC's own copy of
+# the UI is replaced by a marker, AUTARK_POISON_UI=1, so no interface request may reach it) with an open chat. Then the PC is stopped,
+# the app is quit and started cold, and its own interface must come up without any PC. Screenshots land in the artifact. The Simulator is
+# a pre-test, not a proof on a device.
 #   job `pc`  (ubuntu, 1x minutes): installs, builds and starts the PC, sends "Hallo" into its chat and waits for the fake engine's answer.
 #   job `app` (macOS, 10x minutes): the same PC, plus the unsigned Simulator build of apps/ios and the UI test E2E/AutarkE2EUITests.swift,
 #   which pairs, waits for the page's chat, types "Hallo" into it, sends and waits for the Echo answer on screen (red if it cannot see them).
@@ -24,11 +27,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # the private desktop snapshot of 23.11.2026 (branch release/0.3.18); apps/desktop is not on this branch
-  DESKTOP_REPO: ${{ github.repository }}
-  DESKTOP_SHA: f55a75841c7274030228534ed6f72ac7c5517b2e
-
 jobs:
   pc:
     name: The real PC (headless runtime, fake engine, meeting server) on Linux
@@ -37,21 +35,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ env.DESKTOP_REPO }}
-          ref: ${{ env.DESKTOP_SHA }}
-          path: pc
-          sparse-checkout: |
-            apps/desktop
-            services/remote-relay
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Start the PC
         env:
           AUTARK_E2E_ACCEPT_AFTER_MS: '1000'
-        run: bash apps/ios/Tools/pc-up.sh "$GITHUB_WORKSPACE/pc" "$RUNNER_TEMP/pc-out"
+        run: bash apps/ios/Tools/pc-up.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/pc-out"
       - name: A chat line reaches the PC and the fake engine answers
         run: |
           OUT="$RUNNER_TEMP/pc-out"
@@ -83,7 +73,7 @@ jobs:
       - name: Parse - syntax only, UIKit and WebKit and XCTest exist only on the Mac
         working-directory: apps/ios
         run: |
-          for f in E2E/*.swift Autark/App/*.swift Autark/App/Quick/*.swift; do
+          for f in E2E/*.swift Autark/App/*.swift Autark/App/Quick/*.swift Autark/Platform/PhoneUi.swift; do
             swiftc -parse -D AUTARK_SIM_E2E "$f" || { echo "syntax error in $f"; exit 1; }
           done
           echo "all parsed"
@@ -93,21 +83,13 @@ jobs:
     needs: [pc, syntax]
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[e2e-macos]')
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       HOMEBREW_NO_AUTO_UPDATE: '1'
       HOMEBREW_NO_INSTALL_CLEANUP: '1'
       HOMEBREW_NO_ANALYTICS: '1'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ env.DESKTOP_REPO }}
-          ref: ${{ env.DESKTOP_SHA }}
-          path: pc
-          sparse-checkout: |
-            apps/desktop
-            services/remote-relay
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -116,6 +98,11 @@ jobs:
         run: |
           if [ -d /Applications/Xcode_26.3.app ]; then sudo xcode-select -s /Applications/Xcode_26.3.app; fi
           xcodebuild -version
+
+      - name: The app's own phone interface (apps/desktop's UI build and its ui.json go into the app)
+        run: |
+          bash apps/ios/Tools/build-ui.sh "$GITHUB_WORKSPACE"
+          test -f apps/ios/build/ui/index.html && test -f apps/ios/build/ui/ui.json
 
       - name: Generate the Xcode project
         working-directory: apps/ios
@@ -160,12 +147,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS="DEBUG AUTARK_SIM_E2E" \
             2>&1 | tee "$RUNNER_TEMP/build.log" | tail -n 40
 
-      - name: Start the PC
+      - name: Start the PC (its own copy of the phone interface is replaced by a marker)
         env:
           AUTARK_E2E_ACCEPT_AFTER_MS: '9000'
-        run: bash apps/ios/Tools/pc-up.sh "$GITHUB_WORKSPACE/pc" "$RUNNER_TEMP/pc-out"
+          AUTARK_POISON_UI: '1'
+        run: bash apps/ios/Tools/pc-up.sh "$GITHUB_WORKSPACE" "$RUNNER_TEMP/pc-out"
 
-      - name: Pair in the Simulator, open the chat, type, send, wait for the answer (the UI test; red without the proof)
+      - name: Pair, open the chat, send, wait for the answer; then stop the PC, restart the app cold, own interface must come up (the UI test; red without the proof)
         working-directory: apps/ios
         run: |
           bash Tools/e2e-sim.sh "${{ steps.sim.outputs.udid }}" "$RUNNER_TEMP/dd" "$RUNNER_TEMP/pc-out" "$GITHUB_WORKSPACE/screens"

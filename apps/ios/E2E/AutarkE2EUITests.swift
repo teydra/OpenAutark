@@ -79,6 +79,35 @@ final class AutarkE2EUITests: XCTestCase {
 
         shot("04-chat-antwort.png")
         print("AUTARK-E2E verified both visible messages and PC provenance: \(statusText())")
+
+        // 5. The interface is the app's own: the PC's copy of it was replaced by a marker before the app paired (pc-up.sh,
+        //    AUTARK_POISON_UI=1), so a single interface request that had reached the PC would not have shown this chat. The app
+        //    answered the page itself.
+        let served = status()?["uiServed"] as? Int ?? 0
+        XCTAssertGreaterThan(served, 0, "the app answered no interface request itself: \(statusText())")
+        XCTAssertEqual(status()?["poisoned"] as? Bool, false, "the PC's marker page reached the phone: \(statusText())")
+
+        // 6. The PC is gone (it and the meeting server stop), the app is quit and started cold: its own interface comes up at once,
+        //    without any PC, and shows its connection state itself – no native screen, no "Try again".
+        let firstPid = status()?["pid"] as? Int ?? 0
+        try Data().write(to: URL(fileURLWithPath: out + "/stop"), options: .atomic)
+        guard require(wait(60) { !self.logEvents("stopping").isEmpty }, "the PC did not stop") else { return }
+        Thread.sleep(forTimeInterval: 4)
+        app.terminate()
+        try? FileManager.default.removeItem(atPath: statusFile)
+        app.launch()
+        guard require(wait(60) {
+            guard let state = self.status() else { return false }
+            return state["phase"] as? String == "page" && state["rendered"] as? Bool == true && (state["pid"] as? Int ?? 0) != firstPid
+        }, "the app's own interface did not come up without a PC after a cold start: \(statusText())") else { return }
+        XCTAssertGreaterThan(status()?["uiServed"] as? Int ?? 0, 0, "the cold-started page was not answered by the app: \(statusText())")
+        XCTAssertEqual(status()?["poisoned"] as? Bool, false, "the PC's marker page reached the phone: \(statusText())")
+        XCTAssertGreaterThan(status()?["textLength"] as? Int ?? 0, 0, "the page is empty: \(statusText())")
+        XCTAssertFalse(app.staticTexts["Can't reach"].exists, "a native offline screen covers the page")
+        XCTAssertFalse(app.buttons["Try again"].exists, "a native Try-again button covers the page")
+        Thread.sleep(forTimeInterval: 3)
+        shot("05-pc-weg-eigene-oberflaeche.png")
+        print("AUTARK-E2E own interface after the PC was gone and a cold start: \(statusText())")
     }
 
     // MARK: helpers
