@@ -10,7 +10,7 @@
 import type { RuntimeServices } from '../contracts.ts';
 import { HUMAN_ID } from '../../shared/ids.ts';
 import { isFinished, isPaused, type Task, type TaskView } from '../../shared/model/tasks.ts';
-import { planProgress } from '../../shared/model/task-plan.ts';
+import { planProgress, readChecklist, type ChecklistItem } from '../../shared/model/task-plan.ts';
 import { excerpt } from '../../shared/text/chat-names.ts';
 import { dueText, todoWhen } from './time.ts';
 import { attachmentLines } from './render.ts';
@@ -62,6 +62,12 @@ export function checklistSummary(task: Task, nextLimit = 100): string | undefine
   if (total) return `☑ ${done}/${total}${next ? ` · Next: ${excerpt(next, nextLimit)}` : ''}`;
 }
 
+/** One checklist item as the agent reads it: "p2 ☐ Upload · Ben's, task_… (handed over)" – its id keeps it in tasks.update plan. */
+export function checklistLine(item: ChecklistItem, nameOf: (id: string) => string): string {
+  const handed = item.owner || item.taskId ? ` · ${item.owner ? `${nameOf(item.owner)}'s` : 'handed over'}${item.taskId ? `, ${item.taskId}` : ''}` : '';
+  return `${item.id} ${item.done ? '✓' : '☐'} ${excerpt(item.text, 300)}${handed}`;
+}
+
 export const checklistSuffix = (task: Task): string => {
   const summary = checklistSummary(task);
   return summary ? ` · ${summary}` : '';
@@ -90,8 +96,8 @@ export function renderTask(services: RuntimeServices, task: TaskView, zone: stri
   if (task.notes.trim()) lines.push(`Notes:\n${task.notes.trim()}`);
   const files = fileLines(services, task, zone, now);
   if (files.length) lines.push(`Files:\n${files.join('\n')}`);
-  const plan = task.ledger.plan ?? [];
-  if (plan.length) lines.push(`Checklist: ${checklistSummary(task, 300)}\n${plan.slice(0, 20).map((line) => excerpt(line, 300)).join('\n')}`);
+  const items = readChecklist(task.ledger);
+  if (items.length) lines.push(`Checklist: ${checklistSummary(task, 300)}\n${items.slice(0, 20).map((item) => checklistLine(item, (id) => names.nameOf(id))).join('\n')}`);
   const facts = (task.ledger.facts ?? []).slice(-MAX_FACTS);
   if (facts.length) lines.push(`Facts:\n${facts.map((fact) => `- ${excerpt(fact, 300)}`).join('\n')}`);
   if (task.result) {

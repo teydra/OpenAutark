@@ -6,7 +6,9 @@
 // line to write into it (chat/TaskThread.tsx). The list beside it never moves.
 // Owns: the detail's frame and head. Never: the tool's body, the thread's lines, editing (TaskEdit.tsx) or loading the list.
 
+import { useState } from 'preact/hooks';
 import type { Task, TaskView } from '../../shared/model/tasks.ts';
+import { runAgain } from './page-actions.ts';
 import { TaskPlan } from './TaskPlan.tsx';
 import { HUMAN_ID } from '../../shared/ids.ts';
 import { Markdown } from '../blocks/markdown.tsx';
@@ -14,6 +16,7 @@ import { TaskThread } from '../chat/TaskThread.tsx';
 import { openContextMenu, useContextMenu } from '../lib/context-menu.tsx';
 import { dayZone } from '../lib/day-store.ts';
 import type { MenuSection } from '../lib/popover.tsx';
+import { can } from '../lib/session.ts';
 import { agentName } from '../lib/store.ts';
 import { EmptyState, Icon, IconButton, Spinner } from '../lib/ui.tsx';
 import { taskIndex } from './page-data.ts';
@@ -58,6 +61,18 @@ export function DetailTop(props: { scope: PageScope; quest?: Task; label?: strin
   );
 }
 
+/** P5 "Run again" on a finished task: a fresh copy with its checklist unticked and the same owners, opened at once. */
+export function RunAgain(props: { scope: PageScope; task: Task }) {
+  const [busy, setBusy] = useState(false);
+  if (!can('tasks.runAgain')) return null;
+  return (
+    <button type="button" class="task-again" disabled={busy} onClick={async () => {
+      setBusy(true);
+      try { const copy = await runAgain(props.task); if (copy) openDetail(props.scope, copy.id); } finally { setBusy(false); }
+    }}><Icon name="arrow-clockwise" size={14} />Run again</button>
+  );
+}
+
 export function TodoDetail(props: { scope: PageScope; task: Task | TaskView | null | undefined; quest?: Task; now: number; onClose: () => void }) {
   const { task, now } = props;
   const close = () => { if (task) void letGoOfTake(task).then((ok) => { if (ok) props.onClose(); }); else props.onClose(); };
@@ -88,7 +103,8 @@ export function TodoDetail(props: { scope: PageScope; task: Task | TaskView | nu
           {task.widget?.type === 'timer' && typeof task.widget.repeat === 'string' && <span class="task-chip">repeats {task.widget.repeat}</span>}
         </div>
         {task.notes.trim() && <Markdown text={task.notes} class="task-notes" />}
-        <TaskPlan task={task} />
+        <TaskPlan task={task} scope={props.scope} />
+        {finished && <RunAgain scope={props.scope} task={task} />}
         <TodoWidget task={view} now={now} />
       </div>
       <HistoryHead task={task} now={now} />

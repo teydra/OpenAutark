@@ -13,7 +13,8 @@
 //   its maker has one; a quest's says how many open to-dos ended with it), queued wakes and a running turn end, a closed quest ends its open to-dos (tasks/quests.ts), whoever
 //   gave it hears how it ended ("I had asked: …"; the person by a notification, a colleague by a push – nobody when it
 //   ends quietly), the owner of its quest hears the to-do ended (the last one: the quest is ready to close,
-//   tasks/transitions.ts), what waits on it goes on (tasks/depends.ts), the one verification step runs;
+//   tasks/transitions.ts), what waits on it goes on (tasks/depends.ts), the checklist item it is gets ticked
+//   (tasks/checklist.ts), an ask to the person dropped without their word asks back (tasks/cards.ts), the one verification step runs;
 // - removed: wakes, schedules and mini-app takes go; the anchor message becomes a tombstone line.
 // An answered or declined ask ends quietly: the person's own line in the chat says it (answer-receipt.ts).
 // Owns: wakes, notifications and status lines that follow a task change.
@@ -36,6 +37,8 @@ import { isDayOnly } from '../../shared/model/day-settings.ts';
 import { dayZone } from '../day/clock.ts';
 import { dayName, dueText } from '../context/time.ts';
 import { threadOf } from './thread.ts';
+import { itemEnded } from './checklist.ts';
+import { askDropped } from './cards.ts';
 
 export { uncheckedNote } from './verification.ts';
 
@@ -115,6 +118,8 @@ export class TaskLifecycle {
     if (answered && task.parentId) endWaitOn(this.t, this.t.repo.get(task.parentId), task, by); // the asked person's answer ends the wait on them
     this.tellGiver(task, by, told ? this.parentOwner(task) : undefined);
     waitsEnded(this.t, task, task.status === 'dropped' ? 'dropped' : 'done', answered ? task.createdBy : undefined);
+    itemEnded(this.t, task); // a handed-over checklist item is ticked with its task (checklist.ts)
+    askDropped(this.t, task, by); // an ask to the person dropped without their word asks back (cards.ts)
     if (task.parentId) { const parent = this.t.repo.get(task.parentId); if (parent) this.t.emit(parent); }
     if (task.status === 'done') this.verification.start(task, by);
   }

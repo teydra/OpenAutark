@@ -55,9 +55,18 @@ export interface TaskChange {
   undoneBy?: string;
 }
 
+/**
+ * One checklist item (P5): a stable id, its words, its tick, and – once handed over – who does it and the linked task that
+ * ticks it when done (shared/model/task-plan.ts; runtime/tasks/checklist.ts).
+ */
+export interface ChecklistItem { id: string; text: string; done: boolean; owner?: string; taskId?: string }
+
 /** What a task keeps across turns and owners (the ledger column: one JSON container, read as it is by older PCs too). */
 export interface TaskLedger {
-  plan?: string[]; // the steps, "✓ " before a done one (tasks.update plan)
+  plan?: string[]; // the steps, "✓ " before a done one (tasks.update plan) – kept in step with checklist for older PCs
+  checklist?: ChecklistItem[]; // the same steps with ids, owners and linked tasks (read through task-plan.ts readChecklist)
+  item?: { of: string; id: string }; // this task is checklist item `id` of task `of`, handed over (its end ticks it there)
+  again?: string; // the finished task this one runs again ("Run again")
   facts?: string[]; // lines learned or decided, kept for whoever works on it next
   movedAt?: number; // its last real move: a status change, a new plan or fact, a give, a finished to-do
   doneCount?: number; // how often the person ticked off a repeating to-do (its author hears only the first)
@@ -75,6 +84,7 @@ export interface TaskWait {
   since: number;
   until?: number; // local follow-up instant, independent of the calendar's at
   followedUp?: boolean; // delivery recorded for this deadline
+  later?: true; // the person said "Later" on its card: the card rests until `until`, then its owner follows up (P7)
 }
 
 export interface Task {
@@ -143,6 +153,9 @@ export interface CreateTaskInput {
   title: string;
   notes?: string;
   plan?: string[];
+  checklist?: ChecklistItem[]; // runtime only – the checklist with ids, owners and linked tasks (plan follows from it)
+  item?: { of: string; id: string }; // runtime only – the checklist item this task is (runtime/tasks/checklist.ts)
+  again?: string; // runtime only – the finished task this one runs again
   waitingOn?: Omit<TaskWait, 'since'>; // runtime only: create directly in a wait
   givenIn?: string; // runtime only – the giving agent turn's chat (TaskLedger.givenIn)
   assigneeKind?: AssigneeKind;

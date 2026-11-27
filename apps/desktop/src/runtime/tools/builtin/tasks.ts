@@ -23,7 +23,8 @@ import { EFFORT_PROPERTY, WHEN_PROPERTY, failure, json } from '../types.ts';
 import { HUMAN_ID } from '../../../shared/ids.ts';
 import type { UiBlock } from '../../../shared/blocks/catalog.ts';
 import { isFinished, type Evidence, type Task, type TaskResult, type TaskWait } from '../../../shared/model/tasks.ts';
-import { writePlan, type PlanItem } from '../../../shared/model/task-plan.ts';
+import { readChecklist, settleItems, type PlanItem } from '../../../shared/model/task-plan.ts';
+import { askBackLine, droppedAsk } from '../../tasks/cards.ts';
 import type { Effort } from '../../../shared/model/providers.ts';
 import { onlyMeLine, type TaskPatch } from '../../tasks/service.ts';
 import { approveNotes, normalizeAskWidget } from '../../tasks/widgets.ts';
@@ -76,11 +77,42 @@ export function waitOf(ctx: ToolContext, line: string): Omit<TaskWait, 'since'> 
 }
 
 const PLAN_PROPERTY = {
-  type: 'array', maxItems: 20, description: 'Checklist: ordered points with their checked state. Update replaces the entire list; [] clears it.',
+  type: 'array', maxItems: 20, description: 'Checklist: ordered points with their checked state. Update replaces the entire list; [] clears it. A point handed over with for becomes its own linked task and is checked by itself when that task is done.',
   items: { type: 'object', additionalProperties: false, required: ['text', 'done'], properties: {
+    id: { type: 'string', maxLength: 20, description: 'The point\'s id as tasks.list shows it (p1 …), to keep it; new points get one.' },
     text: { type: 'string', minLength: 1, maxLength: 298 }, done: { type: 'boolean' },
+    for: { type: 'string', description: 'Hand this point over: a colleague, "person" or a person by name or id – it becomes their own task, linked to this one.' },
   } },
 };
+
+/** A checklist point as the tool takes it. */
+type ToolItem = PlanItem & { for?: string };
+
+/** The points as stored items (their handing over follows once the list stands: handOver). */
+const itemsOf = (plan: readonly ToolItem[]): PlanItem[] => plan.map(({ id, text, done }) => ({ ...(id ? { id } : {}), text, done }));
+
+/**
+ * The points of `plan` with a `for` go to that owner – their own task, linked – once the checklist of `taskId` stands;
+ * one to the task's own owner stays a plain point. A string says why a point was not handed over.
+ */
+async function handOver(ctx: ToolContext, taskId: string, plan: readonly ToolItem[]): Promise<string[]> {
+  const handed = plan.filter((item) => item.text.trim()).map((item, index) => ({ item, index })).filter(({ item }) => item.for?.trim());
+  if (!handed.length) return [];
+  const task = ctx.services.tasks.get(taskId)!;
+  const stored = readChecklist(task.ledger);
+  const problems: string[] = [];
+  for (const { item, index } of handed) {
+    const point = stored[index];
+    const to = receiverOf(ctx, item.for);
+    if (!point) continue;
+    if (typeof to !== 'string') { problems.push(`${point.id}: ${to.refused}`); continue; }
+    if (to === ownerOf(task) && !point.taskId) continue;
+    try {
+      await ctx.services.tasks.handOverItem(taskId, point.id, to, ctx.agent.id, ctx.conversationId ? { givenIn: ctx.conversationId } : {});
+    } catch (error) { problems.push(`${point.id}: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+  return problems;
+}
 const WAIT_PROPERTY = { type: 'string', description: 'What it waits on, in one line: a name or task id first when it waits on them.' };
 const UNTIL_PROPERTY = { ...WHEN_PROPERTY, description: `When to follow up on the wait, not a calendar time. An outside wait defaults to tomorrow at 09:00 local. ${String(WHEN_PROPERTY.description)}` };
 
@@ -121,7 +153,7 @@ function followUpsOf(ctx: ToolContext, task: Task): TaskResult['followUps'] {
   return items.length ? items : undefined;
 }
 
-type AddArgs = { title: string; for?: string; quest?: string; at?: string; minutes?: number; notes?: string; ask?: Record<string, unknown>; after?: string[]; waiting?: string; until?: string; plan?: PlanItem[]; doneWhen?: string; effort?: Effort; priority?: Priority };
+type AddArgs = { title: string; for?: string; quest?: string; at?: string; minutes?: number; notes?: string; ask?: Record<string, unknown>; after?: string[]; waiting?: string; until?: string; plan?: ToolItem[]; doneWhen?: string; effort?: Effort; priority?: Priority; again?: string };
 
 const addTool = defineTool<AddArgs>({
   name: 'tasks.add',
@@ -143,12 +175,18 @@ const addTool = defineTool<AddArgs>({
       doneWhen: { type: 'string', maxLength: 2000, description: 'The outcome in one line – what exists or changed when it is done.' },
       effort: { ...EFFORT_PROPERTY, description: "The effort a colleague's work runs at from its first turn." },
       priority: PRIORITY_PROPERTY,
+      again: { type: 'string', description: 'Run again: a finished task\'s id – it comes back as a new one under title, with its notes, done-when, owner and checklist, every point unchecked and handed-over points with the same owners. Other fields are not read then.' },
     },
     required: ['title'], additionalProperties: false,
   },
   category: 'think',
-  describe: (args, ctx) => internal(`${args.quest === 'new' ? 'Start quest' : 'Add to-do'} "${clip(args.title, 80)}"${args.for ? ` for ${args.for}` : ''}`, ctx.conversationId),
+  describe: (args, ctx) => internal(`${args.again ? 'Run again' : args.quest === 'new' ? 'Start quest' : 'Add to-do'} "${clip(args.title, 80)}"${args.for ? ` for ${args.for}` : ''}`, ctx.conversationId),
   async run(args, ctx) {
+    if (args.again !== undefined) {
+      const source = requireTask(ctx, args.again);
+      const copy = await ctx.services.tasks.runAgain(source.id, ctx.agent.id, { title: args.title });
+      return json(answer(ctx, copy, { again: source.id }));
+    }
     const quest = args.quest?.trim() === 'new';
     if (quest && (args.at?.trim() || args.minutes !== undefined)) return failure(QUEST_TIME);
     const time = timeOf(ctx, args.at, 'at');
@@ -183,16 +221,17 @@ const addTool = defineTool<AddArgs>({
     for (const after of args.after ?? []) requireTask(ctx, after);
     const task = await ctx.services.tasks.createTo({
       ...(conversationId ? { conversationId } : {}), ...(ctx.origin ? { origin: ctx.origin } : {}), ...(quest ? { kind: 'quest' as const } : {}),
-      title: args.title, ...(notes ? { notes } : {}), doneWhen: args.doneWhen, parentId, dependsOn: args.after, widget, waitingOn: wait?.wait, plan: args.plan && writePlan(args.plan),
+      title: args.title, ...(notes ? { notes } : {}), doneWhen: args.doneWhen, parentId, dependsOn: args.after, widget, waitingOn: wait?.wait, ...(args.plan?.length ? { checklist: settleItems(itemsOf(args.plan)) } : {}),
       ...(typeof time.at === 'number' ? { at: time.at } : {}), ...(args.minutes ? { minutes: args.minutes } : {}), createdBy: ctx.agent.id,
       ...(args.priority ? { priority: priorityOf(args.priority) } : {}),
       ...(to !== ctx.agent.id && ctx.conversationId ? { givenIn: ctx.conversationId } : {}),
     }, to, to !== ctx.agent.id && !isPerson(to) && args.effort ? { route: { effort: args.effort } } : {});
     keepPersonLine(ctx, task.id);
+    const notHanded = args.plan ? await handOver(ctx, task.id, args.plan) : [];
     const hit = similarOpen(ctx.services, task);
     const owner = hit?.assigneeId ? namesFor(ctx.services, profileZone(ctx.services)).nameOf(hit.assigneeId) : 'unassigned';
     return json(answer(ctx, ctx.services.tasks.get(task.id) ?? task, {
-      ...(wait?.followUp ? { followUp: wait.followUp } : {}),
+      ...(wait?.followUp ? { followUp: wait.followUp } : {}), ...(notHanded.length ? { notHandedOver: notHanded } : {}),
       ...(hit ? { similar: `Similar open: ${hit.id} ‘${clip(hit.title, 120)}’ (${owner}). Consider adding a checklist point there if it is the same work.` } : {}),
     }));
   },
@@ -200,7 +239,7 @@ const addTool = defineTool<AddArgs>({
 
 type UpdateArgs = {
   id?: string; title?: string; notes?: string; doneWhen?: string; for?: string; at?: string; minutes?: number; quest?: string; after?: string[];
-  status?: 'open' | 'waiting' | 'done' | 'dropped'; waiting?: string; until?: string; plan?: PlanItem[]; result?: string; evidence?: Evidence[]; effort?: Effort;
+  status?: 'open' | 'waiting' | 'done' | 'dropped'; waiting?: string; until?: string; plan?: ToolItem[]; result?: string; evidence?: Evidence[]; effort?: Effort;
   priority?: Priority; quiet?: boolean; alsoHandled?: string[];
 };
 
@@ -263,7 +302,7 @@ const updateTool = defineTool<UpdateArgs>({
     const held = ending ? current.steps?.find((todo) => todo.private && !isFinished(todo.status)) : undefined;
     if (held) return failure(onlyMeLine(held.title));
     const patch: TaskPatch = {};
-    if (args.plan !== undefined) patch.plan = writePlan(args.plan);
+    if (args.plan !== undefined) patch.checklist = itemsOf(args.plan);
     if (args.title !== undefined) patch.title = args.title;
     if (args.notes !== undefined) patch.notes = args.notes;
     if (args.doneWhen !== undefined) patch.doneWhen = args.doneWhen;
@@ -292,6 +331,9 @@ const updateTool = defineTool<UpdateArgs>({
     if (typeof to === 'string' && to !== ownerOf(current)) {
       current = await ctx.services.tasks.give(current.id, to, ctx.agent.id, { ...(args.effort ? { effort: args.effort } : {}), ...(ctx.conversationId ? { givenIn: ctx.conversationId } : {}) });
     }
+    const notHanded = args.plan && !ending ? await handOver(ctx, current.id, args.plan) : [];
+    if (args.plan?.some((item) => item.for) && !ending) current = requireTask(ctx, current.id); // the items now name their tasks
+    let askBack: string | undefined;
     if (ending) {
       const alsoHandled = (args.alsoHandled ?? []).map((line) => line.trim()).filter(Boolean);
       const followUps = followUpsOf(ctx, current);
@@ -299,8 +341,10 @@ const updateTool = defineTool<UpdateArgs>({
         status: args.status as 'done' | 'dropped', summary: args.result!.trim(), evidence: args.evidence ?? [],
         ...(alsoHandled.length ? { alsoHandled } : {}), ...(followUps ? { followUps } : {}), ...(args.quiet ? { quiet: true } : {}),
       }, ctx.agent.id);
+      // P7: my own ask to the person dropped without their word asks me back here (cards.ts askDropped asks the others)
+      if (droppedAsk(current, ctx.agent.id) && current.createdBy === ctx.agent.id) askBack = askBackLine(ctx.services, current, ctx.agent.id);
     }
-    return json(answer(ctx, current, followUp ? { followUp } : {}));
+    return json(answer(ctx, current, { ...(followUp ? { followUp } : {}), ...(notHanded.length ? { notHandedOver: notHanded } : {}), ...(askBack ? { askBack } : {}) }));
   },
 });
 

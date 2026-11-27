@@ -113,6 +113,37 @@
 
 /* A whole checklist label is a 44-px touch target; row summaries stay on one line. */
 .task-plan { list-style: none; margin: 0; padding: 0; }
-.task-plan label { display: flex; gap: 8px; align-items: center; min-height: 44px; cursor: pointer; }
-.task-plan input { flex: none; }
+.task-plan li { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.task-plan label { display: flex; flex: 1 1 auto; gap: 10px; align-items: center; min-width: 0; min-height: 44px; cursor: pointer; font-size: calc(15px * var(--ui-text, 1)); line-height: 1.4; }
+.task-plan input { flex: none; width: 20px; height: 20px; margin: 0; }
+.task-plan-text { min-width: 0; overflow-wrap: anywhere; }
+.task-plan li.done .task-plan-text { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--field); }
+/* P5: the owner of a handed-over item – a 44-px target that opens their task */
+.task-plan-owner { display: grid; place-items: center; flex: none; width: 44px; height: 44px; margin-right: -10px; border-radius: 50%; }
+.task-plan-hand-over { flex: 0 1 auto; min-inline-size: 44px; max-inline-size: 50%; min-height: 44px; padding-inline: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.task-plan-owner:disabled { cursor: default; }
+.task-plan-owner:not(:disabled):hover { background: var(--hover); }
+/* P5 "Run again" under a finished task's checklist */
+.task-again { display: inline-flex; align-items: center; gap: 6px; min-width: 44px; min-height: 44px; margin-top: 6px; padding: 0 14px; border: 1px solid var(--line); border-radius: 22px; color: var(--text); font-size: calc(14px * var(--ui-text, 1)); }
+.task-again:hover:not(:disabled) { background: var(--hover); }
+
+/* ---------------------------------------------------------------- P7 "Waiting on you" cards (WaitingOnYou.tsx) */
+.wcards { margin-bottom: 8px; }
+.wcard-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.wcard { padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--r-xl); background: var(--surface); }
+.wcard.resting { border-left-color: var(--field); }
+.wcard[aria-busy=true] { opacity: var(--disabled-opacity); }
+.wcard-question { margin: 0; color: var(--text); font-size: calc(15px * var(--ui-text, 1)); font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+.wcard-meta { margin: 4px 0 0; color: var(--secondary); font-size: calc(12px * var(--ui-text, 1)); line-height: 1.45; }
+.wcard-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.wcard-btn { max-width: 100%; overflow-wrap: anywhere; min-width: 44px; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 22px; color: var(--text); font-size: calc(14px * var(--ui-text, 1)); }
+.wcard-btn:hover:not(:disabled) { background: var(--hover); }
+.wcard-btn.primary { border-color: var(--text); background: var(--text); color: var(--surface); }
+.wcard-btn.primary:hover:not(:disabled) { background: var(--secondary); }
+.wcard-btn.quiet { border-color: transparent; color: var(--secondary); }
+.wcard-btn:disabled { opacity: var(--disabled-opacity); cursor: default; }
+.wcard-reply { margin-top: 10px; }
+.wcard-reply textarea { box-sizing: border-box; width: 100%; min-height: 64px; padding: 8px 10px; border: 1px solid var(--field); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: calc(15px * var(--ui-text, 1)); resize: vertical; }
+.wcards-all { min-height: 44px; margin-top: 2px; padding: 0 4px; color: var(--secondary); font-size: calc(13px * var(--ui-text, 1)); text-decoration: underline; text-underline-offset: 2px; }
+
 .task-plan-summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85em; }

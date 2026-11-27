@@ -14,6 +14,7 @@ import { TodoRow } from './TodoRow.tsx';
 export interface ForYouProps {
   scope: PageScope;
   todos: readonly Task[];
+  hidden?: ReadonlySet<string>; // the asks a "Waiting on you" card stands for (WaitingOnYou.tsx)
   finished: readonly Task[];
   index: ReadonlyMap<string, Task>;
   selected: string | null;
@@ -24,7 +25,8 @@ export interface ForYouProps {
 
 export function ForYou(props: ForYouProps) {
   const { index, now } = props;
-  const lists = forYou(props.todos, now, props.dayEnd, otherOnly.value);
+  const hidden = props.hidden;
+  const lists = forYou(hidden?.size ? props.todos.filter((task) => !hidden.has(task.id)) : props.todos, now, props.dayEnd, otherOnly.value);
   const done = doneToday(props.finished, props.dayStart);
   const row = (task: Task) => {
     const quest = task.parentId ? index.get(task.parentId) : undefined;

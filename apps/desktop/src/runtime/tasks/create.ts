@@ -28,6 +28,7 @@ import { checkMayGive } from '../people/task-rules.ts';
 import { taskSpace } from './space.ts';
 import { applyDepends, checkDepends } from './depends.ts';
 import { makeQuest, questFor } from './quests.ts';
+import { checklistLedger } from '../../shared/model/task-plan.ts';
 
 /** `anchorWith` (task center): who posts the anchor message and its files – the Inbox anchor of an agent's
  *  tasks.submit is the system's (the agent is no member there), a quick task's anchor carries its attachments,
@@ -115,7 +116,11 @@ export function createTask(t: TaskServiceImpl, input: CreateTaskInput & { create
   const task: Task = {
     id: newId('task', now), kind, title: input.title.trim(), notes: input.notes ?? '',
     status: 'open', assigneeKind, createdBy: input.createdBy, priority: input.priority ?? 0,
-    ledger: { movedAt: now, ...(input.plan?.length ? { plan: input.plan.map((line) => line.trim()).filter(Boolean).slice(0, 20) } : {}), ...(input.givenIn && input.givenIn !== conversationId ? { givenIn: input.givenIn } : {}) }, // the giving chat, when the work lands elsewhere (a 1:1)
+    ledger: {
+      movedAt: now, ...(input.checklist?.length ? checklistLedger(input.checklist) : input.plan?.length ? { plan: input.plan.map((line) => line.trim()).filter(Boolean).slice(0, 20) } : {}),
+      ...(input.item ? { item: { ...input.item } } : {}), ...(input.again ? { again: input.again } : {}),
+      ...(input.givenIn && input.givenIn !== conversationId ? { givenIn: input.givenIn } : {}), // the giving chat, when the work lands elsewhere (a 1:1)
+    },
     sort: now, rev: 0, createdAt: now, updatedAt: now,
   };
   if (conversationId) {
