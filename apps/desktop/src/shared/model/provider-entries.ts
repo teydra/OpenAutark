@@ -5,7 +5,7 @@
 // The entry's id is the account's id, and a value "deepinfra:model" names that account. Protocols: how the server is
 // spoken to; a known address (shared/model/providers-connect.ts) keeps its service's own provider and quirks, and an id of
 // that table may leave out what the table knows. `models` adds to what the server lists, and `uses` says what a model is
-// for when its name does not tell.
+// for when its name does not tell; an entry that names uses serves only those while they are "auto" (servesAuto).
 // Owns: these shapes, what an entry means as a connection, the comment settings.json shows above the section, and which
 // prefix a model id of an account carries. Never: I/O, keys, or reconciling accounts (runtime/accounts/provider-file.ts).
 
@@ -95,6 +95,19 @@ export function entryModels(entry: ProviderEntry | undefined): ProviderModelEntr
   return (entry?.models ?? []).map((model) => (typeof model === 'string' ? { id: model } : model));
 }
 
+/**
+ * 0.3.22 (Mika 27.11.2026: a `google` entry for a voice took images, video, music, calls and listening): whether an account's
+ * models may serve `use` while that use stands on "auto". Once an entry declares uses, only its declared models can
+ * auto-serve those uses. An entry that names none, and an account the file does not list, serve what their models make.
+ * Explicit choices are unaffected; callers pass the effective use (Speech follows Text to speech while Speech is auto).
+ */
+export function servesAuto(account: Pick<Account, 'id'>, entries: ProviderEntries | undefined, use: ModelUse, model: string): boolean {
+  const entry = entries && Object.hasOwn(entries, account.id) ? entries[account.id] : undefined;
+  const models = entryModels(entry);
+  return !models.some((entry) => entry.uses?.length) || models.some((entry) => entry.id === model &&
+    entry.uses?.includes(use));
+}
+
 /** Why an entry cannot stand in the file (undefined: it can). The url's own rules are the runtime's. */
 export function entryProblem(id: string, value: unknown): string | undefined {
   if (!providerIdFree(id)) return `${id}: an id of lower case letters, digits and dashes, none of ${[...RESERVED].join(', ')}`;
@@ -127,6 +140,7 @@ export function providerNotes(): string[] {
     'One entry per connection: "<id>": { "name": "…", "protocol": "…", "url": "…", "key": "secret://<id>", "models": ["extra", { "id": "x", "uses": ["embeddings"] }] }',
     'The id names the account: routing.<use> "<id>:<model>" takes that model on it, also one the server does not list. Skill ai-providers walks through it.',
     'An id of the table below may leave out its url and protocol. models adds names; uses says what a model is for when its name does not tell.',
+    'Automatic media and realtime voice routing respects the uses declared for each model (a voice key does not take images); a use set to "<id>:<model>" takes that model all the same.',
     'Plans and logins found on this PC are not listed here, they stay detected.',
     'Protocols:',
     ...PROVIDER_PROTOCOLS.map((protocol) => `  ${protocol}: ${PROTOCOL_ABOUT[protocol]}`),
