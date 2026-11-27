@@ -39,6 +39,11 @@ targets:
       - path: Autark/Platform
       - path: Autark/Resources
       - path: Autark/Shared
+      # The app's own phone interface (Tools/build-ui.sh: apps/desktop's UI build and its ui.json): a folder reference, so the bundle has
+      # <app>/ui/index.html. Missing when the script did not run (a build then shows "Not found" – every workflow checks for it).
+      - path: build/ui
+        type: folder
+        optional: true
     dependencies:
       - target: AutarkCore
       # wave 2: the Live Activity / Lock Screen widgets / Control Center buttons, and "Share to Autark" (embedded in PlugIns)

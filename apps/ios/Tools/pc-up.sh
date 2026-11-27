@@ -24,4 +24,11 @@ for i in $(seq 1 180); do
 done
 [ -f "$OUT/pc.json" ] || { echo "the PC did not come up in 3 minutes"; tail -30 "$OUT/pc.stderr"; exit 1; }
 stamp "the PC is up"
+# The Simulator run proves the app carries its own interface: with AUTARK_POISON_UI=1 every file of the interface the PC could serve is
+# replaced by a marker, so a single interface request that reached the PC would break the page the run looks at (the PC reads its
+# files on every request).
+if [ "${AUTARK_POISON_UI:-0}" = 1 ]; then
+  find "$ROOT/apps/desktop/app/ui" -type f | while read -r f; do printf 'POISONED-PC-UI: the PC must not serve the phone interface' > "$f"; done
+  stamp "the PC's own interface files are poisoned: $(find "$ROOT/apps/desktop/app/ui" -type f | wc -l | tr -d ' ') files"
+fi
 cat "$OUT/pc.json"; echo
