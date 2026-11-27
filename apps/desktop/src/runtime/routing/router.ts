@@ -57,6 +57,7 @@ import { splitPolicy } from './split-route.ts';
 import { topTier } from './person-turn.ts';
 import { kindDefault, kindTier } from './kind.ts';
 import { leads } from '../org/standard.ts';
+import { companyPlansOnly } from './company-plans.ts';
 
 export { NO_MODEL_MESSAGE };
 const ALTERNATIVES = 3;
@@ -82,7 +83,7 @@ export class RouterImpl implements Router {
   }
 
   private async pick(request: RouteRequest): Promise<RouteDecision> {
-    const s = this.deps.services();
+    const s = companyPlansOnly(this.deps.services(), request.agent); // Konrad 27.11.2026 (ORENDA): a company agent on an employee's PC runs on the company's plans only
     let models = s.catalog.list();
     if (!models.some((model) => model.available)) {
       // Fresh install / first start: the catalog may not have been built yet (coalesced, throttled).
