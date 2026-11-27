@@ -9,6 +9,10 @@ on:
   pull_request:
     paths:
       - apps/desktop/resources/broker/WakeHelper.cs
+      - apps/desktop/resources/broker/Waker.cs
+      - apps/desktop/test/unit/computer/wake-helper.test.ts
+      - apps/desktop/test/unit/computer/wake-helper-cs/**
+      - apps/desktop/test/unit/computer/waker-cs/**
       - apps/desktop/test/unit/computer/wake-helper-cs/measure.mjs
       - .github/workflows/wake-helper-memory.yml
   workflow_dispatch:
@@ -44,6 +48,9 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File resources/broker/build.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Item resources/broker/AutarkWakeHelper.exe | Select-Object Name, Length
+      - name: The helper's and the waker's tests with the real exe (stand-in meeting server and app; the real-server test is skipped here)
+        shell: pwsh
+        run: node --test --test-concurrency=1 test/unit/computer/wake-helper.test.ts test/unit/computer/waker.test.ts
       - name: Idle memory and one real wake (real AutarkWakeHelper.exe, real meeting server)
         shell: pwsh
         # the inputs reach the script as environment variables, never as text in it (a workflow_dispatch input is free text)
