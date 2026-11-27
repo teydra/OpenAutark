@@ -5,6 +5,11 @@
 // A request whose channel dies before the PC answered gets a 503 instead of hanging; one that hears nothing for 4 s has the
 // link probed once, so a dead link is found within seconds. The phone holds channels to several PCs; a new stream takes
 // the page's one (Channels.waitChannel) and retire() ends the streams left on the others. Ported from relay/StreamProxy.java.
+// Owner 27.11.2026: the interface is the app's own – a GET or HEAD outside the PC's data paths (UiFiles.dataPaths) is answered
+// here from the app's copy (UiFiles over UiUpdate), at once and with no channel; only the PC's data paths (RPC, events, files,
+// sockets, uploads) are streams, sent with Connection: close so the WebView never asks a PC for an interface file on a kept-alive
+// connection. The company's port never changes (the page's storage lives on its origin): with `fixedPort` a taken port is an
+// error, not another port. A new page socket waits 4 s for a channel (below the page's own open limit), any other request 20 s.
 // Never: listens beyond loopback, lets another app's connection through, or buffers without bound.
 import Foundation
 
@@ -46,12 +51,17 @@ public final class StreamProxy {
     private var closedFlag = false
     /// How long a new request waits for a channel before it gets its 503 (a slow PC is still being opened meanwhile).
     public var channelWaitMs = 20_000
+    /// The same for the page's own socket: below the page's open limit (OPEN_LIMIT_MS, 5 s), so no stream opens for a socket the page gave up.
+    public var socketWaitMs = 4_000
+    private let ui: UiFiles?
 
-    /// Listens on 127.0.0.1:`port` (0 or a taken port: any free one).
-    public init(port: Int, gate: String, channels: Channels) throws {
+    /// Listens on 127.0.0.1:`port` (0: any free one; a taken port: any free one, or an error with `fixedPort`). With `ui` the
+    /// interface is answered here; without it every request goes to the PC (the entrance of a test).
+    public init(port: Int, gate: String, channels: Channels, ui: UiFiles? = nil, fixedPort: Bool = false) throws {
         self.gate = gate
         self.channels = channels
-        self.listener = try LoopbackListener(port: port)
+        self.ui = ui
+        self.listener = try LoopbackListener(port: port, fallback: !fixedPort)
         let listener = self.listener
         spawn("autark-proxy") { [weak self] in
             while let conn = listener.accept() {
@@ -121,7 +131,15 @@ public final class StreamProxy {
             conn.shutdown()
             return
         }
-        guard let channel = channels?.waitChannel(timeoutMs: channelWaitMs), !channel.isClosed else {
+        var forward = head.all
+        var wait = channelWaitMs
+        if let ui = ui {
+            let text = String(bytes: head.header, encoding: .isoLatin1) ?? ""
+            if UiFiles.ours(text) { conn.write(ui.answer(text)); conn.shutdown(); return } // the app's own interface
+            if UiFiles.isUpgrade(text) { wait = min(wait, socketWaitMs) }
+            else { forward = (UiFiles.closing(text).data(using: .isoLatin1).map { Bytes($0) } ?? head.header) + Bytes(head.all[head.header.count...]) }
+        }
+        guard let channel = channels?.waitChannel(timeoutMs: wait), !channel.isClosed else {
             unavailable(conn)
             conn.shutdown()
             return
@@ -143,7 +161,7 @@ public final class StreamProxy {
             stream.cond.lock(); let waiting = !stream.answered && !stream.done; stream.cond.unlock()
             if waiting { self?.channels?.probe() }
         }
-        _ = upload(stream, head.all)
+        _ = upload(stream, forward)
         while let chunk = conn.read(max: StreamProxy.chunk) {
             if !upload(stream, chunk) { break }
         }
