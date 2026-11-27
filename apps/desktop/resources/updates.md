@@ -9,7 +9,7 @@ here before it ships (the release check looks for it).
 
 Tasks show when they were created and when they stopped moving. A task can carry a checklist, and creating a
 similar task shows a suggestion without blocking it. Calendar and the regular Tasks view both stay. Old Android
-shortcuts and notices for My Day open Tasks. The Android QR scanner opens the system image chooser instead of
+shortcuts and notices for the former day page open Tasks. The Android QR scanner opens the system image chooser instead of
 requesting access to recent photos.
 
 The chat composer shows Auto without guessing a model name. A manual pick is a hint for one outgoing message;
@@ -82,7 +82,7 @@ they no longer make "No other model account can run the team", a stale sign-out 
 in again creates nothing, and the work closes once the account is signed in again, also while it is at its limit. The
 app's own to-dos show "from Autark".
 
-**A sign-in to-do for the person although other accounts run.** Shows as: "Sign in to … again" on the person's My day,
+**A sign-in to-do for the person although other accounts run.** Shows as: "Sign in to … again" among the person's Tasks,
 "No other model account can run the team". I check: app.status for the account and the others; the to-do's notes. I fix
 it: if the account is signed in, I close the to-do; if not, I sign it in myself (accounts.sign_in) and tell the person
 only what only they can do.

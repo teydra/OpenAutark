@@ -172,6 +172,11 @@ test('the lead is the manager\'s own will: first person, no permission or must w
   }
 });
 
+test('owner: "My day" is gone everywhere – the shipped updates.md (read by the manager, quoted to people) never names it', () => {
+  const text = readFileSync(path.join(RESOURCES, 'updates.md'), 'utf8');
+  assert.doesNotMatch(text, /\bmy[ -]?day\b/i, 'the page is Tasks since the Quests round of 20.11.2026');
+});
+
 test('main.ts sends the note before recordStart stores this start\'s version', () => {
   const main = readFileSync(new URL('../../../src/runtime/main.ts', import.meta.url), 'utf8');
   const note = main.indexOf('sendUpdateNote(s, options.version)');
