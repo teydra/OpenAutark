@@ -57,7 +57,7 @@ export function useChoices(s: RuntimeServices, now: readonly UseNow[], totalMb =
     if (use === 'image' && plans.some((entry) => entry.provider === 'codex')) list.push({ value: 'codex', label: 'GPT Image on the ChatGPT plan' });
     if (use === 'stt' && dictation) list.push({ value: PLAN_DICTATION, label: PLAN_DICTATION_NAME, note: dictation.label });
     if (use === 'stt' || use === 'tts') list.push(...offers.filter((offer) => offer.purpose === use).map(offerChoice));
-    if (use === 'tts') list.push({ value: USE_LOCAL, label: 'This PC\'s voice' });
+    if (use === 'tts' || use === 'speech') list.push({ value: USE_LOCAL, label: 'This PC\'s voice' });
     if (use === 'voice') list.push({ value: USE_LOCAL, label: 'This PC: hears with Speech to text, speaks with Text to speech' });
     if (use === 'embeddings' && now.find((entry) => entry.use === 'embeddings')?.thisPc) list.push({ value: USE_LOCAL, label: LOCAL_EMBEDDING_NAME, ...fitted(EMBEDDING_RAM_MB, totalMb), note: `this PC · ${FIT_WORDS[memoryFit(EMBEDDING_RAM_MB, totalMb)]}` });
     const served = modelsFor(use, models);

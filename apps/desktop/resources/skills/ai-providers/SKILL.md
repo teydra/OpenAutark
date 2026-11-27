@@ -44,7 +44,10 @@ need. Reading it again afterwards shows the same entry, or the reason above it w
   the same server software stay apart this way, and an id from the table needs no `url` and `protocol`.
 - `key` is a handle from the secrets catalog (below). A self-hosted server without a key leaves it out.
 - `models` adds names the server does not list. `uses` says what a model is for when its name does not tell: `work`, `decision`,
-  `voice`, `stt`, `tts`, `image`, `video`, `music`, `sound`, `embeddings`.
+  `voice`, `stt`, `tts`, `speech`, `image`, `video`, `music`, `sound`, `embeddings`.
+- Automatic media and realtime voice routing respects the uses declared for each model: a `google` entry with
+  `{ "id": "gemini-3.8-flash-tts", "uses": ["tts"] }` does not take over images, video, music, realtime calls or listening.
+  To use a model for spoken content only, select it in `routing.speech` and leave `routing.tts` unchanged.
 
 Plans come through their own sign-in and stay detected, they are not in the file: `wf call accounts.detect` finds what is on
 this PC, `wf call accounts.add '{"provider":"codex"}'` starts the sign-in. `wf call accounts.add` with a key or address also works
@@ -106,16 +109,21 @@ make, a local model's download included – and answers with the uses again.
 A use is one key in `settings.json`, in the Models section, the same one the selects in Settings › Models write:
 
 ```
-routing.work  routing.decision  routing.voice  routing.stt  routing.tts
+routing.work  routing.decision  routing.voice  routing.stt  routing.tts  routing.speech
 routing.image  routing.video  routing.music  routing.sound  routing.embeddings
 ```
+
+- `routing.tts` is the voice that reads replies aloud and speaks in calls on this PC; `routing.speech` is the voice media.speak
+  makes audio with (voiceovers, narration). While `routing.speech` is `"auto"` it speaks with `routing.tts`'s choice, so a
+  good voice for content without it on calls is `routing.speech` `"google:gemini-3.8-flash-tts"` and `routing.tts` `"local"`.
 
 - The value is `<connection>:<model>`: `"deepinfra:Qwen/Qwen3-Embedding-8B"`. The model need not be on the server's list; a new
   name, or a model the server does not list, works as soon as it is written here. A plan or a found server takes what
   `models.list` shows, with its provider in front: `"claude:claude-opus-5-5"`. An older `"compatible:<model>"` still finds its model.
 - Work can also name a plan, `"codex"` or `"claude"`: that plan's best fit for each turn.
-- `"off"` turns a media use or embeddings off. `"local"` is this PC's own model for `tts`, `stt` and `embeddings`; a local
-  speech model's id as the value picks that one (and brings it to this PC).
+- `"off"` turns a media use or embeddings off. `"local"` is this PC's own model for `tts`, `speech`, `stt` and `embeddings`; a local
+  speech model's id as the value picks that one (and brings it to this PC). On `routing.voice`, `"local"` keeps calls on this
+  PC's speech (Speech to text and Text to speech), also while a realtime key is connected.
 - `"codex"`: on `routing.image` images on the ChatGPT plan, on `routing.stt` the plan's dictation – what `"auto"` takes first
   while a Codex plan login is here.
 - `routing.voice` works while `voice.realtime` is `"auto"`: an OpenAI or OpenAI-compatible connection speaks OpenAI Realtime, a Google key speaks Gemini Live (`"google:gemini-3.8-live"`).

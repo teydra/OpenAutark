@@ -21,7 +21,7 @@ import { accountCharge } from '../../shared/model/charge.ts';
 import { FIT_WORDS, type LocalSpeechOffer, type LocalSpeechPull } from '../../shared/model/local-speech-models.ts';
 import {
   FREE_ROUTE_CHOICE, OFFABLE_USES, PLAN_DICTATION, PLAN_DICTATION_NAME, USE_ABOUT, USE_AUTO, USE_LABELS, USE_LOCAL, USE_OFF, WORK_PLAN_PROVIDERS,
-  modelsFor, useWrite, voiceDefault, type ModelUse, type UseNow, type UseWrite,
+  modelsFor, speechAsTts, useWrite, voiceDefault, type ModelUse, type UseNow, type UseWrite,
 } from '../../shared/model/models-uses.ts';
 import { modelOwner, type ProviderEntries } from '../../shared/model/provider-entries.ts';
 import { DECISION_PROVIDER, MEDIA_ONLY_PROVIDERS, type Account, type ModelInfo } from '../../shared/model/providers.ts';
@@ -143,7 +143,7 @@ export function modelOptions(use: ModelUse, provider: string, now: UseNow | unde
       if (accounts.some((entry) => isPlan(entry) && entry.provider === PLAN_DICTATION)) options.push(DICTATION);
       options.push(...offers.filter((entry) => entry.purpose === 'stt').map(offerOption));
       if (!options.length) options.push({ value: NOTHING, label: named });
-    } else options.push(...offers.filter((entry) => entry.purpose === use).map(offerOption));
+    } else options.push(...offers.filter((entry) => entry.purpose === speechAsTts(use)).map(offerOption)); // Speech: the local voices
   } else {
     const account = accounts.find((entry) => entry.id === provider);
     if (account && isPlan(account)) {
@@ -230,8 +230,8 @@ export function writeProvider(use: ModelUse, provider: string, models: readonly 
   if (provider === NOTHING) return undefined;
   if (provider === USE_OFF) return useWrite(use, USE_OFF, offers);
   if (provider === THIS_PC && use === 'voice') return useWrite(use, USE_LOCAL, offers);
-  if (provider === THIS_PC && (use === 'stt' || use === 'tts')) {
-    const mine = offers.filter((offer) => offer.purpose === use);
+  if (provider === THIS_PC && (use === 'stt' || use === 'tts' || use === 'speech')) {
+    const mine = offers.filter((offer) => offer.purpose === speechAsTts(use));
     const chosen = use === 'stt' ? settings?.localStt : settings?.localTts;
     const offer = mine.find((entry) => entry.id === chosen && entry.installed) ?? mine.find((entry) => entry.installed) ?? mine.find((entry) => entry.recommended) ?? mine[0];
     return useWrite(use, offer?.id ?? USE_LOCAL, offers);
