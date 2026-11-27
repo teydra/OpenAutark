@@ -26,18 +26,22 @@ public final class DisclosureTest {
         check(DisclosureText.isGerman("de") && DisclosureText.isGerman("DE") && !DisclosureText.isGerman("en") && !DisclosureText.isGerman(null));
         // S9 check 27.11.2026: the app's pull with phone use off never jumps away silently – the disclosure, or (agreed
         // before) a hint as the Accessibility settings open
-        check(DisclosureText.turnOn(true).contains("Bedienungshilfe") && DisclosureText.turnOn(true).contains("Autark") && DisclosureText.turnOn(false).contains("accessibility service"));
-        // Mika 27.11.2026: Samsung's One UI 2 (Android 10) lists Autark at the bottom under "Installierte Dienste" – the hint
-        // names it there; any other maker or Android keeps the general words rather than a name that may be wrong
+        // The list shows the service's label, not the app's name (S9 27.11.2026: "Use this phone")
+        check(DisclosureText.turnOn(true).contains("Bedienungshilfe") && DisclosureText.turnOn(true).contains("„Use this phone“") && !DisclosureText.turnOn(true).contains("Autark"));
+        check(DisclosureText.turnOn(false).contains("accessibility service") && DisclosureText.turnOn(false).contains("\"Use this phone\""));
+        // Mika 27.11.2026: Samsung's One UI 2 (Android 10) holds the service at the bottom under "Installierte Dienste" – the
+        // hint names it there; any other maker or Android keeps the general words rather than a name that may be wrong
         check(DisclosureText.section(true, "samsung", 29).equals("Installierte Dienste") && DisclosureText.section(false, "Samsung", 29).equals("Installed services"));
         check(DisclosureText.section(true, "Google", 29).isEmpty() && DisclosureText.section(true, "samsung", 34).isEmpty() && DisclosureText.section(true, null, 29).isEmpty());
         String s9 = DisclosureText.turnOn(true, DisclosureText.section(true, "samsung", 29));
-        check(s9.contains("„Installierte Dienste“") && s9.contains("Autark") && s9.contains("einschalten") && s9.startsWith("Die Blase braucht die Bedienungshilfe"));
+        check(s9.contains("„Installierte Dienste“") && s9.contains("„Use this phone“") && s9.contains("einschalten") && s9.startsWith("Die Blase braucht die Bedienungshilfe"));
         check(DisclosureText.turnOn(false, DisclosureText.section(false, "samsung", 29)).contains("\"Installed services\""));
         check(DisclosureText.turnOn(true, "").equals(DisclosureText.turnOn(true)) && DisclosureText.turnOn(false, null).equals(DisclosureText.turnOn(false)));
         try {
             String base = System.getProperty("autark.android") + "/app/src/main/java/com/teydralab/autark/android/phoneuse/";
             String disclosure = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(base + "UseDisclosure.java")), java.nio.charset.StandardCharsets.UTF_8);
+            String strings = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(System.getProperty("autark.android") + "/app/src/main/res/values/strings.xml")), java.nio.charset.StandardCharsets.UTF_8);
+            check(strings.contains("<string name=\"use_label\" translatable=\"false\">" + DisclosureText.SERVICE + "</string>"));
             String pull = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(base + "BubblePull.java")), java.nio.charset.StandardCharsets.UTF_8);
             String agreed = disclosure.substring(disclosure.indexOf("if (UseConsent.agreed(this))"), disclosure.indexOf("LinearLayout column"));
             check(agreed.contains("Toast.makeText(") && agreed.contains("DisclosureText.turnOn(german, section)") && agreed.indexOf("Toast.makeText(") < agreed.indexOf("openSettings()"));
