@@ -35,7 +35,6 @@ import { DeleteDialog, exportCompany, importCompany, leaveCompany } from '../set
 import { companyLine, companyMenu } from '../settings/company-actions.ts';
 import type { CompanyAction } from '../settings/company-actions.ts';
 import { isAndroidApp } from '../pwa/native.ts';
-import { hasNativePort } from '../pwa/native-port.ts';
 import { addCompany, phoneCompanies, phoneStatus, statusLine, switchCompany } from '../pwa/phone-companies.ts';
 import type { PhoneCompany } from '../pwa/phone-companies.ts';
 import { QuotaRail } from './QuotaRail.tsx';
@@ -127,7 +126,7 @@ export function ProfileButton(props: { size?: number; placement?: 'right-end' | 
   const profile = settings.value?.profile;
   const name = profile?.name || 'Profile';
   const canAdd = companies.value.length > 0;
-  const phone = isAndroidApp() && hasNativePort(); // an older app without the port keeps the plain menu
+  const phone = isAndroidApp(); // the page is the app's own (owner 27.11.2026): it always has the companies
   const current = phoneCompanies.value.find((company) => company.current);
   useEffect(loadCompanies, []);
   const head = phone ? (

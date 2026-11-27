@@ -25,6 +25,12 @@
 // is replaced within seconds, never minutes; an idle socket that hears nothing for SILENT_MS (shared/api/protocol.ts) is
 // replaced too; while a file's bytes are on the way (MOVING) neither cuts before MOVING_LIMIT silent minutes. The new
 // socket reloads everything (rpc.open). The desktop port reports its own end.
+// The PC's version (owner 27.11.2026: the phone app carries its own interface): a socket's first ask, right behind the
+// Hello, is system.info, and the socket counts as open only once its PC names a version this interface works with
+// (lib/pc-floor.ts) – queued calls, subscriptions and loads wait for that. An older PC gets nothing more: its name stays in
+// `outdated` (the quiet state says "Update Autark on <PC>"), the socket closes and it is asked again every
+// OUTDATED_RETRY_MS. `turnedAway` counts the sockets that opened and were sent off – refused by their PC (4401/4403/4404)
+// or found too old – so the phone app can move the page to the company's next PC (pwa/native.ts reportRefusals).
 // Owns: framing, request ids, the event fan-out, connection status, the reconnect steps and the socket's liveness checks.
 // Never: holds app state (see store.ts) or retries calls itself (callers decide; effects
 // must never be blindly repeated).
@@ -34,8 +40,10 @@ import type { EventMap, EventName } from '../../shared/api/events.ts';
 import type { MethodName, ParamsOf, ResultOf } from '../../shared/api/methods.ts';
 import { OPEN_LIMIT_MS, PROTOCOL_VERSION, SILENT_MS, isEvent, isResponse } from '../../shared/api/protocol.ts';
 import type { Hello, RpcRequest, Topic } from '../../shared/api/protocol.ts';
+import type { SystemInfo } from '../../shared/model/system.ts';
 import { hostedShell } from '../pwa/hosted.ts';
 import { onNative } from '../pwa/native-port.ts';
+import { pcFits } from './pc-floor.ts';
 import { bridge, platform } from './platform.ts';
 import { RefusalMemory } from './refusal.ts';
 import type { Refusal } from './refusal.ts';
@@ -62,6 +70,12 @@ const status = signal<ConnectionStatus>('connecting');
 /** Close code of the last socket the runtime refused (4401), revoked (4403) or did not know (4404); null once it answers. */
 const refused = signal<Refusal | null>(null);
 const refusals = new RefusalMemory();
+/** The name of the PC whose socket said a version older than this interface works with; null once a fitting PC answered. */
+const outdated = signal<string | null>(null);
+/** How many sockets opened and were sent off (refused or too old); the phone app moves on at each. */
+const turnedAway = signal(0);
+/** How often a PC that is too old is asked again (it may be updated meanwhile). */
+const OUTDATED_RETRY_MS = 10_000;
 const pending = new Map<number, Pending>();
 const queue = new CallQueue(); // requests issued while not connected
 const listeners = new Map<string, Set<(data: unknown) => void>>();
@@ -156,7 +170,8 @@ export function retryDelay(failed: number, slow: boolean): number {
 function scheduleReconnect(): void {
   if (retryTimer) return;
   const slow = refused.peek() !== null || (typeof document !== 'undefined' && document.visibilityState === 'hidden');
-  retryTimer = setTimeout(() => { retryTimer = null; void connect(); }, retryDelay(failures++, slow));
+  const wait = outdated.peek() !== null ? OUTDATED_RETRY_MS : retryDelay(failures++, slow);
+  retryTimer = setTimeout(() => { retryTimer = null; void connect(); }, wait);
 }
 
 async function connectPort(): Promise<void> {
@@ -191,16 +206,34 @@ function connectSocket(): Promise<void> {
       silent = setTimeout(quiet, SILENT_MS);
     };
     const next: Transport = { send: (frame) => socket.send(JSON.stringify(frame)), close: () => { clearTimeout(silent); socket.onmessage = null; socket.close(); } };
-    let opened = false;
+    let opened = false; // the socket opened (its Hello went out)
+    let admitted = false; // its PC named a version this interface works with: the connection is open
     let token = '';
-    const end = () => {
+    let ask = 0; // the version ask's request id
+    const end = (why = 'socket did not open') => {
       clearTimeout(limit);
+      clearTimeout(silent);
+      pending.delete(ask);
       socket.onopen = socket.onmessage = socket.onclose = null;
       try { socket.close(); } catch { /* never opened */ }
-      reject(new Error('socket did not open'));
+      reject(new Error(why));
     };
-    const limit = setTimeout(end, OPEN_LIMIT); // event-armed once; open or close clears it
+    let limit = setTimeout(end, OPEN_LIMIT); // event-armed; open restarts it for the version ask, admission or a close clears it
     giveUp = end;
+    /** The version ask's answer: a fitting PC opens the connection, an older one is sent off (an error answer cannot tell: open). */
+    const answered = (info: SystemInfo | null) => {
+      if (info && !pcFits(info.version)) {
+        outdated.value = (typeof info.deviceName === 'string' ? info.deviceName.trim().slice(0, 40) : '') || 'your PC';
+        turnedAway.value += 1;
+        end('PC too old');
+        return;
+      }
+      clearTimeout(limit);
+      admitted = true;
+      outdated.value = null;
+      onOpen(next);
+      resolve();
+    };
     socket.onopen = () => {
       clearTimeout(limit);
       opened = true;
@@ -208,8 +241,10 @@ function connectSocket(): Promise<void> {
       const hello: Hello = { protocol: PROTOCOL_VERSION, token, client: 'pwa', deviceName: navigator.userAgent.slice(0, 80) };
       socket.send(JSON.stringify(hello));
       heard();
-      onOpen(next);
-      resolve();
+      limit = setTimeout(end, PROBE_MS); // a PC that never says its version is as dead as one that never opens
+      ask = nextId++;
+      pending.set(ask, { method: 'system.info', resolve: (info) => answered(info as SystemInfo), reject: () => answered(null) });
+      socket.send(JSON.stringify({ id: ask, method: 'system.info' }));
     };
     socket.onmessage = (event) => {
       heard();
@@ -220,7 +255,8 @@ function connectSocket(): Promise<void> {
       clearTimeout(silent);
       const refusal = refusals.closed(event.code, token);
       if (refusal !== null) refused.value = refusal;
-      if (!opened) reject(new Error('socket closed'));
+      if (opened && refusal !== null) turnedAway.value += 1;
+      if (!admitted) { pending.delete(ask); reject(new Error('socket closed')); }
       else if (transport === next) onClosed();
     };
   });
@@ -361,4 +397,4 @@ function start(): void {
   onNative('resume', checkAlive);
 }
 
-export const rpc = { call, on, subscribe, unsubscribe, onOpen: onOpenEvent, start, status, refused, refresh };
+export const rpc = { call, on, subscribe, unsubscribe, onOpen: onOpenEvent, start, status, refused, outdated, turnedAway, refresh };

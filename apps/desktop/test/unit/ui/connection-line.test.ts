@@ -19,7 +19,7 @@ const AT = new Date(2026, 10, 19, 14, 2).getTime();
 const LOST = 'Connection to the runtime was lost.';
 
 const facts = (extra: Partial<ConnectionFacts> = {}): ConnectionFacts => ({
-  status: 'closed', loaded: true, loadError: null, refused: null, down: true, downSince: AT, cachedAt: null, pc: 'Office-PC',
+  status: 'closed', loaded: true, loadError: null, refused: null, down: true, downSince: AT, cachedAt: null, pc: 'Office-PC', outdated: null,
   desktop: false, phoneApp: false, chatOpen: false, lostText: LOST, now: NOW, ...extra,
 });
 const act = { pairAgain: () => 'pair' };
@@ -64,6 +64,15 @@ test('a PC that does not know this phone (4404) or no longer accepts it (4401): 
   for (const extra of [{}, { refused: 4401 as const }, { refused: 4404 as const, phoneApp: true }]) {
     assert.ok(!labels(extra)?.some((label) => /forget/i.test(label)), `no Forget on this path (${JSON.stringify(extra)})`);
   }
+});
+
+test('a PC older than this interface works with: "Update Autark on <its name>" at once, quiet, no button, in a chat too', () => {
+  assert.equal(text({ outdated: 'Laptop', down: false, status: 'connecting' }), 'Update Autark on Laptop', 'no grace: a fact, not a blip');
+  assert.equal(connectionLine(facts({ outdated: 'Laptop' }), act)?.tone, 'info');
+  assert.deepEqual(labels({ outdated: 'Laptop', phoneApp: true }), []);
+  assert.equal(awayText(facts({ outdated: 'Laptop', chatOpen: true })), 'Update Autark on Laptop', 'the chat header says it');
+  assert.equal(awayText(facts({ outdated: 'Laptop', status: 'open' })), null, 'a fitting PC answered: gone');
+  assert.equal(text({ outdated: 'Laptop', desktop: true }), 'Autark’s engine is not answering · reconnecting by itself', 'the window ships with its engine');
 });
 
 test('open: nothing, or the load error as words – never the lost connection\'s text as a line of its own', () => {

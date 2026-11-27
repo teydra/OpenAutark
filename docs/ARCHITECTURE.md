@@ -2172,7 +2172,14 @@ or as employee; one row per device with right-click Rename and Remove (a PC behi
   `lan`. Web push with VAPID: one push request (`push.ts pushOne`: encrypt, headers, 404/410 = gone) and one signer
   (`vapid.ts vapidHeader`) for the own subscriptions and the held ones (`devices/sync/held-push.ts`),
   `webpush-crypto.ts`; the service
-  worker is `ui/pwa/sw.ts`. **Back on screen at once** (B-077, `ui/lib/rpc.ts` `checkAlive`): when the page becomes
+  worker is `ui/pwa/sw.ts`, registered by browsers only: inside a phone app (user agent `AutarkAndroid/` or `AutarkIOS/`,
+  `ui/pwa/native.ts` `inNativeApp`) the app's own files are the interface and the page registers none (owner 27.11.2026).
+  **The interface and its PC** (owner 27.11.2026): the interface names the oldest PC version it works with, `OLDEST_PC`
+  in `ui/lib/pc-floor.ts`; a socket's first ask after the Hello is `system.info` (`ui/lib/rpc.ts`), and the connection
+  counts as open only for a PC at least that old – an older one gets nothing else, the quiet state says "Update Autark on
+  <PC>" (`shell/connection-line.ts`), the phone app hears `refused` and moves to the company's next PC, and it is asked
+  again every 10 s. The constant goes up in the change that makes the interface need something newer of a PC; there is
+  no path for older versions. **Back on screen at once** (B-077, `ui/lib/rpc.ts` `checkAlive`): when the page becomes
   visible, is shown again (`pageshow`), the network returns or a push arrives (`wf.wake` from the service worker), a
   closed socket reconnects at once and an open one is asked `session.info`; no answer within 3 s ends it as dead and a
   new one opens – its `onOpen` reloads chats, tasks and the open chat (a socket a sleeping phone kept "open" stopped all
@@ -2452,7 +2459,7 @@ phone path, the employee push and the HTTPS route via `tailscale serve`.
   other, the side browser's native view hidden under it, the shot at 1:1 with a transparent canvas on top – Pen, Box,
   Undo – and a slim dock at the bottom, `FeedbackPanel.tsx`: Screenshot box, Recording and crash rows, the field with the
   mic, Send or Save, the privacy line); holding talks. The report image is the shot flattened with its marks at Send.
-  The Android app gives the shot natively over its port (`requestNativeShot`, app 0.3.15); the iPhone web app and
+  The Android app gives the shot natively over its port (`requestNativeShot`); the iPhone web app and
   browsers lay the dock over the live screen with "Add photo". Dictation in the form keeps its recording (`recording.ts`,
   WebM Opus 12 kbit/s, MP4 on the iPhone; up to 4 takes, sealed with the report when they fit, else the warning
   `AUDIO_DROPPED`); an Android crash report rides as `clientDiagnostics`; every report carries its origin line `client`

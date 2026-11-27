@@ -20,7 +20,12 @@ class FakeSocket {
   onclose: ((event: { code: number }) => void) | null = null;
   readonly url: string;
   constructor(url: string) { this.url = url; FakeSocket.all.push(this); }
-  send(data: string) { this.sent.push(JSON.parse(data) as Frame); }
+  send(data: string) {
+    const frame = JSON.parse(data) as Frame;
+    // the version ask right behind the Hello (lib/rpc.ts): a fitting PC answers at once
+    if (frame.method === 'system.info') { this.onmessage?.({ data: JSON.stringify({ id: frame.id, result: { version: '0.3.21', deviceName: 'PC' } }) }); return; }
+    this.sent.push(frame);
+  }
   close() { this.closed = true; }
   probes(): Frame[] { return this.sent.filter((frame) => frame.method === 'session.info'); }
   answer(id: number | undefined) { this.onmessage?.({ data: JSON.stringify({ id, result: { kind: 'device', capabilities: [], secure: true, allowedMethods: [] } }) }); }

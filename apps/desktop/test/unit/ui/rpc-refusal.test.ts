@@ -98,6 +98,7 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   assert.equal(first.hello().token, 'tok_removed');
   await flush();
   first.onclose!({ code: 4403 }); // the owner pressed Remove while the phone was connected
+  await flush(); // a socket sent off before its version answer ends its attempt (lib/rpc.ts connect)
   assert.equal(page.refused.value, 4403);
 
   assert.equal(FakeSocket.all.length, 1);
@@ -107,6 +108,7 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   second.onopen!();
   await flush();
   second.onclose!({ code: 4401 }); // what the runtime answers a revoked token's Hello
+  await flush();
   assert.equal(page.refused.value, 4403, 'still "This phone was removed.", not "This device is no longer paired."');
 
   // The refused socket had opened, but the runtime never answered: the delay keeps growing (a refusal's slower steps).
@@ -123,6 +125,7 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   assert.equal(third.hello().token, 'tok_removed');
   await flush();
   third.onclose!({ code: 4401 });
+  await flush();
   assert.equal(reloaded.refused.value, 4403, 'the reload still says the phone was removed');
 
   // Paired again (pwa/install.ts stores a new token): 4401 means phone access is off again.
@@ -133,6 +136,7 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   assert.equal(fourth.hello().token, 'tok_new');
   await flush();
   fourth.onclose!({ code: 4401 });
+  await flush();
   assert.equal(reloaded.refused.value, 4401);
 
   // Phone access on again: the runtime answers, which clears the refusal and resets the backoff.
@@ -144,6 +148,7 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   assert.equal(reloaded.refused.value, null);
   assert.equal(storage.getItem(REVOKED_KEY), null, 'the old marker is dropped once a token works');
   fifth.onclose!({ code: 1006 });
+  await flush();
   const before = FakeSocket.all.length;
   mock.timers.tick(0);
   assert.equal(FakeSocket.all.length, before + 1, 'an accepted connection reconnects at once');

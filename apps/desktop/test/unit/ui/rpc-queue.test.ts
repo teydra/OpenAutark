@@ -43,7 +43,12 @@ class FakeSocket {
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: ((event: { code: number }) => void) | null = null;
   constructor() { FakeSocket.all.push(this); }
-  send(data: string) { this.sent.push(JSON.parse(data) as { id?: number; method?: string }); }
+  send(data: string) {
+    const frame = JSON.parse(data) as { id?: number; method?: string };
+    // the version ask right behind the Hello (lib/rpc.ts): a fitting PC answers at once
+    if (frame.method === 'system.info') { this.onmessage?.({ data: JSON.stringify({ id: frame.id, result: { version: '0.3.21', deviceName: 'PC' } }) }); return; }
+    this.sent.push(frame);
+  }
   close() { /* the fake never closes by itself */ }
 }
 

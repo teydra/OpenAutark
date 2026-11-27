@@ -1,5 +1,5 @@
 // The phone hears a dictation piece itself (STIMME 21.11.2026, owner: "if possible with the cloud, do it in the cloud;
-// otherwise it has to go over the PC like before"): in the Android app (0.3.18+, its status says hear:true) the piece goes
+// otherwise it has to go over the PC like before"): in the Android app (its status says hear:true) the piece goes
 // to the app over the native port ({t:'hear', id, data, mime, language}) and the app posts it to the person's ChatGPT
 // plan dictation endpoint itself – the same endpoint, file and language hint the PC would send (apps/android
 // phoneuse/PlanHearing.java, with the plan login the PC hands to this paired phone, RPC voice.planLogin). A page cannot

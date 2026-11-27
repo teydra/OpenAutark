@@ -17,7 +17,7 @@ import { hasNativePort, onNative, sendNative } from './native-port.ts';
 import { startShare } from './share.ts';
 
 export interface PhoneCompany { id: string; name: string; avatar?: string; current: boolean; pc?: string }
-/** `online` of `total` PCs of the company have a channel now (0.3.20; absent from an app before that: the PC's name is shown). */
+/** `online` of `total` PCs of the company have a channel now (absent while the app knows no PC of it: the PC's name is shown). */
 export interface PhoneStatus { pc?: string; connected: boolean; online?: number; total?: number }
 
 /** The companies this phone is paired with (empty outside the Android app). */
@@ -55,7 +55,7 @@ export function parseStatus(msg: Record<string, unknown>): PhoneStatus {
 
 /**
  * The profile sheet's one status line: "<company> · 2 of 3 PCs online" (no PC is named – none outranks another; a single
- * PC: "1 PC online"), the PC's name from an app before 0.3.20, or "Connecting…" while the link is down.
+ * PC: "1 PC online"), the PC's name while the app counts none, or "Connecting…" while the link is down.
  */
 export function statusLine(company: string, status: PhoneStatus | null): string {
   if (!status?.connected) return 'Connecting…';

@@ -8,7 +8,8 @@
 // status line. What truly needs the person keeps its words and its one action: a PC that does not know this phone's token
 // (4404 – one the company's roster has not reached yet) or no longer accepts it (4401) is a line with Pair again in the
 // phone apps (it pairs over this company, pwa/native.ts); the pairing screen comes only for a removed phone (4403,
-// App.tsx). On the desktop the line names Autark's engine. "Connection to the runtime was lost." (rpc LOST_TEXT) is never
+// App.tsx). A PC older than this interface works with (lib/pc-floor.ts) is the quiet state "Update Autark on <PC>" at
+// once, with no button and nothing else tried against it (lib/rpc.ts). On the desktop the line names Autark's engine. "Connection to the runtime was lost." (rpc LOST_TEXT) is never
 // a line of its own. Konrad 24.11.2026: the state stands for every action that failed meanwhile – none of them is a toast
 // of its own (lib/toasts.ts toastError); what did not go out at all is said once in one quiet toast when the connection
 // is back (unsentToast).
@@ -46,6 +47,8 @@ export interface ConnectionFacts {
   cachedAt: number | null;
   /** The PC's name as the phone knows it ('' when it knows none). */
   pc: string;
+  /** The name of the PC that answered with a version older than this interface works with (lib/rpc.ts), or null. */
+  outdated: string | null;
   desktop: boolean;
   /** Inside either phone app (Pair again). */
   phoneApp: boolean;
@@ -60,6 +63,8 @@ export interface ConnectionActions { pairAgain(): unknown }
 
 /** The away state's words, or null while the connection is open or within the grace. */
 export function awayText(facts: ConnectionFacts): string | null {
+  // a PC too old for this interface (lib/pc-floor.ts) is a fact, not a blip: said at once, and nothing else
+  if (!facts.desktop && facts.outdated && facts.status !== 'open') return `Update Autark on ${facts.outdated}`;
   if (facts.status === 'open' || !facts.down) return null;
   if (!facts.desktop && (facts.refused === 4401 || facts.refused === 4404)) return null; // it needs the person: connectionLine says it
   if (facts.desktop) return facts.loaded ? 'Autark’s engine is not answering · reconnecting by itself' : 'Autark’s engine is starting…';
@@ -98,7 +103,7 @@ export function connectionFacts(state: Pick<ConnectionFacts, 'status' | 'loaded'
   const desktop = platform === 'desktop';
   return {
     ...state, refused: desktop ? null : rpc.refused.value, down: down.value, downSince: downSince.value, cachedAt: cachedAt.value,
-    pc: desktop ? '' : pcName(), desktop, phoneApp: isPhoneApp(), chatOpen: activeConversationId.value !== null, lostText: LOST_TEXT, now: Date.now(),
+    pc: desktop ? '' : pcName(), outdated: desktop ? null : rpc.outdated.value, desktop, phoneApp: isPhoneApp(), chatOpen: activeConversationId.value !== null, lostText: LOST_TEXT, now: Date.now(),
   };
 }
 

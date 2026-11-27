@@ -6,7 +6,7 @@
 // (recorded, uploaded, voice.transcribe) where it gives text (dictationNote is empty).
 // B-055: the header cell's talk (press.ts recognizes the hold) drives a DictationButton through
 // beginHold/endHold; the window shot includes the side browser (main/capture.ts composites it).
-// Feedback 16.11.2026: the Android app (0.3.15+) takes the shot of its own window over the port
+// Feedback 16.11.2026: the Android app takes the shot of its own window over the port
 // (native-port.ts requestNativeShot, at most 2 s); the picker ("Add photo", the form's +) works everywhere.
 // Owner 20.11.2026: a report is its words – the feedback dictation gives text, never a recording. Its cancel
 // (the form's + turned into ×) drops a take while it records and while it is transcribed: the words of a
@@ -22,15 +22,12 @@ import { settings } from '../lib/store.ts';
 import { pushToast } from '../lib/toasts.ts';
 import { appendDraftText } from './draft.ts';
 import { hasNativePort, requestNativeShot } from '../pwa/native-port.ts';
-import { androidShell, versionAtLeast } from './client.ts';
+import { isAndroidApp } from '../pwa/native.ts';
 import { HOLD_MS } from './press.ts';
 
-/** The first Android app that answers {t:'shot'} (older ones would only let the request time out). */
-export const NATIVE_SHOT_SINCE = '0.3.15';
-
-/** The Android app can take the shot of its window (its port is here and it is new enough). */
+/** The Android app can take the shot of its window (its port is here; the page is the app's own, so it answers). */
 export function nativeShotHere(userAgent: string = typeof navigator === 'undefined' ? '' : navigator.userAgent): boolean {
-  return hasNativePort() && versionAtLeast(androidShell(userAgent)?.version, NATIVE_SHOT_SINCE);
+  return hasNativePort() && isAndroidApp(userAgent);
 }
 
 /** Takes a screenshot of the app window if the host can; null otherwise. */

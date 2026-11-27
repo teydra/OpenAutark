@@ -5,6 +5,8 @@
 // Sicher-Runde 19.11.2026 (D1, D4, D5): "Not paired" (4401) and a PC that does not know the phone yet (4404) no longer
 // replace the shell – they are a line in the status line (shell/connection-line.ts, texts in connection-line.test.ts)
 // with Pair again; 4404 goes to the Android app as 'refused' too, so it tries the company's next PC.
+// Owner 27.11.2026: the interface is the phone app's own; a PC too old for it is sent off like a refusal (lib/rpc.ts
+// turnedAway), and every phone app with a port hears it (the iPhone app answers 'refused' as well).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -57,46 +59,42 @@ test('Pair again: the Android app gets "add" (its pairing over this company); th
   }
 });
 
-test('a refused socket (opened, then closed with 4401 or 4404) tells the Android app "refused" once per refusal; other closes do not', () => {
+const source = () => ({ turnedAway: signal(0), refused: signal<4401 | 4403 | 4404 | null>(null), outdated: signal<string | null>(null) });
+
+test('a socket sent off (refused 4401/4404, or its PC too old) tells the phone app "refused" once each; removed (4403) does not', () => {
   resetNativePort();
-  const status = signal<'connecting' | 'open' | 'closed'>('connecting');
-  const refused = signal<4401 | 4403 | 4404 | null>(null);
-  const stop = reportRefusals({ status, refused }, true);
+  const s = source();
+  const stop = reportRefusals(s);
   try {
-    status.value = 'closed'; // a PC out of reach: never opened
-    refused.value = 4401;
-    status.value = 'connecting';
-    status.value = 'closed'; // still not opened: no refusal of this PC
     const port = new FakePort();
     adoptPort(port as unknown as MessagePort);
+    s.refused.value = 4401; // set while a PC was out of reach: no socket of it was sent off
     assert.deepEqual(port.sent, []);
-    status.value = 'open';
-    status.value = 'closed'; // the PC refused the token
+    s.turnedAway.value += 1; // the PC refused the token
     assert.deepEqual(port.sent, ['{"t":"refused"}']);
-    status.value = 'connecting';
-    status.value = 'open';
-    status.value = 'closed'; // the next PC refused as well
+    s.turnedAway.value += 1; // the next PC refused as well
     assert.equal(port.sent.length, 2);
-    refused.value = 4404; // a PC the company's roster has not reached yet: on to the next PC too
-    status.value = 'open';
-    status.value = 'closed';
+    s.refused.value = 4404; // a PC the company's roster has not reached yet: on to the next PC too
+    s.turnedAway.value += 1;
     assert.equal(port.sent.length, 3);
-    refused.value = 4403;
-    status.value = 'open';
-    status.value = 'closed'; // removed: that ends at once, no next PC
-    assert.equal(port.sent.length, 3);
+    s.refused.value = null;
+    s.outdated.value = 'Laptop'; // a PC older than this interface: on to the next PC (owner 27.11.2026)
+    s.turnedAway.value += 1;
+    assert.equal(port.sent.length, 4);
+    s.outdated.value = null;
+    s.refused.value = 4403;
+    s.turnedAway.value += 1; // removed: that ends at once, no next PC
+    assert.equal(port.sent.length, 4);
   } finally { stop(); resetNativePort(); }
-  assert.equal(typeof reportRefusals({ status, refused }, false), 'function', 'outside the Android app nothing is wired');
 });
 
 test('a refusal before the app handed over its port is told once the port arrives', () => {
   resetNativePort();
-  const status = signal<'connecting' | 'open' | 'closed'>('open');
-  const refused = signal<4401 | 4403 | 4404 | null>(null);
-  const stop = reportRefusals({ status, refused }, true);
+  const s = source();
+  const stop = reportRefusals(s);
   try {
-    refused.value = 4401;
-    status.value = 'closed';
+    s.refused.value = 4401;
+    s.turnedAway.value += 1;
     const port = new FakePort();
     adoptPort(port as unknown as MessagePort);
     assert.deepEqual(port.sent, ['{"t":"refused"}']);
