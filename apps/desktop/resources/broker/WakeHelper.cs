@@ -1396,8 +1396,13 @@ namespace AutarkWake
                 catch (WsClosed closed)
                 {
                     if (closed.Code == 4009) { Log("another wake helper took over"); End(); }
+                    else Log("the meeting server closed the connection (" + closed.Code + ")");
                 }
-                catch (Exception) { /* the connection is gone: reconnect with backoff */ }
+                catch (Exception e)
+                {
+                    // the connection is gone: reconnect with backoff (the kind of failure only – never a message that could carry data)
+                    Log("connection ended: " + e.GetType().Name + (e is IOException || e is SocketException || e is AuthenticationException ? ": " + e.Message : ""));
+                }
                 client = null;
                 if (ended) break;
                 int delay = BackoffMs[Math.Min(attempt, BackoffMs.Length - 1)];

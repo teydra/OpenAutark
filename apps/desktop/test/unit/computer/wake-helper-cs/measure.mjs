@@ -60,7 +60,7 @@ async function fakeServer() {
 }
 
 const samples = [];
-let child; let work; let result; let helperLog = ''; let stand;
+let child; let work; let result; let helperLog = ''; let stand; let regionsText = '';
 try {
   let pid = attach ? Number(attach) : undefined;
   let session;
@@ -133,6 +133,10 @@ try {
     stamp(`idle ${samples.at(-1).afterSeconds} s: ws ${samples.at(-1).workingSetMB} MB, private bytes ${samples.at(-1).privateBytesMB} MB`);
   }
   const last = samples.at(-1);
+  if (args.includes('--regions')) {
+    const run = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(path.dirname(fileURLToPath(import.meta.url)), 'regions.ps1'), '-ProcessId', String(pid)], { encoding: 'utf8', windowsHide: true });
+    regionsText = run.status === 0 ? run.stdout.trim() : `regions failed: ${run.stderr || run.stdout}`;
+  }
 
   // one real wake at the end (it ends the helper)
   let wake;
@@ -173,5 +177,6 @@ console.log('| idle | working set MB | private bytes MB | private working set MB
 for (const value of samples) console.log(row(value));
 if (result.modules?.length) console.log(`\nLargest modules: ${result.modules.join(', ')}`);
 if (result.wake) console.log(`\nWake: ${JSON.stringify(result.wake.reply)}; the stand-in app started ${result.wake.appStartedAfterMs ?? 'NEVER'} ms after the wake was sent.`);
+if (regionsText) console.log(`\nWhere the private memory sits:\n${regionsText}`);
 if (helperLog) console.log(`\nHelper log (tail):\n\`\`\`\n${helperLog}\n\`\`\``);
 process.exit(result.wake && (result.wake.reply?.ok !== true || result.wake.appStartedAfterMs === undefined) ? 1 : 0);

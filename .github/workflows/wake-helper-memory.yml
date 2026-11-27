@@ -58,10 +58,9 @@ jobs:
           $e = 'resources/broker/AutarkWakeHelper.exe'
           $relay = 'wss://telecoding-relay.onrender.com/autark'
           $all = @()
-          $all += (node test/unit/computer/wake-helper-cs/measure.mjs --exe $e --fake --minutes 1.5)
-          $all += (node test/unit/computer/wake-helper-cs/measure.mjs --exe $e --relay $relay --minutes 1.5 --env COMPlus_gcConcurrent=0)
-          $all += (node test/unit/computer/wake-helper-cs/measure.mjs --exe $e --fake --minutes 1.5 --env COMPlus_gcConcurrent=0)
-          $all += (node test/unit/computer/wake-helper-cs/measure.mjs --exe $e --relay $relay --minutes 1.5 --env COMPlus_gcConcurrent=0 --env COMPlus_GCgen0size=100000)
+          $all += (node test/unit/computer/wake-helper-cs/measure.mjs --exe $e --fake --minutes 1 --regions)
+          $all += (node test/unit/computer/wake-helper-cs/measure.mjs --exe $e --relay $relay --minutes 1 --regions)
+          $all += (node test/unit/computer/wake-helper-cs/measure.mjs --exe $e --relay $relay --minutes 1 --regions --env COMPlus_gcConcurrent=0 --env COMPlus_GCgen0size=100000)
           $all | Tee-Object -FilePath ../../wake-helper-variants.md
       - name: Summary
         if: always()
