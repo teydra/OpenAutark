@@ -1,7 +1,7 @@
 // Owns: learning which Autark version a PC runs, with one small request over its new channel (B-084 M1) – stream 0 of
 // the stream protocol (rendezvous/phone.ts; the local entrance numbers its streams from 1) carries one bearer
 // `POST /rpc` `system.info` with this phone's own token to the PC's own runtime port, and the answer's `version` comes
-// back – and ordering two versions (0.3.10 > 0.3.9 > 0.3.9-local.2 > 0.3.9-local.1; an unknown one is the oldest).
+// back (the shell reloads the page when it moves to a PC running another version).
 // Never: keeps the channel's stream open after the answer, half-closes before it (the PC would cut the request), or
 // sends anything but that one request.
 package com.teydralab.autark.android.relay;
@@ -68,27 +68,5 @@ final class PcVersion {
             @SuppressWarnings("unchecked") String version = Json.str((Map<String, Object>) result, "version");
             return version != null && version.matches("[0-9A-Za-z.+-]{1,64}") ? version : null;
         } catch (IllegalArgumentException error) { return null; }
-    }
-
-    /** Orders versions like semver: numbers first, then a release above its pre-releases; null is the oldest. */
-    static int compare(String a, String b) {
-        if (a == null || b == null) return a == null ? (b == null ? 0 : -1) : 1;
-        String[] x = a.split("\\+", 2)[0].split("-", 2), y = b.split("\\+", 2)[0].split("-", 2);
-        int core = parts(x[0], y[0]);
-        if (core != 0) return core;
-        if (x.length != y.length) return x.length < y.length ? 1 : -1; // 0.3.9 > 0.3.9-local.1
-        return x.length == 1 ? 0 : parts(x[1], y[1]);
-    }
-
-    /** Dot-separated identifiers: numbers by value, below words; words by text; a shorter list first. */
-    private static int parts(String a, String b) {
-        String[] x = a.split("\\."), y = b.split("\\.");
-        for (int i = 0; i < Math.max(x.length, y.length); i++) {
-            if (i >= x.length || i >= y.length) return i >= x.length ? -1 : 1;
-            boolean nx = x[i].matches("\\d{1,9}"), ny = y[i].matches("\\d{1,9}");
-            int c = nx && ny ? Integer.compare(Integer.parseInt(x[i]), Integer.parseInt(y[i])) : nx != ny ? (nx ? -1 : 1) : x[i].compareTo(y[i]);
-            if (c != 0) return c;
-        }
-        return 0;
     }
 }

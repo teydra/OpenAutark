@@ -1,8 +1,8 @@
 // Owns: the one live link of the current company for the whole app process (B-084, decisions 7 and 8): its connection
 // (relay/PhoneConnection) behind the company's own local port (its own origin), the phone-use socket (phoneuse/UseLink),
-// the network callback pointed at it (relay/NetworkWake) and the PC picker – the PCs of the company in the phone's order,
-// which one the page uses and which are online; a pick makes the page use that PC. A PC that refused the page's token
-// (the page's 'refused', 16.11.2026) gives the page to the next PC of the company that has not refused in this link.
+// the network callback pointed at it (relay/NetworkWake), and which PC the page is on and how many are linked – the page
+// takes whichever PC of the company answers (owner 27.11.2026: no PC picker). A PC that refused the page's token (the
+// page's 'refused', 16.11.2026) gives the page to the next PC of the company that has not refused in this link.
 // Also where the company list and the entrance's gate secret are kept (SharedPreferences under Companies).
 // Events go to the activity on screen (MainActivity forwards them); the connection's state shows in the page's status
 // line only (the KeepAlive notice is fixed). stop() ends the sockets on a thread of its own – Android refuses network
@@ -11,8 +11,6 @@
 // touches the WebView, or keeps two companies' links at once.
 package com.teydralab.autark.android;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import com.teydralab.autark.android.phoneuse.UseLink;
@@ -29,7 +27,7 @@ final class CompanyLink {
         void status(String text, boolean connected);
         /** A new channel to a PC is up (after a pause, a network change or a PC switch): the page refreshes. */
         void linked();
-        /** The company's PCs changed (phoneUse.attach or the picker): the caller stores them for `company`. */
+        /** The company's PCs changed (phoneUse.attach): the caller stores them for `company`. */
         void pcs(String company, List<PhoneConnection.Pc> pcs);
     }
 
@@ -109,25 +107,4 @@ final class CompanyLink {
     /** How many of the company's PCs have a channel now, and how many are paired. */
     int online() { return connection.linkedCount(); }
     int total() { return connection.pcs().size(); }
-
-    /** The PC picker: one row per PC; a pick puts that PC first (the link moves when it is online). */
-    void pick(Activity activity, Events events) {
-        List<PhoneConnection.Pc> pcs = connection.pcs();
-        String now = connection.pcName() == null ? null : connection.pc();
-        String[] rows = new String[pcs.size()];
-        int checked = -1;
-        for (int i = 0; i < rows.length; i++) {
-            PhoneConnection.Pc pc = pcs.get(i);
-            boolean here = pc.fingerprint.equals(now);
-            if (here) checked = i;
-            rows[i] = pc.name + (here ? " · connected" : connection.online(pc.fingerprint) ? " · online" : " · offline");
-        }
-        new AlertDialog.Builder(activity).setTitle("Connect through")
-                .setSingleChoiceItems(rows, checked, (dialog, which) -> {
-                    dialog.dismiss();
-                    connection.prefer(pcs.get(which).fingerprint);
-                    events.pcs(company, connection.paired().pcs);
-                })
-                .setNegativeButton("Cancel", null).show();
-    }
 }

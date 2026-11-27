@@ -6,9 +6,9 @@
 // the system bar strips (SystemBars), places opened from notifications, shortcuts and a recreation (PhoneRoutes), shares
 // into Autark (ShareIn), the foreground service while paired (KeepAlive), the phone-use upgrade's dialog and a crashed
 // renderer's recovery. Back goes back layer by layer in the web UI (window.autarkBack) and, with nothing left, puts the
-// app in the background – it never closes itself. Its own screen besides pairing: "can't reach" (OfflineScreen: Try again,
-// Choose PC – no Forget there since 19.11.2026), which
-// opens the page again by itself once a PC of the company is linked.
+// app in the background – it never closes itself. Its own screen besides pairing: "can't reach" (OfflineScreen – no button there:
+// owner 27.11.2026), which retries by itself while it shows and opens the page again as soon as a PC of the company is
+// linked; the link hears whether the app is in front (short pauses between its tries then).
 // Above them all, the update line (UpdateBar, UpdateCheck) when a newer Autark is there. Before everything, the last
 // start's crash report when there is one (CrashReport; its Report hands the trace to the page through NativePort); a
 // failing optional part (bar colours, the foreground service, the notification question, the update line) never keeps
@@ -240,16 +240,17 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         });
     }
 
-    /** The web UI could not load (no page of it on this phone yet): the reason, Try again and Choose PC – no Forget (19.11.2026). */
+    /** The web UI could not load (no page of it on this phone yet): the reason, and the app keeps trying by itself. */
     @Override public void offline(String reason) {
         if (setup) return;
         leaveWeb();
         PairScreens.stop();
-        status = OfflineScreen.show(this, content, reason, () -> {
+        status = OfflineScreen.show(this, content, reason, () -> { // every few seconds while the screen shows
             PhoneConnection.Paired paired = companies.current();
-            if (link != null) link.connection.check();
-            if (paired != null) open(paired);
-        }, this::pickPc);
+            if (paused || link == null) return;
+            if (link.pcName() != null && paired != null) open(paired); // a PC is linked: the page loads again
+            else link.connection.nudge(); // the link tries on its own; this only wakes it
+        });
     }
 
     /** "Forget this phone" (the profile menu: autark-app:forget or the port's 'forget') – the current company only. */
@@ -353,8 +354,6 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
 
     @Override public void forget() { confirmForget(); }
 
-    @Override public void pickPc() { if (link != null) link.pick(this, EVENTS); }
-
     @Override public void refused() { if (link != null) link.refused(); }
 
     /** W (19.11.2026): the page's Wake while no PC answers – through this company's own meeting-server link. */
@@ -400,14 +399,14 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         paused = false;
         AppNotices.resumed(true);
         optional(() -> AppNotices.clear(this));
-        if (link != null) { link.connection.check(); optional(() -> KeepAlive.start(this)); }
+        if (link != null) { link.connection.front(true); link.connection.check(); optional(() -> KeepAlive.start(this)); }
         if (web != null && !setup) web.onResume();
         optional(() -> SelfUpdate.resumed(this, updates::step));
         optional(() -> PhoneUseUpgrade.resumed(this, updates::step)); // back from Android's "install unknown apps" switch
         optional(() -> PhoneUseAsk.settle(this)); // phone use there and agreed (or the full build after the upgrade): the request goes
         optional(() -> UpdateCheck.start(this, updates));
     }
-    @Override protected void onPause() { paused = true; UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
+    @Override protected void onPause() { paused = true; if (link != null) link.connection.front(false); UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         String place = web == null || setup ? null : PhoneRoutes.place(web.getUrl());

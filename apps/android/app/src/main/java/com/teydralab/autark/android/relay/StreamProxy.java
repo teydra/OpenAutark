@@ -4,8 +4,11 @@
 // The WebView therefore shows the PC's unchanged phone UI at http://127.0.0.1:<port>, a secure context like https.
 // B-084: a request whose channel dies before the PC answered gets a 503 instead of hanging; one that hears nothing for
 // 4 s has the link probed once (Channels.probe), so a dead link is found within seconds. M1: the phone holds channels
-// to several PCs; a new stream takes the page's one (Channels.await) and retire() ends the streams left on the others
-// (a stream that raced a move ends at once too: one PC answers the page).
+// to several PCs; a new stream takes the page's one (Channels.await) and retire() – the page moved to another PC – ends
+// the streams left on the others (a stream that raced that move ends at once too: one PC answers the page). Owner
+// 27.11.2026: a better way to the same PC cuts nothing – drain() lets the old channel's streams run to their end and
+// closes it after the last; a new stream waits for a channel as long as the page waits (a socket 7 s, below rpc.ts's
+// 8 s, so no stream opens for a socket the page gave up; any other request 20 s).
 // Never: listens beyond loopback, lets another app's connection through, or buffers without bound.
 package com.teydralab.autark.android.relay;
 
@@ -21,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -40,6 +44,8 @@ public final class StreamProxy {
     static final int WINDOW = 256 * 1024;
     private static final int CHUNK = 32 * 1024;
     private static final long QUIET_MS = 4_000;
+    /** How long a new stream waits for a channel: the page's socket (its own limit is 8 s), any other request. */
+    static final long SOCKET_WAIT_MS = 7_000, REQUEST_WAIT_MS = 20_000;
     private static final byte[] END = new byte[0];
     /** The channel died: a stream the PC has not answered yet answers 503 itself. */
     private static final byte[] DEAD = new byte[0];
@@ -49,6 +55,10 @@ public final class StreamProxy {
     private final Channels channels;
     private final Map<PeerChannel, Map<Integer, Stream>> live = new ConcurrentHashMap<>();
     private final AtomicInteger nextId = new AtomicInteger(1);
+    /** Moves of the page to another PC (retire), so a stream that raced one ends. */
+    private final AtomicInteger moves = new AtomicInteger();
+    /** Channels that gave way to a better one to the same PC: they close after their last stream. */
+    private final Set<PeerChannel> draining = ConcurrentHashMap.newKeySet();
     private volatile boolean closed;
 
     /** Listens on 127.0.0.1:`port` (0 or a taken port: any free one). */
@@ -89,6 +99,7 @@ public final class StreamProxy {
 
     /** The channel ended: its streams end (503 where the PC had not answered yet), the WebView reconnects on its own. */
     public void channelClosed(PeerChannel channel) {
+        draining.remove(channel);
         Map<Integer, Stream> streams = live.remove(channel);
         if (streams != null) for (Stream stream : streams.values()) stream.toLocal.offer(DEAD);
     }
@@ -96,10 +107,22 @@ public final class StreamProxy {
     /** The page moved to `keep` (B-084 M1): streams still on another PC's channel end there too (that PC hears it), so
      *  the page's sockets and phone use (phoneuse/UseLink) come back through `keep`; the other channels stay open. */
     public void retire(PeerChannel keep) {
+        moves.incrementAndGet();
         for (Map.Entry<PeerChannel, Map<Integer, Stream>> entry : live.entrySet()) {
             if (entry.getKey() == keep) continue;
             for (Stream stream : new java.util.ArrayList<>(entry.getValue().values())) { stream.toLocal.offer(DEAD); stream.finish(true); }
         }
+    }
+
+    /** `old` gave way to a better channel to the same PC: its open streams run to their end, then it closes. */
+    public void drain(PeerChannel old) {
+        draining.add(old);
+        closeIfDrained(old);
+    }
+
+    private void closeIfDrained(PeerChannel channel) {
+        Map<Integer, Stream> streams = live.get(channel);
+        if ((streams == null || streams.isEmpty()) && draining.remove(channel)) channel.close();
     }
 
     private static void unavailable(OutputStream out) throws IOException {
@@ -134,7 +157,8 @@ public final class StreamProxy {
                 return;
             }
             socket.setSoTimeout(0);
-            PeerChannel channel = channels.await(20_000);
+            int moved = moves.get();
+            PeerChannel channel = channels.await(upgrade(new String(head, StandardCharsets.ISO_8859_1)) ? SOCKET_WAIT_MS : REQUEST_WAIT_MS);
             if (channel == null || channel.isClosed()) {
                 unavailable(socket.getOutputStream());
                 socket.close();
@@ -143,7 +167,7 @@ public final class StreamProxy {
             Stream stream = new Stream(nextId.getAndIncrement(), channel, socket);
             live.computeIfAbsent(channel, key -> new ConcurrentHashMap<>()).put(stream.id, stream);
             if (channel.isClosed()) channelClosed(channel);
-            if (channels.used() != channel) { unavailable(socket.getOutputStream()); stream.finish(false); return; } // the page moved meanwhile: one PC per page
+            if (moves.get() != moved && channels.used() != channel) { unavailable(socket.getOutputStream()); stream.finish(false); return; } // the page moved to another PC meanwhile: one PC per page
             channel.send(Json.map("t", "o", "s", stream.id));
             stream.start();
             RelayLink.LATER.schedule(() -> { if (!stream.answered && !stream.done) channels.probe(); }, QUIET_MS, TimeUnit.MILLISECONDS);
@@ -160,6 +184,15 @@ public final class StreamProxy {
         } catch (IOException | RuntimeException error) { // a failure on this thread ends this request, never the app
             try { socket.close(); } catch (IOException ignored) { /* closing */ }
         }
+    }
+
+    /** True for a WebSocket upgrade (the page's own socket). */
+    static boolean upgrade(String head) {
+        for (String line : head.split("\r\n")) {
+            int colon = line.indexOf(':');
+            if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("upgrade") && line.substring(colon + 1).trim().equalsIgnoreCase("websocket")) return true;
+        }
+        return false;
     }
 
     private boolean hasGate(String head) {
@@ -254,6 +287,7 @@ public final class StreamProxy {
             if (tell && mine) channel.send(Json.map("t", "e", "s", id));
             toLocal.offer(END);
             try { socket.close(); } catch (IOException ignored) { /* closing */ }
+            if (mine) closeIfDrained(channel);
         }
     }
 

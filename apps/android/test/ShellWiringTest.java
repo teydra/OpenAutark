@@ -52,6 +52,13 @@ public final class ShellWiringTest {
         check(port.contains("message(\"crash\", \"text\", crash)") && port.contains("CrashReport.clear(activity)"), "a reported crash goes to the page once, then its file");
         String main = source("MainActivity.java");
         check(main.contains("port.crash(crash)") && main.contains("@Override public void refused() { if (link != null) link.refused(); }"), "the activity wires Report and refused");
+        // Owner 27.11.2026: no PC picker and no Try again – the app retries by itself while the "can't reach" screen shows.
+        String offline = source("OfflineScreen.java");
+        check(!offline.contains("android.widget.Button") && !offline.contains("setOnClickListener"), "the can't-reach screen has no button");
+        check(!port.contains("case \"pcs\"") && !main.contains("pickPc") && !source("CompanyLink.java").contains("AlertDialog"), "no PC picker anywhere in the shell");
+        check(offline.contains("form.postDelayed(again[0], RETRY_MS);") && offline.contains("if (form.getParent() != content || !form.isAttachedToWindow()) return;"), "the screen retries by itself while it shows, and stops once it is gone");
+        check(main.contains("if (link.pcName() != null && paired != null) open(paired);"), "its retry loads the page again once a PC is linked");
+        check(main.contains("link.connection.front(true)") && main.contains("link.connection.front(false)"), "the link hears whether the app is in front");
         String web = source("PhoneWeb.java");
         check(web.contains("\" AutarkAndroid/\" + UpdateCheck.installedName(activity) + device()") && web.contains("\" (Android \" + release"), "the user agent names Android and the device");
         // The feedback video before pairing: over the pairing screens once on the first start, again from the link, Back skips.
