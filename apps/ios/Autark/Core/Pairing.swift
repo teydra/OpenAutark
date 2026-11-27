@@ -123,13 +123,4 @@ public enum PhonePairing {
     public static func samePins(_ a: [Pc], _ b: [Pc]) -> Bool {
         Set(a.map { $0.fingerprint + " " + $0.publicKey }) == Set(b.map { $0.fingerprint + " " + $0.publicKey })
     }
-
-    /// `pcs` with `fp` first, or `pcs` itself when `fp` is not among them.
-    public static func first(_ pcs: [Pc], _ fp: String?) -> [Pc] {
-        guard let fp = fp, let at = pcs.firstIndex(where: { $0.fingerprint == fp }) else { return pcs }
-        var out = pcs
-        let pc = out.remove(at: at)
-        out.insert(pc, at: 0)
-        return out
-    }
 }

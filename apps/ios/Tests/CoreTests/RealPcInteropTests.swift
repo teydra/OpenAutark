@@ -1,6 +1,6 @@
 // Owns: the Swift core against the REAL meeting server and the REAL desktop code, on Linux (WebSocket: RawWebSocket.swift): tools/real-pc.mjs runs services/remote-relay, and as the PC apps/desktop's relay-client.ts, remote/requests.ts
 // (connect request, role 'phone') and PhoneBridge (handshake, channel, streams). This test pairs with it by Remote ID, checks that
-// both screens show the same code, connects through a real tunnel, reads the PC's version, loads a page, a 900 kB answer and a
+// both screens show the same code, connects through a real tunnel, loads a page, a 900 kB answer and a
 // 700 kB upload through the local entrance. Skipped unless AUTARK_REAL_RELAY, AUTARK_REAL_REMOTE_ID and AUTARK_REAL_LOG are set.
 // Not an iPhone test (no CryptoKit, no iOS URLSession) and not the production meeting server.
 import XCTest
@@ -34,7 +34,6 @@ final class RealPcInteropTests: XCTestCase {
         guard let relay = env["AUTARK_REAL_RELAY"], let remoteId = env["AUTARK_REAL_REMOTE_ID"], let log = env["AUTARK_REAL_LOG"] else {
             throw XCTSkip("no real PC: run tools/real-pc.mjs and set AUTARK_REAL_RELAY, AUTARK_REAL_REMOTE_ID, AUTARK_REAL_LOG")
         }
-        let version = env["AUTARK_REAL_VERSION"] ?? "9.9.9-real"
         let connector = RawWebSocketConnector() // plain TCP WebSocket: Linux URLSession has none (RawWebSocket.swift)
 
         // pairing: the real desktop shows the request and (the harness) accepts it
@@ -58,7 +57,6 @@ final class RealPcInteropTests: XCTestCase {
         let origin = try connection.start(port: 0, gate: "gate-secret")
         defer { connection.stop() }
         eventually(30, "connected to the real PC") { statuses.value.contains("+Connected to Real Desktop PC.") }
-        XCTAssertEqual(connection.version, version)
 
         let page = String(decoding: get(origin, "/"), as: UTF8.self)
         XCTAssertTrue(page.hasPrefix("HTTP/1.1 200"), String(page.prefix(120)))
@@ -71,9 +69,9 @@ final class RealPcInteropTests: XCTestCase {
         let up = Bytes((0..<700_000).map { UInt8(truncatingIfNeeded: $0 &* 7) })
         XCTAssertEqual(String(decoding: bodyOf(get(origin, "/upload", method: "POST", body: up)), as: UTF8.self), "real PC got 700000 bytes")
 
-        // what the real PC saw: the token on the version request, the cookie of the page request
+        // what the real PC saw: the token on the PC-list request (asked once the page has its PC), the cookie of the page request
         let seen = harnessEvents(log).filter { Json.str($0, "event") == "http" }
-        XCTAssertTrue(seen.contains { Json.str($0, "url") == "/rpc" && Json.str($0, "auth") == "yes" })
+        eventually(10, "the PC list asked with the token") { harnessEvents(log).contains { Json.str($0, "event") == "http" && Json.str($0, "url") == "/rpc" && Json.str($0, "auth") == "yes" } }
         XCTAssertTrue(seen.contains { Json.str($0, "url") == "/big" })
         XCTAssertTrue(harnessEvents(log).contains { Json.str($0, "event") == "channels" }, "the real PhoneBridge opened a phone channel")
     }

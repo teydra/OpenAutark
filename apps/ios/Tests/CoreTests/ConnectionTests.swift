@@ -202,14 +202,13 @@ final class PairingAndConnectionTests: XCTestCase {
         defer { connection.stop() }
         eventually(10, "connected") { statuses.value.contains("+Connected to Studio PC.") }
         XCTAssertEqual(connection.pcName, "Studio PC")
-        XCTAssertEqual(connection.version, "0.9.9")
         XCTAssertEqual(connection.pc, w.pc.fingerprint)
         XCTAssertEqual(connection.linkedCount, 1)
         XCTAssertEqual(connection.selfFingerprint, Crypto.fingerprint(Crypto.ed25519Public(seed: Crypto.fromB64url(paired.seed)!)))
         let page = get(origin)
         XCTAssertTrue(page?.contains("Autark phone UI") == true, page ?? "nil")
-        // the token the PC gave the phone went to the PC with the version request
-        XCTAssertTrue(w.relay.streams.first?.requestHeads.contains { $0.contains("Authorization: Bearer \(w.pc.remote.token)") } == true)
+        // the token the PC gave the phone went to the PC with the PC-list request
+        eventually(5, "the PC list asked with the token") { w.relay.streams.first?.requestHeads.contains { $0.contains("Authorization: Bearer \(w.pc.remote.token)") } == true }
         XCTAssertTrue(statuses.value.contains("-Reaching the meeting server…"))
     }
 
@@ -291,9 +290,10 @@ final class PairingAndConnectionTests: XCTestCase {
         eventually(10, "the page moved to the other PC") { connection.pc != nil && connection.pc != first }
         eventually(5, "the other PC announced") { owners.value.last == connection.pc }
         XCTAssertGreaterThanOrEqual(owners.value.count, 2, "every move of the page is announced")
-        connection.prefer(first!)
-        eventually(10, "the picked PC is the page's again") { connection.pc == first }
-        XCTAssertEqual(connection.pcs.first?.fingerprint, first)
+        let onNow = connection.pc
+        connection.refused()
+        Thread.sleep(forTimeInterval: 0.6)
+        XCTAssertEqual(connection.pc, onNow, "every linked PC refused: the page stays where it is, nobody picks")
     }
 
     func testTheNewPcIsAnnouncedBeforeTheFirstDataFrameGoesToThePage() throws {

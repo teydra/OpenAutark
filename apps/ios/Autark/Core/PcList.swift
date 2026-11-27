@@ -1,6 +1,6 @@
 // Owns: learning the company's PCs – their keys and their peer-listener addresses – from the PC the page uses, with one small request
-// over its channel: stream 1_000_000_000 of the stream protocol (rendezvous/phone.ts; the local entrance numbers its streams from 1,
-// PcVersion uses 0) carries one bearer `POST /rpc` `phone.pcs` with this phone's own token to the PC's runtime port. The PC answers
+// over its channel: stream 1_000_000_000 of the stream protocol (rendezvous/phone.ts; the local entrance numbers its streams from 1)
+// carries one bearer `POST /rpc` `phone.pcs` with this phone's own token to the PC's runtime port. The PC answers
 // with `myPcs` (runtime/rpc/handlers/phone-use.ts): every PC of the person with its key and, F29, up to 8 addresses. Android gets the
 // same list from `phoneUse.attach`, which an iPhone does not claim (no phone use on iOS); the iPhone web app asks `phone.pcs` too.
 // Each row is checked like a stored one (fingerprint = SHA-256 of the key, PhonePairing.pcsOf).
@@ -8,7 +8,7 @@
 import Foundation
 
 public final class PcList {
-    /// The stream number of this request; the local entrance's streams start at 1, PcVersion's is 0.
+    /// The stream number of this request; the local entrance's streams start at 1.
     static let stream = 1_000_000_000
     private static let maxAnswer = 256 * 1024
 

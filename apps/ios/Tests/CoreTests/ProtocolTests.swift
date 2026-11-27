@@ -315,6 +315,52 @@ final class StreamProxyTests: XCTestCase {
         eventually(3, "stream closed") { r.proxy.openStreams == 0 }
     }
 
+    /// A better way to the same PC cuts nothing: the old channel's open streams run to their end, then it closes.
+    func testDrainLetsAnOpenStreamEndAndClosesTheChannelAfterTheLastOne() throws {
+        let r = try rig()
+        defer { r.proxy.close() }
+        r.streams.holdPaths = ["/slow"]
+        let done = Future<String?>()
+        let port = r.proxy.port
+        DispatchQueue.global().async { done.complete(self.fetch(port: port, head: "GET /slow HTTP/1.1\r\nHost: x\r\nCookie: autark_gate=gate-secret\r\n\r\n")) }
+        eventually(3, "request at the PC") { r.streams.requestHeads.count == 1 }
+        r.proxy.drain(r.channel)
+        Thread.sleep(forTimeInterval: 0.4)
+        XCTAssertFalse(r.channel.isClosed, "a stream is still open on it")
+        XCTAssertEqual(r.proxy.openStreams, 1)
+        r.streams.finishHeld()
+        let answer = try done.get(timeout: 10)
+        XCTAssertTrue(answer?.hasPrefix("HTTP/1.1 200 OK") == true && answer?.hasSuffix("done") == true, answer ?? "nil")
+        eventually(5, "closed after its last stream") { r.channel.isClosed }
+    }
+
+    func testDrainWithNoOpenStreamClosesTheChannelAtOnce() throws {
+        let r = try rig()
+        defer { r.proxy.close() }
+        r.proxy.drain(r.channel)
+        eventually(3, "closed") { r.channel.isClosed }
+    }
+
+    func testAStreamThatRacedAMoveToAnotherPcEndsWithA503() throws {
+        let r = try rig()
+        let other = try rig()
+        defer { r.proxy.close(); other.proxy.close() }
+        r.channels.pageChannel = other.channel // the page is on the other PC by the time the stream has its channel
+        r.channels.onWait = { r.proxy.retire(keep: other.channel) } // the move happens while the stream waits
+        let answer = fetch(port: r.proxy.port, head: "GET / HTTP/1.1\r\nHost: x\r\nCookie: autark_gate=gate-secret\r\n\r\n")
+        XCTAssertTrue(answer?.hasPrefix("HTTP/1.1 503 Service Unavailable") == true, answer ?? "nil")
+        XCTAssertEqual(r.streams.requestHeads.count, 0, "one PC answers the page: nothing reached the old one")
+    }
+
+    func testAStreamIsServedWhenOnlyTheWayToTheSamePcChangedMeanwhile() throws {
+        let r = try rig()
+        let better = try rig()
+        defer { r.proxy.close(); better.proxy.close() }
+        r.channels.pageChannel = better.channel // the page's channel is another one now, but no move to another PC happened
+        let answer = fetch(port: r.proxy.port, head: "GET / HTTP/1.1\r\nHost: x\r\nCookie: autark_gate=gate-secret\r\n\r\n")
+        XCTAssertTrue(answer?.hasPrefix("HTTP/1.1 200 OK") == true && answer?.hasSuffix("</html>") == true, answer ?? "nil")
+    }
+
     func testWithoutOrWithAWrongGateCookieNothingPasses() throws {
         let r = try rig()
         defer { r.proxy.close() }
