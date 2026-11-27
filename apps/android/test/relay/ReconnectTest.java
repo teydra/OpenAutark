@@ -24,7 +24,19 @@ public final class ReconnectTest {
         probe(FakeWs.Mode.RELAY_SILENT, false);
         probe(FakeWs.Mode.RELAY_ANSWERS, true);
         checkCutsBackoff();
+        refusalInWords();
         System.out.println(assertions + " reconnect assertions passed.");
+    }
+
+    /** task_68vcwjq4: a refusal of the meeting server reaches a person in words, never as a raw code. */
+    private static void refusalInWords() {
+        for (String code : new String[] { "unavailable", "offline", "not-found" }) {
+            String text = RelayLink.refusal(code);
+            check(text.startsWith("This PC is not online right now."), "a PC that is off says so (" + code + ")");
+            check(!text.contains("(" + code + ")"), "no raw code in the sentence (" + code + ")");
+        }
+        String other = RelayLink.refusal("quota");
+        check(other.contains("(quota)") && other.contains("Try again"), "an unknown refusal keeps its code and says what to do");
     }
 
     private static void backoff() {
