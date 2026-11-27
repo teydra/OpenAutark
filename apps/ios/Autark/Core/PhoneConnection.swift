@@ -62,9 +62,11 @@ public final class PhoneConnection: Channels, RelayEvents {
         self.status = status
     }
 
-    /// Opens the local entrance (127.0.0.1:`port`, else any free port) and starts connecting; returns its origin.
-    public func start(port: Int, gate: String) throws -> String {
-        let entrance = try StreamProxy(port: port, gate: gate, channels: self)
+    /// Opens the local entrance (127.0.0.1:`port` – the company's port never changes, a taken one is an error; port 0: any free
+    /// one) and starts connecting; returns its origin. `ui` is the app's own interface, which the entrance answers (the app
+    /// always passes it; without it – a test – every request goes to the PC).
+    public func start(port: Int, gate: String, ui: UiFiles? = nil) throws -> String {
+        let entrance = try StreamProxy(port: port, gate: gate, channels: self, ui: ui, fixedPort: port > 0)
         entrance.channelWaitMs = channelWaitMs
         state.lock(); proxy = entrance; started = true; state.unlock()
         spawn("autark-connection") { [self] in self.run() }

@@ -641,7 +641,7 @@ struct ProxyRig {
     let channel: PeerChannel
 }
 
-func makeProxyRig(gate: String = "gate-secret") throws -> ProxyRig {
+func makeProxyRig(gate: String = "gate-secret", ui: UiFiles? = nil) throws -> ProxyRig {
     let (phonePipe, pcPipe) = MemoryPipe.pair()
     let pcSeed = Bytes(repeating: 0x22, count: 32)
     let phoneSeed = Bytes(repeating: 0x11, count: 32)
@@ -652,7 +652,7 @@ func makeProxyRig(gate: String = "gate-secret") throws -> ProxyRig {
     XCTAssertEqual(try pc.authenticated.get(timeout: 5), true)
     let channels = FixedChannels()
     channels.channel = channel
-    let proxy = try StreamProxy(port: 0, gate: gate, channels: channels)
+    let proxy = try StreamProxy(port: 0, gate: gate, channels: channels, ui: ui)
     listener.proxy = proxy
     listener.channel = channel
     return ProxyRig(proxy: proxy, channels: channels, pc: pc, streams: streams, channel: channel)
