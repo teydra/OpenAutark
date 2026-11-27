@@ -38,6 +38,11 @@ public final class TodoTest {
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/AudioNote.java"),
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubblePick.java"),
                 source("app/src/main/AndroidManifest.xml"));
+        lockScreen();
+        quickArea();
+        controlWiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/TodoButton.java"),
+                source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleSettings.java"),
+                source("app/src/main/AndroidManifest.xml"));
         System.out.println(assertions + " to-do button place, post and wiring assertions passed.");
     }
 
@@ -209,8 +214,8 @@ public final class TodoTest {
         check(!panelOpen.contains("shoot()") && !panelOpen.contains("captureAtSend()"));
         String sendTap = button.substring(button.indexOf("private void submit()"), button.indexOf("private void submit(String"));
         check(sendTap.contains("captureAtSend()") && sendTap.indexOf("captureAtSend()") < sendTap.indexOf("finishDictation()"));
-        check(button.contains("deliver(link, text, post, requiredPicture(picture))")
-                && button.contains("deliver(link, text, quick, requiredPicture(picture))")
+        check(button.contains("deliver(link, text, post, requiredPicture(picture), choice, wasLocked)")
+                && button.contains("deliver(link, text, quick, requiredPicture(picture), choice, wasLocked)")
                 && button.contains("Nicht gesendet – kein Screenshot möglich."));
         check(button.contains("sendCapture.execute(picture)") && button.contains("service.capture(deadline, keyboardWasOurs)")
                 && service.contains("elapsedRealtime() >= deadline ||") && service.indexOf("elapsedRealtime() >= deadline ||") < service.indexOf("takeScreenshot("));
@@ -226,9 +231,12 @@ public final class TodoTest {
         check(button.contains("TYPE_ACCESSIBILITY_OVERLAY"));
         // JPEG 85, the post's client id reused, the text only in the RPC (no log of it, no preference of it).
         check(button.contains("CompressFormat.JPEG, 85"));
-        check(button.contains("String[] chat = deliver(link, text, post, requiredPicture(picture));") && button.contains("BubbleChat.send(target[0], text, attachments, from.clientId(), false)"));
+        check(button.contains("String[] chat = deliver(link, text, post, requiredPicture(picture), choice, wasLocked);") && button.contains("BubbleChat.send(target[0], body, attachments, from.clientId(), false)"));
         // task_cxs4s3pt: the bubble never makes a to-do – no tasks.quickCreate, the line goes to the chat ui.state names, no other is guessed
-        check(!button.contains("tasks.quickCreate\"") && !button.contains("\"chats.direct\"") && !button.contains("chats.list"));
+        check(!button.contains("tasks.quickCreate\"") && !button.contains("\"chats.direct\""));
+        // chats.list only feeds the quick area (BubbleQuick), never the choice of the chat a line goes to
+        String sendPath = button.substring(button.indexOf("private String[] deliver("), button.indexOf("private List<String[]> upload("));
+        check(!sendPath.contains("chats.list") && button.split("\"chats.list\"", -1).length == 2 && button.substring(button.indexOf("private void loadQuick()"), button.indexOf("private void renderQuickLater()")).contains("\"chats.list\""));
         String target = button.substring(button.indexOf("private String[] chatTarget("), button.indexOf("private List<String[]> upload("));
         check(target.contains("answer(link, \"ui.state\"") && target.contains("answer(link, \"chats.get\"") && target.contains("throw new Failed(") && target.contains("Nicht gesendet – kein offener Chat"));
         String route = button.substring(button.indexOf("private String[] route("), button.indexOf("private void keepSaid("));
@@ -236,7 +244,7 @@ public final class TodoTest {
         check(button.contains("sentTo(chat)") && button.contains("BubbleChat.shotName(attachments.size() + 1)"));
         check(button.contains("HOLD_MS = 350") && button.contains("if (held) { holdRelease(); return true; }")); // the hold is the quick task
         // the only strings kept: the profile's language tag and the PC it came from (a value read from the PC belongs to that PC)
-        check(!button.replace("putString(\"speech_lang\", found).putString(\"speech_lang_origin\", origin)", "").contains("putString(")
+        check(!button.replace("putString(\"speech_lang\", found).putString(\"speech_lang_origin\", origin)", "").replace("putString(BubbleLock.KEY, value)", "").contains("putString(")
                 && !button.matches("(?s).*Log\\.[a-z]\\([^;]*text[^;]*\\);.*"));
         // Owner 20.11.2026 ("We got to steer" for "Wie geht es dir?"): the panel's mic and the hold record, and the PC hears
         // the take in the profile's language – the phone's SpeechRecognizer is gone from the bubble.
@@ -284,7 +292,7 @@ public final class TodoTest {
         String failures = button.substring(fail, button.indexOf("private String[] deliver(") > fail ? button.indexOf("private String[] deliver(") : fail + 600);
         check(!failures.contains("post.clear()") && !failures.contains("clientId = null") && button.indexOf("post.clear();") > 0);
         check(link.contains("boolean alive(long ms)") && link.contains("void reconnect()") && link.contains("ws.close();"));
-        check(!button.contains("PhoneRoutes") && button.contains("calling = new BubbleCall("));
+        check(!button.contains("PhoneRoutes.call(") && !button.contains("PhoneRoutes.task(") && button.contains("calling = new BubbleCall(")); // the call stays in the bubble; only the quick area opens the app
     }
 
     /**
@@ -387,6 +395,113 @@ public final class TodoTest {
         check(pick.contains("at.width = BubbleTyping.SIZE;") && pick.contains("MediaStore.ACTION_IMAGE_CAPTURE") && pick.contains("Intent.ACTION_OPEN_DOCUMENT")
                 && pick.contains("requestPermissions(new String[] { Manifest.permission.CAMERA }") && pick.contains("TodoPost.FILE_MAX_BYTES"));
         check(manifest.contains("android:name=\".phoneuse.BubblePick\" android:exported=\"false\"") && !manifest.contains("READ_EXTERNAL_STORAGE") && !manifest.contains("READ_MEDIA_"));
+    }
+
+    /**
+     * task_r0y9wcex, stage 3 (owner 24.11.2026): the bubble on the lock screen – Off, On, or On with a note to the AI
+     * ("theoretisch könnte das nicht der User sein"); Off until the person chose.
+     */
+    private static void lockScreen() {
+        // the stored values; anything else is not chosen and counts as Off
+        check(BubbleLock.OFF.equals(BubbleLock.mode(null)) && BubbleLock.OFF.equals(BubbleLock.mode("")) && BubbleLock.OFF.equals(BubbleLock.mode("ON")));
+        check(BubbleLock.ON.equals(BubbleLock.mode("on")) && BubbleLock.NOTE.equals(BubbleLock.mode("note")) && BubbleLock.OFF.equals(BubbleLock.mode("off")));
+        check(!BubbleLock.chosen(null) && !BubbleLock.chosen("maybe") && BubbleLock.chosen("off") && BubbleLock.chosen("on") && BubbleLock.chosen("note"));
+        // unlocked the bubble is always there, whatever the choice; locked only in On and On with a note
+        for (String any : new String[] {null, "off", "on", "note", "x"}) check(BubbleLock.shows(any, false) && !BubbleLock.noted(any, false) && BubbleLock.calls(any, false));
+        check(!BubbleLock.shows(null, true) && !BubbleLock.shows("off", true) && BubbleLock.shows("on", true) && BubbleLock.shows("note", true));
+        // the note only while locked and only in On with a note; a call from the lock screen needs plain On
+        check(BubbleLock.noted("note", true) && !BubbleLock.noted("on", true) && !BubbleLock.noted("off", true) && !BubbleLock.noted(null, true));
+        check(BubbleLock.calls("on", true) && !BubbleLock.calls("note", true) && !BubbleLock.calls("off", true) && !BubbleLock.calls(null, true));
+        // the body: the words unchanged without the note; with it the note below them, for the agent
+        check("Ruf Anna an".equals(BubbleLock.body("Ruf Anna an", false)) && "".equals(BubbleLock.body(null, false)));
+        String noted = BubbleLock.body("Ruf Anna an", true);
+        check(noted.startsWith("Ruf Anna an\n\n") && noted.endsWith("_(" + BubbleLock.NOTE_TEXT + ")_"));
+        check(BubbleLock.body("  ", true).equals("_(" + BubbleLock.NOTE_TEXT + ")_") && BubbleLock.body(null, true).equals("_(" + BubbleLock.NOTE_TEXT + ")_")); // only shots: the note alone
+        check(BubbleLock.NOTE_TEXT.contains("lock screen") && BubbleLock.NOTE_TEXT.contains("may not be the owner") && BubbleLock.NOTE_TEXT.contains("nothing bad can come of it"));
+        // the line a noted send makes: the note in the body, the frame otherwise the same
+        Map<String, Object> line = BubbleChat.send("ch_1", BubbleLock.body("Wie spät?", BubbleLock.noted("note", true)), new ArrayList<>(), "cid", false);
+        check(((String) line.get("body")).contains(BubbleLock.NOTE_TEXT) && line.keySet().equals(new java.util.LinkedHashSet<>(Arrays.asList("conversationId", "body", "clientId"))));
+        check(!((String) BubbleChat.send("ch_1", BubbleLock.body("Wie spät?", BubbleLock.noted("note", false)), new ArrayList<>(), "cid", false).get("body")).contains("lock screen"));
+        // the words, both languages, in the order shown; the quick area's row names the choice
+        check(Arrays.equals(BubbleLock.ORDER, new String[] {"off", "on", "note"}));
+        check("Aus".equals(BubbleLock.label("off", true)) && "On".equals(BubbleLock.label("on", false)) && BubbleLock.label("note", true).contains("Hinweis an die KI")
+                && BubbleLock.label("note", false).contains("note to the AI") && "Off".equals(BubbleLock.label(null, false)));
+        check(BubbleLock.row(null, true).equals("Blase auf dem Sperrbildschirm: Aus") && BubbleLock.row("note", false).equals("Bubble on the lock screen: On, with a note to the AI"));
+        for (String value : BubbleLock.ORDER) check(!BubbleLock.explain(value, true).isEmpty() && !BubbleLock.explain(value, false).isEmpty() && !BubbleLock.explain(value, true).equals(BubbleLock.explain(value, false)));
+        check(!BubbleLock.readable(true) && BubbleLock.readable(false)); // a locked phone shows no message words
+    }
+
+    /** task_r0y9wcex, stage 2: the quick area's choice from chats.list and messages.list, without a device. */
+    private static void quickArea() {
+        List<Object> list = Arrays.asList(
+                map("id", "ch_old", "title", "Rechnungen", "importantUnread", 1.0, "lastMessageAt", 100.0, "lastPreview", map("authorId", "ag_a", "text", "alt", "at", 100.0)),
+                map("id", "ch_none", "title", "Ruhig", "unread", 4.0, "lastMessageAt", 900.0),
+                map("id", "ch_new", "title", "Felix", "importantUnread", 2.0, "lastMessageAt", 500.0, "lastPreview", map("authorId", "ag_f", "text", "neu", "at", 800.0)),
+                map("id", "ch_arch", "title", "Archiv", "importantUnread", 3.0, "archivedAt", 5.0, "lastMessageAt", 999.0),
+                map("id", "ch_mid", "title", "", "importantUnread", 1.0, "lastMessageAt", 300.0),
+                map("id", "ch_low", "title", "Lena", "importantUnread", 1.0, "lastMessageAt", 50.0),
+                "kaputt", map("title", "ohne id", "importantUnread", 1.0));
+        List<BubbleQuick.Chat> chats = BubbleQuick.chats(list);
+        // only chats with important unread lines, not archived, newest first (the preview's time counts), at most MAX
+        check(chats.size() == BubbleQuick.MAX && "ch_new".equals(chats.get(0).id) && "ch_mid".equals(chats.get(1).id) && "ch_old".equals(chats.get(2).id));
+        check(chats.get(0).important == 2 && "Felix".equals(chats.get(0).title) && "neu".equals(chats.get(0).preview));
+        check(BubbleQuick.count(list) == 6); // every chat's important unread lines (1 + 2 + 1 + 1 + 1), the archived one's not
+        check(BubbleQuick.chats(null).isEmpty() && BubbleQuick.chats(map("x", 1)).isEmpty() && BubbleQuick.count("x") == 0);
+        // the newest important line someone else wrote: not the person's own, no silent, status or streaming line
+        List<Object> messages = Arrays.asList(
+                map("seq", 10.0, "priority", "important", "authorKind", "agent", "kind", "text", "state", "final", "silent", false, "body", "Älter **wichtig**"),
+                map("seq", 12.0, "priority", "important", "authorKind", "agent", "kind", "text", "state", "final", "silent", false, "body", "Neuer: [Bericht](https://x.y) ist da"),
+                map("seq", 13.0, "priority", "important", "authorKind", "human", "kind", "text", "state", "final", "body", "meins"),
+                map("seq", 14.0, "priority", "important", "authorKind", "agent", "kind", "status", "state", "final", "body", "Status"),
+                map("seq", 15.0, "priority", "important", "authorKind", "agent", "kind", "text", "state", "streaming", "body", "schreibt"),
+                map("seq", 16.0, "priority", "normal", "authorKind", "agent", "kind", "text", "state", "final", "body", "normal"),
+                map("seq", 17.0, "priority", "important", "authorKind", "agent", "kind", "text", "state", "final", "silent", true, "body", "leise"));
+        check("Neuer: [Bericht](https://x.y) ist da".equals(BubbleQuick.newest(messages)) && BubbleQuick.newest(Arrays.asList(messages.get(5))) == null && BubbleQuick.newest(null) == null);
+        // one line: no Markdown, no code blocks, no line breaks, cut at LINE_MAX
+        check("Neuer: Bericht ist da".equals(BubbleQuick.line(BubbleQuick.newest(messages))));
+        check("Titel Punkt eins fett".equals(BubbleQuick.line("# Titel\n- Punkt eins\n\n**fett**")));
+        check("Vorher nachher".equals(BubbleQuick.line("Vorher\n```ui\n{\"type\":\"table\"}\n```\nnachher")) && "".equals(BubbleQuick.line(null)));
+        String longLine = BubbleQuick.line("wort ".repeat(100));
+        check(longLine.length() == BubbleQuick.LINE_MAX && longLine.endsWith("…"));
+        // the row: title · words; without words the preview; without a title the words alone
+        check("Felix · Neuer: Bericht ist da".equals(BubbleQuick.row(chats.get(0), BubbleQuick.newest(messages))));
+        check("Felix · neu".equals(BubbleQuick.row(chats.get(0), null)) && "Ruhig".equals(BubbleQuick.row(new BubbleQuick.Chat("c", "Ruhig", 1, 0, null), null)));
+        check("x".equals(BubbleQuick.row(new BubbleQuick.Chat("c", "", 1, 0, null), "x")));
+        // the lock screen: how many, never the words
+        check(BubbleQuick.waiting(0, true).equals("Nichts Wichtiges ungelesen.") && BubbleQuick.waiting(1, false).startsWith("1 important message") && BubbleQuick.waiting(3, true).startsWith("3 wichtige Nachrichten"));
+        // the places a tap opens are the phone UI's own
+        check("#/chat/ch_new".equals(com.teydralab.autark.android.PhoneRoutes.chat("ch_new")) && com.teydralab.autark.android.PhoneRoutes.chat("a b") == null);
+    }
+
+    /** The quick area's and the lock screen's wiring, read from the sources. */
+    private static void controlWiring(String button, String settings, String manifest) {
+        // the bubble goes on the lock screen unless the choice lets it stay; the broadcasts and the setting's change re-check
+        check(button.contains("BubbleLock.shows(lockChoiceNow(), locked)") && button.contains("Intent.ACTION_SCREEN_OFF") && button.contains("Intent.ACTION_USER_PRESENT")
+                && button.contains("keyguard.isKeyguardLocked()") && button.contains("!power.isInteractive()") && button.contains("registerOnSharedPreferenceChangeListener(lockChoice)")
+                && button.contains("unregisterReceiver(lockChanged)") && button.contains("unregisterOnSharedPreferenceChangeListener(lockChoice)"));
+        // the note: decided when the person sends (panel and hold), put into the body only through BubbleLock
+        String deliver = button.substring(button.indexOf("private String[] deliver("), button.indexOf("private String[] chatTarget("));
+        check(deliver.contains("if (!BubbleLock.shows(choice, wasLocked)) throw new Failed(") && deliver.contains("BubbleLock.body(text, BubbleLock.noted(choice, wasLocked))")
+                && deliver.indexOf("BubbleLock.shows(") < deliver.indexOf("chatTarget(link)"));
+        check(button.split("boolean wasLocked = locked\\(\\);", -1).length == 3 + 1); // submit, the hold and openRoute
+        String call = button.substring(button.indexOf("private void call()"), button.indexOf("private String[] route("));
+        check(call.indexOf("BubbleLock.calls(lockChoiceNow(), locked())") >= 0 && call.indexOf("BubbleLock.calls(") < call.indexOf("new BubbleCall("));
+        // the first opening asks once, never while locked; a choice in the panel only unlocked
+        String open = button.substring(button.indexOf("private void open()"), button.indexOf("private void collapse()"));
+        check(open.contains("!BubbleLock.chosen(lockChoiceNow()) && !place.getBoolean(BubbleLock.ASKED, false) && !locked()") && open.contains("putBoolean(BubbleLock.ASKED, true)"));
+        check(button.substring(button.indexOf("private void chooseLock("), button.indexOf("private void grow(")).contains("if (locked()) return;"));
+        // the quick area: its own thread, only the phone's chat calls, the words only unlocked, a tap opens the app's place
+        String load = button.substring(button.indexOf("private void loadQuick()"), button.indexOf("private void renderQuickLater()"));
+        check(load.contains("quickWork.execute(") && load.contains("\"chats.list\"") && load.contains("\"messages.list\"") && load.contains("if (readable)")
+                && load.contains("BubbleLock.readable(locked())") && load.contains("round != quickRound") && !load.contains("messages.send") && !load.contains("work.execute"));
+        String render = button.substring(button.indexOf("private void renderQuick()"), button.indexOf("private TextView quickHeading("));
+        check(render.contains("PhoneRoutes.chat(row[0])") && render.contains("openRoute(\"#/tasks\")") && render.contains("this::lockSettings") && render.contains("!quickReadable"));
+        check(button.contains("R.drawable.ic_todo_up") && button.contains("this::toggleQuick") && button.contains("putExtra(PhoneRoutes.EXTRA, route)"));
+        check(button.substring(button.indexOf("private void lockSettings()"), button.indexOf("private ImageView icon(")).contains("if (locked())"));
+        // the settings dialog: the App info entry, nothing changes while locked
+        check(manifest.contains("android:name=\".phoneuse.BubbleSettings\" android:exported=\"true\"") && manifest.contains("android.intent.action.APPLICATION_PREFERENCES"));
+        check(settings.contains("keyguard.isKeyguardLocked()") && settings.indexOf("isKeyguardLocked()") < settings.indexOf("putString(BubbleLock.KEY")
+                && settings.contains("setSingleChoiceItems(") && settings.contains("BubbleLock.ORDER[which]"));
     }
 
     private static Map<String, Object> map(Object... pairs) {

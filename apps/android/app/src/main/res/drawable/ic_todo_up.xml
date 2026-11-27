@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Owns: the to-do button's quick-area arrow (phoneuse/TodoButton: up opens the small area above the panel, turned
+     down it closes it), white on its dark panel (Material "expand less" shape, Apache 2.0). Never: a second colour. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,8l-6,6 1.41,1.41L12,10.83l4.59,4.58L18,14z" />
+</vector>

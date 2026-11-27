@@ -44,8 +44,8 @@ public final class PhoneRoutes {
         return hash != null && hash.matches("#/[A-Za-z0-9._~/-]{1,300}") ? hash : null;
     }
 
-    /** A chat's route, or null for an id the route cannot carry as it is. */
-    static String chat(String conversationId) {
+    /** A chat's route, or null for an id the route cannot carry as it is (also the bubble's quick area, phoneuse/TodoButton). */
+    public static String chat(String conversationId) {
         return conversationId == null ? null : valid("#/chat/" + conversationId);
     }
 

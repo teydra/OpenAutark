@@ -34,13 +34,26 @@
 // words as they come. Every touch outside the dot, the tab or the panel reaches the app.
 // Both windows (the button and the ✕) are laid out in screen coordinates (inScreen: y 0 is the screen's top, under the
 // status bar and a cutout), so the finger's raw position, the ✕, the stored place and the app's pull share one frame.
+// The quick area (owner 24.11.2026, task_r0y9wcex: "so ein Pfeil nach oben und dann klappt über dem Fenster … noch ein
+// kleiner Bereich auf"): the arrow at the head's left opens a narrow part above the head – the panel grows upwards – with
+// the newest important unread lines (BubbleQuick: chats.list and messages.list, one line each; a tap opens that chat in
+// the app), Tasks (the app's Tasks page) and the lock-screen choice (BubbleSettings); it loads on its own thread and
+// remembers whether it was open. The lock screen (BubbleLock): until the person chose, and in Off, the bubble goes while
+// the keyguard shows or the screen is off (the screen and unlock broadcasts and BubbleSettings' change call sync); in On
+// it stays; in On with a note every line sent while locked carries the note for the agent, and calls need On. The first
+// opening asks once in the panel, never while locked; while locked the quick area shows only how many important lines
+// wait, and nothing changes the choice.
 // Never: keeps the person's text or shots anywhere but this panel and the RPC, or shows in the AI's screenshot.
 package com.teydralab.autark.android.phoneuse;
 
 import android.accessibilityservice.AccessibilityService;
+import android.app.KeyguardManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.os.PowerManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
@@ -65,6 +78,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.teydralab.autark.android.MainActivity;
+import com.teydralab.autark.android.PhoneRoutes;
 import com.teydralab.autark.android.R;
 import com.teydralab.autark.android.relay.Json;
 import java.io.ByteArrayOutputStream;
@@ -184,17 +198,58 @@ final class TodoButton {
     private int yBeforeKeyboard = -1;
     private boolean typing;
 
+    /** The lock screen (BubbleLock): the keyguard and the screen, and the broadcasts that say they changed. */
+    private final KeyguardManager keyguard;
+    private final PowerManager power;
+    private boolean watchingLock;
+    private final BroadcastReceiver lockChanged = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) { main.post(TodoButton.this::sync); }
+    };
+    /** BubbleSettings (or the panel's question) changed the lock-screen choice: the bubble follows at once. Held here: the
+     *  preferences keep only a weak reference to it. */
+    private final SharedPreferences.OnSharedPreferenceChangeListener lockChoice = (preferences, key) -> {
+        if (BubbleLock.KEY.equals(key)) main.post(this::lockChoiceChanged);
+    };
+    /** The quick area above the panel (BubbleQuick): its view, its arrow, the first question and what it shows now. */
+    private static final String QUICK_OPEN = "quick_open";
+    private static final long QUICK_MS = 10_000;
+    private LinearLayout quick;
+    private ImageView quickArrow;
+    private LinearLayout ask;
+    /** What the quick area shows: rows {chatId, text} (null while it loads), else quickProblem; the important count; whether the words show (unlocked). */
+    private List<String[]> quickRows;
+    private String quickProblem;
+    private int quickCount;
+    private boolean quickReadable;
+    private int quickRound;
+    private final ExecutorService quickWork = Executors.newSingleThreadExecutor((job) -> {
+        Thread thread = new Thread(job, "autark-todo-quick");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     TodoButton(UseService service) {
         this.service = service;
         this.windows = (WindowManager) service.getSystemService(AccessibilityService.WINDOW_SERVICE);
         this.place = service.getSharedPreferences("todo_button", Context.MODE_PRIVATE);
         this.density = service.getResources().getDisplayMetrics().density;
         this.profileLanguage = SpeechLang.valid(place.getString("speech_lang", null));
+        this.keyguard = (KeyguardManager) service.getSystemService(Context.KEYGUARD_SERVICE);
+        this.power = (PowerManager) service.getSystemService(Context.POWER_SERVICE);
     }
 
     /** Shows while this phone is paired, from now on (the main thread). */
     void start() {
         UseLink.onLinked(onLink);
+        IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        try {
+            if (Build.VERSION.SDK_INT >= 33) service.registerReceiver(lockChanged, filter, Context.RECEIVER_NOT_EXPORTED);
+            else service.registerReceiver(lockChanged, filter);
+            watchingLock = true;
+        } catch (RuntimeException error) { android.util.Log.w("autark", "lock screen broadcasts unavailable: " + error.getClass().getName()); }
+        place.registerOnSharedPreferenceChangeListener(lockChoice);
         sync();
     }
 
@@ -203,8 +258,31 @@ final class TodoButton {
         UseLink.onLinked(null);
         work.shutdownNow();
         sendCapture.shutdownNow();
-        main.post(() -> { closed = true; stopAudio(false); dropDictation(); dropHold(); remove(); });
+        quickWork.shutdownNow();
+        main.post(() -> {
+            closed = true;
+            if (watchingLock) { try { service.unregisterReceiver(lockChanged); } catch (RuntimeException ignored) { /* gone */ } watchingLock = false; }
+            place.unregisterOnSharedPreferenceChangeListener(lockChoice);
+            stopAudio(false); dropDictation(); dropHold(); remove();
+        });
     }
+
+    /** Whether the phone is locked now: the keyguard shows, or the screen is off (it locks soon; the bubble goes first). */
+    private boolean locked() {
+        boolean keyguardUp = keyguard != null && keyguard.isKeyguardLocked();
+        boolean screenOff = power != null && !power.isInteractive();
+        return keyguardUp || screenOff;
+    }
+
+    /** The choice changed (BubbleSettings or the panel's question): the bubble follows, the question goes, the quick area's row says it. */
+    private void lockChoiceChanged() {
+        sync();
+        if (BubbleLock.chosen(lockChoiceNow())) grow(ask, false);
+        renderQuickLater();
+    }
+
+    /** The lock-screen choice as stored (null until the person chose). */
+    private String lockChoiceNow() { return place.getString(BubbleLock.KEY, null); }
 
     // ------------------------------------------------------------------ screenshot frame (a worker thread)
 
@@ -225,7 +303,14 @@ final class TodoButton {
 
     private void sync() {
         if (closed) return;
-        if (UseLink.linked() != null && !place.getBoolean(HIDDEN, false)) { ensure(); refreshLanguage(); } else { languageFor = null; dropDictation(); remove(); }
+        boolean locked = locked();
+        if (UseLink.linked() != null && !place.getBoolean(HIDDEN, false) && BubbleLock.shows(lockChoiceNow(), locked)) {
+            boolean fresh = root == null;
+            ensure();
+            refreshLanguage();
+            if (!fresh && quickReadable != BubbleLock.readable(locked)) loadQuick(); // locked or unlocked meanwhile: words or only the count
+            if (calling != null && !BubbleLock.calls(lockChoiceNow(), locked)) endCall(); // locked during a call in NOTE: its lines would go without the note
+        } else { languageFor = null; dropDictation(); remove(); }
     }
 
     /**
@@ -347,6 +432,7 @@ final class TodoButton {
         }
         if (next != Look.PANEL) endTyping();
         if (next != Look.PANEL) showMenu(false);
+        if (next != Look.PANEL) { quick.setVisibility(View.GONE); ask.setVisibility(View.GONE); }
         yBeforeKeyboard = -1;
         update();
         if (next == Look.PANEL) root.post(this::fitPanel);
@@ -682,10 +768,12 @@ final class TodoButton {
         }
         TodoPost quick = new TodoPost();
         busy = true;
+        boolean wasLocked = locked(); // as the finger lifted
+        String choice = lockChoiceNow();
         run(() -> {
             String note;
             try {
-                String[] chat = deliver(link, text, quick, requiredPicture(picture));
+                String[] chat = deliver(link, text, quick, requiredPicture(picture), choice, wasLocked);
                 main.post(() -> { holdSent(); sentTo(chat); });
                 return;
             } catch (Unreachable error) {
@@ -733,10 +821,28 @@ final class TodoButton {
         background.setCornerRadius(dp(16));
         view.setBackground(background);
         view.setAlpha(0.94f);
-        // the head: call and collapse
+        // above the head: the first question (the lock screen, once) and the quick area the arrow opens
+        ask = makeAsk();
+        LinearLayout.LayoutParams askAt = new LinearLayout.LayoutParams(-1, -2);
+        askAt.topMargin = dp(2);
+        view.addView(ask, askAt);
+        quick = new LinearLayout(service);
+        quick.setOrientation(LinearLayout.VERTICAL);
+        quick.setPadding(dp(4), dp(2), dp(4), dp(2));
+        GradientDrawable quickBox = new GradientDrawable();
+        quickBox.setColor(Color.argb(40, 255, 255, 255));
+        quickBox.setCornerRadius(dp(10));
+        quick.setBackground(quickBox);
+        quick.setVisibility(View.GONE);
+        LinearLayout.LayoutParams quickAt = new LinearLayout.LayoutParams(-1, -2);
+        quickAt.topMargin = dp(2);
+        view.addView(quick, quickAt);
+        // the head: the quick area's arrow, call and collapse
         LinearLayout head = new LinearLayout(service);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
+        quickArrow = icon(R.drawable.ic_todo_up, german ? "Wichtiges und Aufgaben zeigen" : "Show what matters and tasks", this::toggleQuick);
+        head.addView(quickArrow);
         head.addView(new View(service), new LinearLayout.LayoutParams(0, 1, 1));
         head.addView(icon(R.drawable.ic_todo_call, german ? "Anrufen" : "Call", this::call));
         head.addView(icon(R.drawable.ic_todo_close, german ? "Zuklappen" : "Collapse", this::collapse));
@@ -796,6 +902,219 @@ final class TodoButton {
         renderStrip();
         say(null);
         return view;
+    }
+
+    // ------------------------------------------------------------------ the quick area and the lock-screen question
+
+    /** The first question (BubbleLock): its title, one line, and a button per choice; GONE until the first opening. */
+    private LinearLayout makeAsk() {
+        LinearLayout box = new LinearLayout(service);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(6), dp(8), dp(6));
+        GradientDrawable round = new GradientDrawable();
+        round.setColor(Color.argb(40, 255, 255, 255));
+        round.setCornerRadius(dp(10));
+        box.setBackground(round);
+        TextView title = new TextView(service);
+        title.setText(BubbleLock.title(german) + "?");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(13);
+        box.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        TextView why = new TextView(service);
+        why.setText(german ? "Darf die Blase auch bei gesperrtem Handy da sein? Ändern kannst du das jederzeit über den Pfeil oben in der Blase oder in Android unter App-Info › Autark."
+                : "May the bubble be there while the phone is locked? You can change this any time with the arrow at the top of the bubble, or in Android's App info › Autark.");
+        why.setTextColor(Color.argb(200, 255, 255, 255));
+        why.setTextSize(11);
+        box.addView(why, new LinearLayout.LayoutParams(-1, -2));
+        for (String value : BubbleLock.ORDER) {
+            TextView choice = new TextView(service);
+            choice.setText(BubbleLock.label(value, german));
+            choice.setTextColor(Color.WHITE);
+            choice.setTextSize(13);
+            choice.setGravity(Gravity.CENTER_VERTICAL);
+            choice.setPadding(dp(10), dp(7), dp(10), dp(7));
+            GradientDrawable pill = new GradientDrawable();
+            pill.setColor(Color.argb(60, 255, 255, 255));
+            pill.setCornerRadius(dp(8));
+            choice.setBackground(pill);
+            choice.setContentDescription(BubbleLock.label(value, german) + ". " + BubbleLock.explain(value, german));
+            choice.setOnClickListener((v) -> chooseLock(value));
+            LinearLayout.LayoutParams at = new LinearLayout.LayoutParams(-1, -2);
+            at.topMargin = dp(4);
+            box.addView(choice, at);
+        }
+        box.setVisibility(View.GONE);
+        return box;
+    }
+
+    /** The person's choice in the panel's question: stored, the question goes, the line says what it means. */
+    private void chooseLock(String value) {
+        if (locked()) return; // only an unlocked phone chooses
+        place.edit().putString(BubbleLock.KEY, value).putBoolean(BubbleLock.ASKED, true).apply();
+        grow(ask, false);
+        say(BubbleLock.explain(value, german));
+    }
+
+    /** Shows or hides one part above the head so the head stays where it was: the panel grows upwards (and stays whole). */
+    private void grow(View part, boolean on) {
+        if (part == null || (part.getVisibility() == View.VISIBLE) == on) return;
+        if (look != Look.PANEL || params == null) { part.setVisibility(on ? View.VISIBLE : View.GONE); return; }
+        int before = panelHeight();
+        part.setVisibility(on ? View.VISIBLE : View.GONE);
+        moveBy(before);
+    }
+
+    /** After a part above the head changed its height (it was `before`): the panel's top moves by the difference, then stays whole. */
+    private void moveBy(int before) {
+        if (look != Look.PANEL || params == null) return;
+        int after = panelHeight();
+        int y = Math.max(0, params.y - (after - before));
+        params.y = TodoPlace.clamp(y, after, screen()[1]);
+        if (yBeforeKeyboard >= 0) yBeforeKeyboard = Math.max(0, yBeforeKeyboard - (after - before));
+        update();
+    }
+
+    /** The arrow: up while the area is closed, down while it is open. */
+    private void renderArrow() {
+        if (quickArrow == null || quick == null) return;
+        boolean on = quick.getVisibility() == View.VISIBLE;
+        quickArrow.setRotation(on ? 180f : 0f);
+        quickArrow.setContentDescription(on ? (german ? "Wichtiges zuklappen" : "Close what matters")
+                : (german ? "Wichtiges und Aufgaben zeigen" : "Show what matters and tasks"));
+    }
+
+    /** The arrow's tap: the area opens (and loads) or closes; the choice is kept for the next opening. */
+    private void toggleQuick() {
+        if (quick == null) return;
+        boolean on = quick.getVisibility() != View.VISIBLE;
+        place.edit().putBoolean(QUICK_OPEN, on).apply();
+        if (on) grow(ask, false); // one part at a time above the head
+        grow(quick, on);
+        renderArrow();
+        if (on) loadQuick();
+    }
+
+    /**
+     * The quick area's news from the PC (its own thread, so a slow PC never holds a send): chats.list, and while unlocked
+     * messages.list of the few chats with important unread lines (BubbleQuick). While locked only the count – nobody
+     * holding a locked phone reads the words. An older round's late answer changes nothing.
+     */
+    private void loadQuick() {
+        if (quick == null || quick.getVisibility() != View.VISIBLE) return;
+        int round = ++quickRound;
+        boolean readable = BubbleLock.readable(locked());
+        quickReadable = readable;
+        quickRows = null;
+        quickProblem = null;
+        renderQuick();
+        UseLink link = UseLink.linked();
+        if (link == null) { quickProblem = german ? "Gerade nicht mit deinem PC verbunden." : UseLink.UNLINKED; renderQuick(); return; }
+        try {
+            quickWork.execute(() -> {
+                List<String[]> rows = new ArrayList<>();
+                int count;
+                String problem = null;
+                try {
+                    Object list = link.request("chats.list", Json.map(), QUICK_MS);
+                    count = BubbleQuick.count(list);
+                    if (readable) {
+                        for (BubbleQuick.Chat chat : BubbleQuick.chats(list)) {
+                            Object messages = null;
+                            try { messages = link.request("messages.list", Json.map("conversationId", chat.id, "limit", BubbleQuick.PAGE), QUICK_MS); }
+                            catch (UseLink.Refused unread) { /* its preview stands in */ }
+                            rows.add(new String[] { chat.id, BubbleQuick.row(chat, BubbleQuick.newest(messages)) });
+                        }
+                    }
+                } catch (UseLink.Refused refused) {
+                    count = 0;
+                    problem = refused.late ? (german ? "Der PC hat nicht geantwortet." : "The PC did not answer.") : refused.getMessage();
+                } catch (InterruptedException stop) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (RuntimeException error) {
+                    android.util.Log.w("autark", "quick area failed: " + error.getClass().getName());
+                    count = 0;
+                    problem = german ? "Ging gerade nicht." : "Not available right now.";
+                }
+                int found = count;
+                String line = problem;
+                main.post(() -> {
+                    if (round != quickRound || closed) return;
+                    quickCount = found;
+                    quickProblem = line;
+                    quickRows = line == null ? rows : null;
+                    renderQuick();
+                });
+            });
+        } catch (RuntimeException shutDown) { /* the service went off */ }
+    }
+
+    /** The lock-screen choice changed while the area is open: its row says the new one. */
+    private void renderQuickLater() { if (quick != null && quick.getVisibility() == View.VISIBLE) renderQuick(); }
+
+    /** The quick area's rows: the important lines (or how many, while locked), Tasks, and the lock-screen choice. */
+    private void renderQuick() {
+        if (quick == null) return;
+        int before = quick.getVisibility() == View.VISIBLE ? panelHeight() : -1;
+        quick.removeAllViews();
+        quick.addView(quickHeading(german ? "Wichtig" : "Important"));
+        if (quickProblem != null) {
+            quick.addView(quickRow(quickProblem, null, false));
+        } else if (quickRows == null) {
+            quick.addView(quickRow(german ? "Lädt …" : "Loading …", null, false));
+        } else if (!quickReadable || quickRows.isEmpty()) {
+            quick.addView(quickRow(BubbleQuick.waiting(quickReadable ? 0 : quickCount, german), null, false));
+        } else {
+            for (String[] row : quickRows) {
+                String route = PhoneRoutes.chat(row[0]);
+                quick.addView(quickRow("● " + row[1], route == null ? null : () -> openRoute(route), false));
+            }
+            int more = quickCount - quickRows.size();
+            if (more > 0) quick.addView(quickRow(german ? "… und " + more + " weitere in den Chats" : "… and " + more + " more in the chats", () -> openRoute("#/chats"), false));
+        }
+        quick.addView(quickRow((german ? "Aufgaben" : "Tasks") + "  ›", () -> openRoute("#/tasks"), true));
+        quick.addView(quickRow(BubbleLock.row(lockChoiceNow(), german) + "  ›", this::lockSettings, true));
+        if (before >= 0) moveBy(before);
+    }
+
+    private TextView quickHeading(String text) {
+        TextView view = new TextView(service);
+        view.setText(text);
+        view.setTextColor(Color.argb(170, 255, 255, 255));
+        view.setTextSize(10);
+        view.setAllCaps(true);
+        view.setPadding(dp(4), dp(2), dp(4), 0);
+        return view;
+    }
+
+    /** One line of the quick area: single line, cut at the end; a tap does `action` (none: plain text). */
+    private TextView quickRow(String text, Runnable action, boolean strong) {
+        TextView view = new TextView(service);
+        view.setText(text);
+        view.setTextColor(action == null ? Color.argb(200, 255, 255, 255) : Color.WHITE);
+        view.setTextSize(strong ? 13 : 12);
+        view.setSingleLine(true);
+        view.setEllipsize(TextUtils.TruncateAt.END);
+        view.setPadding(dp(4), dp(6), dp(4), dp(6));
+        if (action != null) view.setOnClickListener((v) -> { if (!busy) action.run(); });
+        view.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        return view;
+    }
+
+    /** A place of the app (a chat, Tasks): the panel folds to the dot and the app opens there (after unlocking, when locked). */
+    private void openRoute(String route) {
+        boolean wasLocked = locked();
+        collapse();
+        Intent intent = new Intent(service, MainActivity.class).putExtra(PhoneRoutes.EXTRA, route).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { service.startActivity(intent); } catch (RuntimeException error) { say(german ? "Die App ging nicht auf." : "The app did not open."); return; }
+        if (wasLocked) Toast.makeText(service, german ? "Entsperre das Handy – Autark ist dann dort offen." : "Unlock the phone – Autark is open there then.", Toast.LENGTH_SHORT).show();
+    }
+
+    /** The lock-screen row: the settings dialog (BubbleSettings) – unlocked only. */
+    private void lockSettings() {
+        if (locked()) { say(german ? "Entsperre das Handy, um das zu ändern." : "Unlock the phone to change this."); return; }
+        collapse();
+        try { BubbleSettings.open(service); } catch (RuntimeException error) { say(german ? "Die Einstellung ging nicht auf." : "The setting did not open."); }
     }
 
     private ImageView icon(int drawable, String says, Runnable action) {
@@ -986,7 +1305,17 @@ final class TodoButton {
 
     /** Open the draft without capturing a page the person has not sent. */
     private void open() {
-        if (!busy && !hold.active() && look != Look.PANEL) show(Look.PANEL);
+        if (busy || hold.active() || look == Look.PANEL) return;
+        show(Look.PANEL);
+        // the first opening asks once how the bubble behaves on the lock screen (never while locked: whoever holds a locked phone does not choose)
+        if (!BubbleLock.chosen(lockChoiceNow()) && !place.getBoolean(BubbleLock.ASKED, false) && !locked()) {
+            place.edit().putBoolean(BubbleLock.ASKED, true).apply();
+            grow(ask, true);
+        } else if (place.getBoolean(QUICK_OPEN, false)) {
+            grow(quick, true);
+            loadQuick();
+        }
+        renderArrow();
     }
 
     /** Back to the dot; the text, the shots and the files stay for the next opening (gone only with the service);
@@ -1273,9 +1602,11 @@ final class TodoButton {
     private void submit(String text, UseLink link, FutureTask<TodoPost.Shot> picture) {
         post.clientIdFor(text); // a fresh automatic shot alone never changes a retry's id
         say(german ? "Wird gesendet …" : "Sending …");
+        boolean wasLocked = locked(); // as the person sent it
+        String choice = lockChoiceNow();
         run(() -> {
             try {
-                String[] chat = deliver(link, text, post, requiredPicture(picture));
+                String[] chat = deliver(link, text, post, requiredPicture(picture), choice, wasLocked);
                 main.post(() -> { sent(); sentTo(chat); });
             } catch (Unreachable error) {
                 main.post(() -> { setBusy(false); waitForPc(text, link); });
@@ -1290,12 +1621,15 @@ final class TodoButton {
 
     /** The worker thread (task_cxs4s3pt): the chat the person used last (BubbleChat), every shot of `from` up (each once),
      *  then one line there with the words, the shots and the post's client id – never a to-do. {chatId, agentId, agent's
-     *  name or null}; Failed with a line for the person when there is no such chat (nothing goes out then). */
-    private String[] deliver(UseLink link, String text, TodoPost from, TodoPost.Shot currentPage) throws Failed, InterruptedException {
+     *  name or null}; Failed with a line for the person when there is no such chat (nothing goes out then). Sent while
+     *  locked (`wasLocked`): nothing in OFF, the note for the agent below the words in NOTE (BubbleLock). */
+    private String[] deliver(UseLink link, String text, TodoPost from, TodoPost.Shot currentPage, String choice, boolean wasLocked) throws Failed, InterruptedException {
+        if (!BubbleLock.shows(choice, wasLocked)) throw new Failed(german ? "Nicht gesendet – die Blase ist auf dem Sperrbildschirm aus." : "Not sent – the bubble is off on the lock screen.");
         String[] target = chatTarget(link);
         List<String[]> attachments = upload(link, from.shotsWith(currentPage));
         attachments.addAll(uploadFiles(link, from.files()));
-        Object sent = answer(link, "messages.send", BubbleChat.send(target[0], text, attachments, from.clientId(), false));
+        String body = BubbleLock.body(text, BubbleLock.noted(choice, wasLocked));
+        Object sent = answer(link, "messages.send", BubbleChat.send(target[0], body, attachments, from.clientId(), false));
         if (BubbleChat.messageId(sent) == null) throw new Failed(german ? "Der PC hat die Nachricht nicht angenommen." : "The PC did not take the message.");
         return new String[] { target[0], target[1], agentName(link, target[1]) };
     }
@@ -1443,6 +1777,10 @@ final class TodoButton {
     /** The panel's call: it folds to the dot and the bubble listens; the first line (or the typed text) finds the agent. */
     private void call() {
         if (busy || calling != null) return;
+        if (!BubbleLock.calls(lockChoiceNow(), locked())) { // a call's spoken lines cannot each carry the lock-screen note
+            say(german ? "Anrufen geht auf dem Sperrbildschirm nicht – entsperre das Handy oder schreib die Nachricht." : "No calls from the lock screen – unlock the phone or send a message.");
+            return;
+        }
         if (!Mic.allowed(service)) {
             collapse();
             openApp(); // the app asks for the microphone where the person sees why
