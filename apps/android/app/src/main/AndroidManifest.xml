@@ -7,7 +7,8 @@
      (PhoneSpeech), the phone-use AccessibilityService (reads
      nothing until the PC asks; phoneuse/UseService – it also carries the person's to-do button, phoneuse/TodoButton, whose
      dictation and call the PC hears, and whose field types through phoneuse/BubbleTyping: an invisible one-pixel activity
-     in a task of its own, not in Recents, so the keyboard stays under the navigation bar) with its one enable notification (which opens the in-app disclosure
+     in a task of its own, not in Recents, so the keyboard stays under the navigation bar, and whose plus menu reaches the
+     camera app and the file picker through phoneuse/BubblePick, the same kind of invisible activity) with its one enable notification (which opens the in-app disclosure
      UseDisclosure first) and the AI's question as a notification with ✓ / ✕ (phoneuse/AskNotice, not exported), an agent's
      ring as an incoming call notice with Accept / Decline (CallNotice, not exported), the crash report that needs no PC (CrashReport: the last uncaught exception's trace, shown on
      the next start), and plain http only to the app's own 127.0.0.1 entrance. A theme switch (uiMode) recreates the
@@ -74,6 +75,10 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:launchMode="singleInstance"
             android:taskAffinity="" android:excludeFromRecents="true" android:noHistory="true"
             android:windowSoftInputMode="stateAlwaysVisible|adjustNothing"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|screenLayout|smallestScreenSize" />
+        <activity android:name=".phoneuse.BubblePick" android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:taskAffinity="" android:excludeFromRecents="true"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|screenLayout|smallestScreenSize" />
         <receiver android:name=".phoneuse.AskNotice" android:exported="false" />
         <receiver android:name=".CallNotice" android:exported="false" />

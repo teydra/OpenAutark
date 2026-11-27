@@ -2,7 +2,9 @@
 // whole on the screen, the tab's side, the panel beside the dot and above the keyboard, the screenshot's size), what one
 // post sends (TodoPost: at most six shots, one client id per post until it went through, the files.upload frame;
 // BubbleChat: the chat line with the picture in the chat the person used last, never a to-do – task_cxs4s3pt) and the overlay's wiring read from its source (the AI's screenshot leaves
-// the button out, the window never takes key focus – typing goes through BubbleTyping –, dictation is heard by the PC).
+// the button out, the window never takes key focus – typing goes through BubbleTyping –, dictation is heard by the PC),
+// and the plus menu (task_r0y9wcex: the input line [+] [text] [mic] [send], photo, audio sent as audio – never heard by a
+// recognizer –, files from the phone within their limits, uploaded in pieces into the same chat line).
 // Never: claims the overlay shows or a task arrives – that
 // needs a phone and a PC.
 package com.teydralab.autark.android.phoneuse;
@@ -31,6 +33,11 @@ public final class TodoTest {
         wiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/TodoButton.java"),
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/UseService.java"),
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/UseLink.java"));
+        attachments();
+        plusWiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/TodoButton.java"),
+                source("app/src/main/java/com/teydralab/autark/android/phoneuse/AudioNote.java"),
+                source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubblePick.java"),
+                source("app/src/main/AndroidManifest.xml"));
         System.out.println(assertions + " to-do button place, post and wiring assertions passed.");
     }
 
@@ -278,6 +285,108 @@ public final class TodoTest {
         check(!failures.contains("post.clear()") && !failures.contains("clientId = null") && button.indexOf("post.clear();") > 0);
         check(link.contains("boolean alive(long ms)") && link.contains("void reconnect()") && link.contains("ws.close();"));
         check(!button.contains("PhoneRoutes") && button.contains("calling = new BubbleCall("));
+    }
+
+    /**
+     * task_r0y9wcex (owner 24.11.2026): the plus menu's files – a photo, an audio recording sent as audio and files from the
+     * phone – join the draft within their limits, go up in pieces and stand in the same chat line as the shots.
+     */
+    private static void attachments() {
+        TodoPost post = new TodoPost();
+        check(post.bare() && post.files().isEmpty());
+        TodoPost.Item photo = new TodoPost.Item(TodoPost.Item.PHOTO, "/c/photo-1.jpg", BubbleChat.photoName(1), "image/jpeg", 400_000, 0);
+        TodoPost.Item audio = new TodoPost.Item(TodoPost.Item.AUDIO, "/c/audio-1.m4a", BubbleChat.audioName(12_000, 1), "audio/mp4", 140_000, 12_000);
+        TodoPost.Item file = new TodoPost.Item(TodoPost.Item.FILE, "/c/file-1.bin", BubbleChat.fileName("Rechnung März.pdf", 1), null, 2_000_000, 0);
+        String before = post.clientIdFor("Schau mal");
+        check(post.attach(photo) == null && post.attach(audio) == null && post.attach(file) == null);
+        check(!post.bare() && post.files().equals(Arrays.asList(photo, audio, file)) && post.shots().isEmpty()); // files are not shots: the six-shot limit stays theirs
+        check("application/octet-stream".equals(file.mime) && post.count(TodoPost.Item.AUDIO) == 1 && post.count(TodoPost.Item.FILE) == 1);
+        check(!before.equals(post.clientIdFor("Schau mal"))); // a new file is a changed draft: a new line, not the first one's answer
+        post.detach(audio);
+        check(post.files().equals(Arrays.asList(photo, file)) && post.count(TodoPost.Item.AUDIO) == 0);
+        // the limits: a file at most 50 MB, at most 100 MB together, at most FILES_MAX – a refused one changes nothing
+        check(TodoPost.TOO_BIG.equals(post.attach(new TodoPost.Item(TodoPost.Item.FILE, "/c/big", "big.mp4", "video/mp4", TodoPost.FILE_MAX_BYTES + 1, 0))));
+        check(post.attach(new TodoPost.Item(TodoPost.Item.FILE, "/c/a", "a.mp4", "video/mp4", TodoPost.FILE_MAX_BYTES, 0)) == null);
+        check(TodoPost.TOO_MUCH.equals(post.attach(new TodoPost.Item(TodoPost.Item.FILE, "/c/b", "b.mp4", "video/mp4", TodoPost.FILE_MAX_BYTES, 0))));
+        TodoPost many = new TodoPost();
+        for (int i = 0; i < TodoPost.FILES_MAX; i++) check(many.attach(new TodoPost.Item(TodoPost.Item.FILE, "/c/" + i, "f" + i, "text/plain", 10, 0)) == null);
+        check(TodoPost.TOO_MANY.equals(many.attach(new TodoPost.Item(TodoPost.Item.FILE, "/c/x", "x", "text/plain", 10, 0))) && many.files().size() == TodoPost.FILES_MAX);
+        check(many.add(new byte[] {1})); // shots keep their own room
+        many.clear();
+        check(many.bare() && many.files().isEmpty() && many.shots().isEmpty()); // sent: the next line starts empty
+
+        // the names the agent reads
+        check("Photo taken with the phone camera.jpg".equals(BubbleChat.photoName(1)) && "Photo taken with the phone camera (2).jpg".equals(BubbleChat.photoName(2)));
+        check("Audio recording, 12 s.m4a".equals(BubbleChat.audioName(12_000, 1)) && "Audio recording (2), 1 min 5 s.m4a".equals(BubbleChat.audioName(65_000, 2)));
+        check("Audio recording, 3 min.m4a".equals(BubbleChat.audioName(180_000, 1)) && "Audio recording, 1 s.m4a".equals(BubbleChat.audioName(200, 1)));
+        check("Rechnung März.pdf".equals(BubbleChat.fileName("Rechnung März.pdf", 1)) && "File".equals(BubbleChat.fileName(null, 1)) && "File (3)".equals(BubbleChat.fileName("  ", 3)));
+        check("b_c.txt".equals(BubbleChat.fileName("a/b\u0001c.txt", 1)) && "passwd".equals(BubbleChat.fileName("../../etc/passwd", 1)) && "b".equals(BubbleChat.fileName("a\\b", 1))
+                && "File".equals(BubbleChat.fileName("x/..", 1)));
+        String longName = BubbleChat.fileName("x".repeat(300) + ".pdf", 1);
+        check(longName.length() == 120 && longName.endsWith(".pdf"));
+        check("0:07".equals(BubbleChat.clock(7_400)) && "12:30".equals(BubbleChat.clock(750_000)) && "0:00".equals(BubbleChat.clock(-5)));
+
+        // the pieces: files.uploadChunk frames of CHUNK bytes, the last one final; the id in the PC's form
+        check(TodoPost.chunks(0) == 1 && TodoPost.chunks(1) == 1 && TodoPost.chunks(TodoPost.CHUNK) == 1 && TodoPost.chunks(TodoPost.CHUNK + 1L) == 2 && TodoPost.chunks(TodoPost.FILE_MAX_BYTES) == 50);
+        String uploadId = TodoPost.uploadId();
+        check(uploadId.matches("up_[0-9a-z]{8,40}") && !uploadId.equals(TodoPost.uploadId()));
+        Map<String, Object> first = TodoPost.chunk(uploadId, 0, new byte[] {1, 2, 3, 4}, 4, false, audio);
+        check(first.keySet().equals(new java.util.LinkedHashSet<>(Arrays.asList("uploadId", "index", "dataBase64", "name", "mime"))));
+        check(uploadId.equals(first.get("uploadId")) && Integer.valueOf(0).equals(first.get("index")) && "audio/mp4".equals(first.get("mime")) && audio.name.equals(first.get("name")));
+        Map<String, Object> last = TodoPost.chunk(uploadId, 1, new byte[] {9, 8, 7, 6}, 2, true, audio);
+        check(Boolean.TRUE.equals(last.get("final")) && Arrays.equals(Base64.getDecoder().decode((String) last.get("dataBase64")), new byte[] {9, 8}));
+        check("".equals(TodoPost.chunk(uploadId, 0, new byte[1], 0, true, file).get("dataBase64"))); // an empty file: one empty final piece
+        // the recording is sent as sound: its frame names no language, no transcription, no text
+        check(!first.containsKey("language") && !first.containsKey("transcribe") && !first.containsKey("text"));
+
+        // Send: the words, the shots, then the files – one line in the chat, in that order
+        List<String[]> files = new ArrayList<>();
+        files.add(new String[] {"f_shot", BubbleChat.shotName(1)});
+        files.add(new String[] {"f_audio", audio.name});
+        files.add(new String[] {"f_doc", file.name});
+        Map<String, Object> line = BubbleChat.send("ch_1", "", files, "cid", false);
+        check(line.get("attachments").equals(Arrays.asList(map("fileId", "f_shot", "name", BubbleChat.shotName(1)),
+                map("fileId", "f_audio", "name", "Audio recording, 12 s.m4a"), map("fileId", "f_doc", "name", "Rechnung März.pdf"))));
+        check("".equals(line.get("body")) && !line.containsKey("silent")); // files alone are a line too
+    }
+
+    /** The plus menu's wiring, read from the sources: the input line, audio never heard by a recognizer, Send while dictating or recording. */
+    private static void plusWiring(String button, String note, String pick, String manifest) {
+        String panel = button.substring(button.indexOf("private LinearLayout makePanel()"), button.indexOf("private ImageView icon("));
+        // the input line as in a chat: [+] [text] [mic] [send], send on the right; call and collapse above it
+        int plusAt = panel.indexOf("R.drawable.ic_todo_plus"), fieldAt = panel.indexOf("input.addView(field"), micAt = panel.indexOf("R.drawable.ic_todo_mic"), sendAt = panel.indexOf("R.drawable.ic_todo_send");
+        check(plusAt > 0 && plusAt < fieldAt && fieldAt < micAt && micAt < sendAt && panel.indexOf("menu = makeMenu()") < plusAt);
+        check(panel.indexOf("R.drawable.ic_todo_call") < plusAt && !panel.contains("R.drawable.ic_todo_camera")); // the screenshot moved into the menu
+        String menu = button.substring(button.indexOf("private LinearLayout makeMenu()"), button.indexOf("private View menuItem("));
+        check(menu.contains("R.drawable.ic_todo_camera, \"Screenshot\"") && menu.contains("this::shoot") && menu.contains("this::takePhoto")
+                && menu.contains("this::recordAudio") && menu.contains("this::pickFiles") && menu.contains("Build.VERSION.SDK_INT >= 30"));
+        // audio is sent as audio: neither the recorder nor its path in the button transcribes
+        String audio = button.substring(button.indexOf("private void recordAudio()"), button.indexOf("/** Open the draft without"));
+        check(audio.contains("new AudioNote(service,") && audio.contains("post.attach(item)") && audio.contains("TodoPost.Item.AUDIO"));
+        check(!audio.contains("new Dictation(") && !audio.contains("voice.transcribe") && !audio.contains("hearing()") && !audio.contains("SpokenAudio.transcribe"));
+        check(!note.contains("voice.transcribe") && !note.contains("Dictation") && !note.contains("hearing") && note.contains("AudioSource.MIC") && note.contains("checkSelfPermission(Manifest.permission.RECORD_AUDIO)"));
+        String upload = button.substring(button.indexOf("private List<String[]> uploadFiles("), button.indexOf("private static int readFully("));
+        check(upload.contains("\"files.uploadChunk\"") && upload.contains("TodoPost.chunk(uploadId, index, piece, length, index == count - 1, item)") && !upload.contains("voice.transcribe"));
+        // the files go with the words into the same chat line (and with a call's shots), and go from the phone once sent
+        check(button.contains("attachments.addAll(uploadFiles(link, from.files()));") && button.contains("shots.addAll(uploadFiles(link, post.files()));"));
+        String sent = button.substring(button.indexOf("private void draftSent()"), button.indexOf("// ------------------------------------------------------------------ the call in the bubble"));
+        check(sent.contains("new File(item.path).delete()") && sent.indexOf("new File(item.path).delete()") < sent.indexOf("post.clear()"));
+        // Send while audio records attaches it first; Send while dictating still waits for the words
+        String sendTap = button.substring(button.indexOf("private void submit()"), button.indexOf("private void submit(String"));
+        check(sendTap.indexOf("stopAudio(true)") < sendTap.indexOf("captureAtSend()") && sendTap.contains("post.bare()") && sendTap.contains("sendAfter = picture;"));
+        check(button.contains("(words.isEmpty() && post.bare())"));
+        // one microphone at a time: dictation and the call end a recording first; collapsing attaches it
+        check(button.substring(button.indexOf("private void dictate()"), button.indexOf("private void finishDictation()")).contains("stopAudio(true)"));
+        check(button.substring(button.indexOf("private void collapse()"), button.indexOf("private void say(")).contains("stopAudio(true)"));
+        check(button.substring(button.indexOf("private void call()"), button.indexOf("private String[] route(")).contains("stopAudio(true)"));
+        // the hold stays the quick task (Felix' fix, task_sxq1nz2b): it records with Dictation and takes the page on release
+        String hold = button.substring(button.indexOf(" holdStart() {"), button.indexOf("void holdRelease()"));
+        check(hold.contains("look != Look.DOT") && !hold.contains("AudioNote") && !hold.contains("BubblePick"));
+        // the photo and the files come through the invisible activity, which phone use passes over like the typing window
+        check(button.contains("BubblePick.photo(service, dp(THUMB_DP), this::picked)") && button.contains("BubblePick.files(service, dp(THUMB_DP), this::picked)"));
+        check(pick.contains("at.width = BubbleTyping.SIZE;") && pick.contains("MediaStore.ACTION_IMAGE_CAPTURE") && pick.contains("Intent.ACTION_OPEN_DOCUMENT")
+                && pick.contains("requestPermissions(new String[] { Manifest.permission.CAMERA }") && pick.contains("TodoPost.FILE_MAX_BYTES"));
+        check(manifest.contains("android:name=\".phoneuse.BubblePick\" android:exported=\"false\"") && !manifest.contains("READ_EXTERNAL_STORAGE") && !manifest.contains("READ_MEDIA_"));
     }
 
     private static Map<String, Object> map(Object... pairs) {

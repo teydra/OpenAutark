@@ -5,7 +5,9 @@
 // goes out and the bubble says why (no fallback to another chat – a line in the wrong chat is worse than none). The
 // frames: messages.send with the words, the shots and the post's client id (a retry into the same chat answers the
 // first line), and a silent line with the call's shots before a call. Each shot is named for the agent, which reads
-// "[Image: <name>]" with the picture: SHOT. Pure, so a host test pins it.
+// "[Image: <name>]" with the picture: SHOT. The plus menu's files (task_r0y9wcex) stand in the same line after the shots,
+// named for the agent too: a photo as PHOTO, a recording as "Audio recording, <length>.m4a" (sound, not words), a picked
+// file by its own name. Pure, so a host test pins it.
 // Never: Android classes, tasks.quickCreate, or the person's text anywhere but the messages.send frame.
 package com.teydralab.autark.android.phoneuse;
 
@@ -23,6 +25,48 @@ final class BubbleChat {
     /** The name of shot `index` (1 …): the sentence, a number from the second on. */
     static String shotName(int index) {
         return index <= 1 ? SHOT + ".jpg" : SHOT + " (" + index + ").jpg";
+    }
+
+    /** The plus menu's photo, named for the agent like the shots (owner 24.11.2026, task_r0y9wcex). */
+    static final String PHOTO = "Photo taken with the phone camera";
+
+    /** The name of photo `index` (1 …). */
+    static String photoName(int index) {
+        return index <= 1 ? PHOTO + ".jpg" : PHOTO + " (" + index + ").jpg";
+    }
+
+    /** The name of audio recording `index` (1 …) of `ms`: the agent reads that it is a recording, sent as sound – not words. */
+    static String audioName(long ms, int index) {
+        return "Audio recording" + (index <= 1 ? "" : " (" + index + ")") + ", " + spoken(ms) + ".m4a";
+    }
+
+    /** A picked file keeps its own name (no folder, no control characters, at most 120 characters with its extension); without one "File (n)". */
+    static String fileName(String original, int index) {
+        String name = original == null ? "" : original;
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (slash >= 0) name = name.substring(slash + 1);
+        name = name.replaceAll("[\\u0000-\\u001f]", "_").trim();
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) return index <= 1 ? "File" : "File (" + index + ")";
+        if (name.length() <= 120) return name;
+        int dot = name.lastIndexOf('.');
+        String extension = dot > 0 && name.length() - dot <= 10 ? name.substring(dot) : "";
+        return name.substring(0, 120 - extension.length()) + extension;
+    }
+
+    /** A length as people say it: "12 s", "1 min 5 s", "3 min". */
+    static String spoken(long ms) {
+        long seconds = Math.max(1, Math.round(ms / 1000.0));
+        long minutes = seconds / 60;
+        seconds %= 60;
+        if (minutes == 0) return seconds + " s";
+        return seconds == 0 ? minutes + " min" : minutes + " min " + seconds + " s";
+    }
+
+    /** A running or recorded length on the chip and the status line: "0:07", "12:30". */
+    static String clock(long ms) {
+        long seconds = Math.max(0, ms / 1000);
+        long rest = seconds % 60;
+        return (seconds / 60) + ":" + (rest < 10 ? "0" : "") + rest;
     }
 
     /** ui.state's lastConversationId, or null. */

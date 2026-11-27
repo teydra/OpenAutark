@@ -1,5 +1,5 @@
 // Owns: the files the phone's camera app writes for a capture the page asked for (16.11.2026, F23: <input capture>,
-// PhoneChrome) – one new file per capture in cache/capture/, handed to the camera app as content://<package>.capture/<name>
+// PhoneChrome) or the bubble's plus menu asked for (phoneuse/BubblePick, its photo) – one new file per capture in cache/capture/, handed to the camera app as content://<package>.capture/<name>
 // with a one-time write grant (the app has no AndroidX FileProvider), read back by the WebView for the upload. Files
 // older than KEEP_MS go at the next capture. Never: exported, a name with a path in it, or any file outside cache/capture/.
 package com.teydralab.autark.android;
@@ -21,7 +21,7 @@ public final class CaptureFiles extends ContentProvider {
     private static final long KEEP_MS = 24 * 60 * 60_000L;
 
     /** A new empty file for one capture ("jpg" or "mp4") and its address for the camera app. */
-    static Uri create(Context context, String extension) throws IOException {
+    public static Uri create(Context context, String extension) throws IOException {
         File dir = dir(context);
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("no capture folder");
         File[] old = dir.listFiles();
@@ -37,6 +37,9 @@ public final class CaptureFiles extends ContentProvider {
         File file = file(context, uri);
         return file == null ? 0 : file.length();
     }
+
+    /** The file behind one of my addresses (the bubble's photo reads what the camera app wrote), or null. */
+    public static File fileOf(Context context, Uri uri) { return file(context, uri); }
 
     private static File dir(Context context) { return new File(context.getCacheDir(), "capture"); }
 

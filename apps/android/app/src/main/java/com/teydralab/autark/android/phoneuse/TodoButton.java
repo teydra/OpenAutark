@@ -2,16 +2,21 @@
 // shown while this phone is paired (UseLink.linked()), also while the Autark app is closed. Three looks in one window:
 // the dot (40 dp, the Autark mark, see-through; a drag beyond the touch slop moves it, a tap opens the panel, a drop
 // with the finger at a side edge – or an accessibility long-click – turns it into the tab), the tab (10 × 36 dp at the nearest side edge; a
-// tap brings the dot back) and the panel beside the dot – icons only: screenshot, dictate, call, send, close (back to
-// the dot) –, one text field (1 line, up to 4), a strip of the shots taken (a tap removes one; at most TodoPost.MAX) and
-// one short status line. Opening does not capture the screen. The camera adds optional shots; Send captures the
-// current screen (UseService.capture hides both overlays) before any task can go out.
+// tap brings the dot back) and the panel beside the dot: call and close (back to the dot) at its top, a strip of what
+// goes along (shots and photos as small pictures, recordings and files as chips; a tap removes one), the input line as
+// in a chat (owner 24.11.2026, task_r0y9wcex: "hinter einem Plus-Symbol … in eine Eingabezeile … Rechts … den
+// Senden-Button") – [+] [text field, 1 line up to 4] [mic: dictate] [send] – and one short status line. The plus opens a
+// small menu above the line: Screenshot (the camera icon as before: one more shot of the screen, at most TodoPost.MAX),
+// Photo (the camera app through BubblePick; the panel folds to the dot meanwhile and comes back with the photo), Audio
+// (AudioNote records the sound as a file – sent as audio, never transcribed; the plus turns into a red stop, which
+// attaches it) and File (Android's picker through BubblePick, several at once). Opening does not capture the screen;
+// Send captures the current screen (UseService.capture hides both overlays) before any line can go out.
 // Dictation (owner 20.11.2026: as good as the app's own – the phone's recognizer heard "We got to steer" for "Wie geht es
 // dir?") records the voice and the PC hears it, the same path as the app's composer (Dictation: WAV pieces,
 // files.upload, voice.transcribe in the profile's language); the words land at the end of the field once the PC has
 // heard them; without the microphone right the mic opens the app instead. Send (owner 26.11.2026, task_cxs4s3pt: asking
-// the bubble is asking the agent, not a to-do): every shot goes up (files.upload) and one line with the text, the shots
-// and the post's client id goes into the chat the person used last (BubbleChat: ui.state's lastConversationId, never a
+// the bubble is asking the agent, not a to-do): every shot goes up (files.upload), every file of the plus menu in
+// pieces (files.uploadChunk), and one line with the text, the shots, the files and the post's client id goes into the chat the person used last (BubbleChat: ui.state's lastConversationId, never a
 // guessed one – without it nothing goes out and the panel says why); ✓, a toast names the agent it went to, then empty
 // and back to the dot. The answer comes in that chat. Call (owner 19.11.2026:
 // without the app coming up): the panel folds to the dot and the call runs in the bubble (BubbleCall) – in that same
@@ -52,7 +57,9 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.widget.EditText;
+import android.text.TextUtils;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -61,7 +68,12 @@ import com.teydralab.autark.android.MainActivity;
 import com.teydralab.autark.android.R;
 import com.teydralab.autark.android.relay.Json;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -78,7 +90,7 @@ final class TodoButton {
     private static final int DOT_DP = 40;
     private static final int TAB_W_DP = 10;
     private static final int TAB_H_DP = 36;
-    private static final int PANEL_DP = 236;
+    private static final int PANEL_DP = 264;
     private static final int ICON_DP = 36;
     private static final int THUMB_DP = 34;
     /** A drop with the finger this close to a side edge makes the tab. */
@@ -137,8 +149,15 @@ final class TodoButton {
     private LinearLayout panel;
     private EditText field;
     private LinearLayout strip;
+    private HorizontalScrollView stripScroll;
     private TextView line;
     private ImageView mic;
+    /** The input line's plus and the menu it opens; the audio recording running now, or null. */
+    private ImageView plus;
+    private LinearLayout menu;
+    private AudioNote recording;
+    /** The small pictures of photos and picked images (shots keep theirs in `thumbs`). */
+    private final Map<TodoPost.Item, Bitmap> fileThumbs = new HashMap<>();
     /** The panel's dictation take, or null; whether the PC hears it now; whether Send waits for its words. */
     private Dictation dictation;
     private boolean transcribing;
@@ -184,7 +203,7 @@ final class TodoButton {
         UseLink.onLinked(null);
         work.shutdownNow();
         sendCapture.shutdownNow();
-        main.post(() -> { closed = true; dropDictation(); dropHold(); remove(); });
+        main.post(() -> { closed = true; stopAudio(false); dropDictation(); dropHold(); remove(); });
     }
 
     // ------------------------------------------------------------------ screenshot frame (a worker thread)
@@ -289,6 +308,7 @@ final class TodoButton {
     private void remove() {
         endCall();
         endTyping();
+        stopAudio(true); // a recording whose window goes stays in the draft
         dropHold(); // a hold whose window went records nothing more
         removeBin();
         if (root == null) return;
@@ -326,6 +346,7 @@ final class TodoButton {
             params.y = at[1];
         }
         if (next != Look.PANEL) endTyping();
+        if (next != Look.PANEL) showMenu(false);
         yBeforeKeyboard = -1;
         update();
         if (next == Look.PANEL) root.post(this::fitPanel);
@@ -712,19 +733,35 @@ final class TodoButton {
         background.setCornerRadius(dp(16));
         view.setBackground(background);
         view.setAlpha(0.94f);
-        LinearLayout row = new LinearLayout(service);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView camera = icon(R.drawable.ic_todo_camera, german ? "Noch ein Screenshot" : "One more screenshot", this::shoot);
-        if (Build.VERSION.SDK_INT < 30) camera.setVisibility(View.GONE); // screenshots need Android 11
-        row.addView(camera);
-        mic = icon(R.drawable.ic_todo_mic, german ? "Diktieren" : "Dictate", this::dictate);
-        row.addView(mic);
-        row.addView(new View(service), new LinearLayout.LayoutParams(0, 1, 1));
-        row.addView(icon(R.drawable.ic_todo_call, german ? "Anrufen" : "Call", this::call));
-        row.addView(icon(R.drawable.ic_todo_send, german ? "In den Chat senden" : "Send to the chat", this::submit));
-        row.addView(icon(R.drawable.ic_todo_close, german ? "Zuklappen" : "Collapse", this::collapse));
-        view.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        // the head: call and collapse
+        LinearLayout head = new LinearLayout(service);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(new View(service), new LinearLayout.LayoutParams(0, 1, 1));
+        head.addView(icon(R.drawable.ic_todo_call, german ? "Anrufen" : "Call", this::call));
+        head.addView(icon(R.drawable.ic_todo_close, german ? "Zuklappen" : "Collapse", this::collapse));
+        view.addView(head, new LinearLayout.LayoutParams(-1, -2));
+        // what goes along: shots, photos, recordings, files
+        stripScroll = new HorizontalScrollView(service);
+        stripScroll.setHorizontalScrollBarEnabled(false);
+        strip = new LinearLayout(service);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setGravity(Gravity.CENTER_VERTICAL);
+        stripScroll.addView(strip, new FrameLayout.LayoutParams(-2, -1));
+        LinearLayout.LayoutParams stripAt = new LinearLayout.LayoutParams(-1, dp(THUMB_DP + 4));
+        stripAt.bottomMargin = dp(4);
+        view.addView(stripScroll, stripAt);
+        // the plus menu, above the input line
+        menu = makeMenu();
+        LinearLayout.LayoutParams menuAt = new LinearLayout.LayoutParams(-1, -2);
+        menuAt.bottomMargin = dp(4);
+        view.addView(menu, menuAt);
+        // the input line as in a chat: [+] [text] [mic] [send]
+        LinearLayout input = new LinearLayout(service);
+        input.setOrientation(LinearLayout.HORIZONTAL);
+        input.setGravity(Gravity.CENTER_VERTICAL);
+        plus = icon(R.drawable.ic_todo_plus, german ? "Anhängen" : "Attach", this::plusTapped);
+        input.addView(plus);
         field = new EditText(service);
         field.setTextColor(Color.WHITE);
         field.setHintTextColor(Color.argb(150, 255, 255, 255));
@@ -744,12 +781,11 @@ final class TodoButton {
         });
         field.setText(draft);
         draft = "";
-        view.addView(field, new LinearLayout.LayoutParams(-1, -2));
-        strip = new LinearLayout(service);
-        strip.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams stripAt = new LinearLayout.LayoutParams(-1, dp(THUMB_DP + 4));
-        stripAt.topMargin = dp(4);
-        view.addView(strip, stripAt);
+        input.addView(field, new LinearLayout.LayoutParams(0, -2, 1));
+        mic = icon(R.drawable.ic_todo_mic, german ? "Diktieren" : "Dictate", this::dictate);
+        input.addView(mic);
+        input.addView(icon(R.drawable.ic_todo_send, german ? "In den Chat senden" : "Send to the chat", this::submit));
+        view.addView(input, new LinearLayout.LayoutParams(-1, -2));
         line = new TextView(service);
         line.setTextColor(Color.argb(220, 255, 255, 255));
         line.setTextSize(11);
@@ -774,14 +810,190 @@ final class TodoButton {
         return view;
     }
 
+    // ------------------------------------------------------------------ the plus menu
+
+    /** Screenshot (Android 11+), Photo, Audio, File – an icon with its word each; hidden until the plus opens it. */
+    private LinearLayout makeMenu() {
+        LinearLayout row = new LinearLayout(service);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(2), dp(2), dp(2), dp(2));
+        GradientDrawable box = new GradientDrawable();
+        box.setColor(Color.argb(40, 255, 255, 255));
+        box.setCornerRadius(dp(10));
+        row.setBackground(box);
+        // screenshots need Android 11
+        if (Build.VERSION.SDK_INT >= 30) row.addView(menuItem(R.drawable.ic_todo_camera, "Screenshot", german ? "Screenshot der Seite" : "Screenshot of this page", this::shoot), new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(menuItem(R.drawable.ic_todo_photo, german ? "Foto" : "Photo", german ? "Foto mit der Kamera" : "Take a photo", this::takePhoto), new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(menuItem(R.drawable.ic_todo_audio, "Audio", german ? "Audio aufnehmen und mitschicken" : "Record audio to send", this::recordAudio), new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(menuItem(R.drawable.ic_todo_file, german ? "Datei" : "File", german ? "Datei vom Handy anhängen" : "Attach a file from the phone", this::pickFiles), new LinearLayout.LayoutParams(0, -2, 1));
+        row.setVisibility(View.GONE);
+        return row;
+    }
+
+    private View menuItem(int drawable, String word, String says, Runnable action) {
+        LinearLayout item = new LinearLayout(service);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(dp(2), dp(5), dp(2), dp(4));
+        ImageView picture = new ImageView(service);
+        picture.setImageResource(drawable);
+        picture.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        item.addView(picture, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        TextView text = new TextView(service);
+        text.setText(word);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(10);
+        text.setSingleLine(true);
+        text.setGravity(Gravity.CENTER);
+        item.addView(text, new LinearLayout.LayoutParams(-2, -2));
+        item.setContentDescription(says);
+        item.setOnClickListener((v) -> {
+            if (busy) return;
+            showMenu(false);
+            action.run();
+        });
+        buttons.add(picture);
+        return item;
+    }
+
+    /** The plus: opens or closes the menu; while audio records it is the red stop, which attaches the recording. */
+    private void plusTapped() {
+        if (busy) return;
+        if (recording != null) { stopAudio(true); return; }
+        showMenu(menu != null && menu.getVisibility() != View.VISIBLE);
+    }
+
+    private void showMenu(boolean on) {
+        if (menu == null || (menu.getVisibility() == View.VISIBLE) == on) return;
+        menu.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (plus != null && recording == null) {
+            plus.setRotation(on ? 45f : 0f); // the plus turns into a ✕ while the menu is open
+            plus.setContentDescription(on ? (german ? "Menü schließen" : "Close the menu") : (german ? "Anhängen" : "Attach"));
+        }
+        keepWhole();
+    }
+
+    /** A taller panel stays whole on the screen. */
+    private void keepWhole() {
+        if (look == Look.PANEL && params != null) {
+            int y = TodoPlace.clamp(params.y, panelHeight(), screen()[1]);
+            if (y != params.y) { params.y = y; update(); }
+        }
+    }
+
+    /** Photo: the camera app gets the screen (the panel folds to the dot) and the panel comes back with the photo. */
+    private void takePhoto() {
+        if (busy) return;
+        if (post.files().size() >= TodoPost.FILES_MAX) { say(refusedLine(TodoPost.TOO_MANY)); return; }
+        collapse();
+        BubblePick.photo(service, dp(THUMB_DP), this::picked);
+    }
+
+    /** File: Android's picker (several at once); the panel comes back with them. */
+    private void pickFiles() {
+        if (busy) return;
+        if (post.files().size() >= TodoPost.FILES_MAX) { say(refusedLine(TodoPost.TOO_MANY)); return; }
+        collapse();
+        BubblePick.files(service, dp(THUMB_DP), this::picked);
+    }
+
+    /** BubblePick came back (main thread): its files join the draft, named for the agent; the panel opens with them. */
+    private void picked(List<BubblePick.Got> got, String problem) {
+        String note = problem;
+        for (BubblePick.Got one : got) {
+            boolean photo = TodoPost.Item.PHOTO.equals(one.kind);
+            int next = post.count(one.kind) + 1;
+            String name = photo ? BubbleChat.photoName(next) : BubbleChat.fileName(one.name, next);
+            TodoPost.Item item = new TodoPost.Item(one.kind, one.file.getPath(), name, one.mime, one.bytes, 0);
+            String refused = post.attach(item);
+            if (refused != null) { one.file.delete(); note = refusedLine(refused); continue; }
+            if (one.thumb != null) fileThumbs.put(item, one.thumb);
+        }
+        if (root == null || closed) return;
+        if (look != Look.PANEL) show(Look.PANEL);
+        renderStrip();
+        say(note);
+    }
+
+    private String refusedLine(String why) {
+        if (TodoPost.TOO_BIG.equals(why)) return german ? "Eine Datei darf höchstens 50 MB groß sein." : "A file can be at most 50 MB.";
+        if (TodoPost.TOO_MUCH.equals(why)) return german ? "Höchstens 100 MB an Dateien pro Nachricht." : "At most 100 MB of files per message.";
+        return german ? "Höchstens " + TodoPost.FILES_MAX + " Dateien pro Nachricht." : "At most " + TodoPost.FILES_MAX + " files per message.";
+    }
+
+    // ------------------------------------------------------------------ audio: a recording sent as sound (AudioNote)
+
+    /** Audio: the microphone records into a file until the red stop (the plus) – sent as audio, never transcribed. */
+    private void recordAudio() {
+        if (busy || recording != null || calling != null) return;
+        if (!Mic.allowed(service)) {
+            collapse();
+            openApp(); // the app asks for the microphone where the person sees why
+            return;
+        }
+        if (post.files().size() >= TodoPost.FILES_MAX) { say(refusedLine(TodoPost.TOO_MANY)); return; }
+        if (dictation != null) finishDictation(); // one microphone at a time: the dictated words still come
+        endTyping();
+        AudioNote note = new AudioNote(service, () -> stopAudio(true));
+        if (!note.start()) { say(german ? "Das Mikrofon ging nicht auf." : "The microphone did not open."); return; }
+        recording = note;
+        showMenu(false);
+        plus.setRotation(0f);
+        plus.setImageResource(R.drawable.ic_todo_stop);
+        plus.setColorFilter(RED);
+        plus.setContentDescription(german ? "Aufnahme beenden und anhängen" : "Stop and attach the recording");
+        main.post(recordTick);
+    }
+
+    /** While audio records: its time in the status line (and the level, which tells a silent take). */
+    private final Runnable recordTick = new Runnable() {
+        @Override public void run() {
+            AudioNote note = recording;
+            if (note == null) return;
+            note.level();
+            say((german ? "Audio läuft " : "Recording audio ") + BubbleChat.clock(note.elapsed()) + (german ? " – tippe auf ■ zum Anhängen." : " – tap ■ to attach."));
+            main.postDelayed(this, 250);
+        }
+    };
+
+    /** Ends the recording: `keep` attaches it to the draft (a chip), else it is dropped. True when a recording was attached. */
+    private boolean stopAudio(boolean keep) {
+        AudioNote note = recording;
+        if (note == null) return false;
+        recording = null;
+        main.removeCallbacks(recordTick);
+        if (plus != null) {
+            plus.setImageResource(R.drawable.ic_todo_plus);
+            plus.clearColorFilter();
+            plus.setContentDescription(german ? "Anhängen" : "Attach");
+        }
+        if (!keep) { note.cancel(); say(null); return false; }
+        AudioNote.Take take = note.stop();
+        if (take == null) { say(german ? "Nichts aufgenommen." : "Nothing recorded."); return false; }
+        if (take.silent) {
+            take.file.delete();
+            say(german ? "Android gibt der Blase gerade kein Mikrofon – die Aufnahme war stumm." : "Android gives the bubble no microphone right now – the recording was silent.");
+            return false;
+        }
+        TodoPost.Item item = new TodoPost.Item(TodoPost.Item.AUDIO, take.file.getPath(),
+                BubbleChat.audioName(take.ms, post.count(TodoPost.Item.AUDIO) + 1), "audio/mp4", take.file.length(), take.ms);
+        String refused = post.attach(item);
+        if (refused != null) { take.file.delete(); say(refusedLine(refused)); return false; }
+        if (strip != null) renderStrip();
+        say(null);
+        return true;
+    }
+
     /** Open the draft without capturing a page the person has not sent. */
     private void open() {
         if (!busy && !hold.active() && look != Look.PANEL) show(Look.PANEL);
     }
 
-    /** Back to the dot; the text and the shots stay for the next opening (gone only with the service). */
+    /** Back to the dot; the text, the shots and the files stay for the next opening (gone only with the service);
+     *  a running recording is attached. */
     private void collapse() {
         finishDictation();
+        stopAudio(true);
         show(Look.DOT);
     }
 
@@ -898,11 +1110,50 @@ final class TodoButton {
             at.setMarginEnd(dp(4));
             strip.addView(view, at);
         }
-        strip.setVisibility(shots.isEmpty() ? View.GONE : View.VISIBLE);
-        if (look == Look.PANEL && params != null) { // a taller panel stays whole on the screen
-            int y = TodoPlace.clamp(params.y, panelHeight(), screen()[1]);
-            if (y != params.y) { params.y = y; update(); }
+        // the plus menu's files: a photo or a picked image as its small picture, a recording or another file as a chip
+        for (TodoPost.Item item : post.files()) {
+            Bitmap thumb = fileThumbs.get(item);
+            boolean audio = TodoPost.Item.AUDIO.equals(item.kind);
+            View view;
+            LinearLayout.LayoutParams at;
+            if (thumb != null) {
+                ImageView picture = new ImageView(service);
+                picture.setImageBitmap(thumb);
+                picture.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                view = picture;
+                at = new LinearLayout.LayoutParams(dp(THUMB_DP), dp(THUMB_DP));
+            } else {
+                TextView chip = new TextView(service);
+                chip.setText(audio ? "♪ " + BubbleChat.clock(item.durationMs) : item.name);
+                chip.setTextColor(Color.WHITE);
+                chip.setTextSize(11);
+                chip.setSingleLine(true);
+                chip.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+                chip.setMaxWidth(dp(120));
+                chip.setGravity(Gravity.CENTER_VERTICAL);
+                chip.setPadding(dp(8), 0, dp(8), 0);
+                GradientDrawable round = new GradientDrawable();
+                round.setColor(Color.argb(60, 255, 255, 255));
+                round.setCornerRadius(dp(8));
+                chip.setBackground(round);
+                view = chip;
+                at = new LinearLayout.LayoutParams(-2, dp(THUMB_DP));
+            }
+            String what = audio ? (german ? "Audio-Aufnahme " : "Audio recording ") + BubbleChat.clock(item.durationMs)
+                    : TodoPost.Item.PHOTO.equals(item.kind) ? (german ? "Foto" : "Photo") : item.name;
+            view.setContentDescription(what + (german ? " entfernen" : ", remove"));
+            view.setOnClickListener((v) -> {
+                if (busy) return;
+                post.detach(item);
+                fileThumbs.remove(item);
+                new File(item.path).delete();
+                renderStrip();
+            });
+            at.setMarginEnd(dp(4));
+            strip.addView(view, at);
         }
+        stripScroll.setVisibility(post.bare() ? View.GONE : View.VISIBLE);
+        keepWhole();
     }
 
     // ------------------------------------------------------------------ dictation
@@ -911,6 +1162,7 @@ final class TodoButton {
     private void dictate() {
         if (busy) return;
         if (dictation != null) { finishDictation(); return; } // a second tap ends the take
+        stopAudio(true); // one microphone at a time: a running recording is attached first
         if (!Mic.allowed(service)) {
             collapse();
             openApp(); // the app asks for the microphone where the person sees why
@@ -955,7 +1207,7 @@ final class TodoButton {
         sendLink = null;
         if (picture == null) return;
         String words = field == null ? "" : field.getText().toString().trim();
-        if (problem != null || (words.isEmpty() && post.shots().isEmpty()) || link != UseLink.linked()) {
+        if (problem != null || (words.isEmpty() && post.bare()) || link != UseLink.linked()) {
             picture.cancel(true);
             setBusy(false);
             if (problem == null && link != UseLink.linked()) waitForPc(words, link);
@@ -997,9 +1249,12 @@ final class TodoButton {
 
     private void submit() {
         if (busy || calling != null) return;
+        boolean wasRecording = recording != null;
+        stopAudio(true); // Send while audio records: the recording goes along
+        showMenu(false);
         String text = field.getText().toString().trim();
-        if (dictation == null && text.isEmpty() && post.shots().isEmpty()) {
-            say(german ? "Schreib oder sag etwas." : "Type or say something.");
+        if (dictation == null && text.isEmpty() && post.bare()) {
+            if (!wasRecording) say(german ? "Schreib oder sag etwas." : "Type or say something."); // else its line says why nothing came
             return;
         }
         UseLink link = UseLink.linked();
@@ -1039,6 +1294,7 @@ final class TodoButton {
     private String[] deliver(UseLink link, String text, TodoPost from, TodoPost.Shot currentPage) throws Failed, InterruptedException {
         String[] target = chatTarget(link);
         List<String[]> attachments = upload(link, from.shotsWith(currentPage));
+        attachments.addAll(uploadFiles(link, from.files()));
         Object sent = answer(link, "messages.send", BubbleChat.send(target[0], text, attachments, from.clientId(), false));
         if (BubbleChat.messageId(sent) == null) throw new Failed(german ? "Der PC hat die Nachricht nicht angenommen." : "The PC did not take the message.");
         return new String[] { target[0], target[1], agentName(link, target[1]) };
@@ -1068,6 +1324,53 @@ final class TodoButton {
             attachments.add(new String[] { shot.fileId, name });
         }
         return attachments;
+    }
+
+    /** Every file of the plus menu up once, in pieces (uploadFile); {fileId, name} in order. */
+    private List<String[]> uploadFiles(UseLink link, List<TodoPost.Item> items) throws Failed, InterruptedException {
+        List<String[]> attachments = new ArrayList<>();
+        for (TodoPost.Item item : items) {
+            if (item.fileId == null) {
+                String id = TodoPost.fileId(uploadFile(link, item));
+                if (id == null) throw new Failed(german ? "Der PC hat „" + item.name + "“ nicht angenommen." : "The PC did not take “" + item.name + "”.");
+                item.fileId = id;
+            }
+            attachments.add(new String[] { item.fileId, item.name });
+        }
+        return attachments;
+    }
+
+    /** One file up in files.uploadChunk pieces of TodoPost.CHUNK (never whole in memory); the last answer is its FileRef.
+     *  An audio recording goes up as sound like any file – nothing here hears it. */
+    private Object uploadFile(UseLink link, TodoPost.Item item) throws Failed, InterruptedException {
+        File file = new File(item.path);
+        String gone = german ? "„" + item.name + "“ ist nicht mehr auf dem Handy – entferne es und hänge es neu an."
+                : "“" + item.name + "” is no longer on the phone – remove it and attach it again.";
+        if (!file.isFile()) throw new Failed(gone);
+        long size = file.length();
+        int count = TodoPost.chunks(size);
+        String uploadId = TodoPost.uploadId();
+        byte[] piece = new byte[(int) Math.max(1, Math.min(TodoPost.CHUNK, size))];
+        Object stored = null;
+        try (InputStream in = new FileInputStream(file)) {
+            for (int index = 0; index < count; index++) {
+                int length = readFully(in, piece);
+                stored = answer(link, "files.uploadChunk", TodoPost.chunk(uploadId, index, piece, length, index == count - 1, item));
+            }
+        } catch (IOException unreadable) {
+            throw new Failed(gone);
+        }
+        return stored;
+    }
+
+    private static int readFully(InputStream in, byte[] into) throws IOException {
+        int filled = 0;
+        while (filled < into.length) {
+            int read = in.read(into, filled, into.length - filled);
+            if (read < 0) break;
+            filled += read;
+        }
+        return filled;
     }
 
     /** The agent's name for the line that says where it went; null when the PC does not say. */
@@ -1124,8 +1427,10 @@ final class TodoButton {
         main.postDelayed(() -> { setBusy(false); say(null); if (look == Look.PANEL) collapse(); }, DONE_MS);
     }
 
-    /** The draft went out as a task: no text, no shots – the next opening starts a new draft. */
+    /** The draft went out: no text, no shots, no files (their copies on the phone go too) – the next opening starts a new draft. */
     private void draftSent() {
+        for (TodoPost.Item item : post.files()) new File(item.path).delete();
+        fileThumbs.clear();
         post.clear();
         thumbs.clear();
         draft = "";
@@ -1144,6 +1449,7 @@ final class TodoButton {
             return;
         }
         dropDictation();
+        stopAudio(true); // the call needs the microphone; what was recorded goes with the draft
         UseLink link = UseLink.linked();
         if (link == null) { say(german ? "Gerade nicht mit deinem PC verbunden." : UseLink.UNLINKED); return; }
         String typed = field.getText().toString().trim();
@@ -1166,6 +1472,7 @@ final class TodoButton {
         try {
             target = chatTarget(link);
             List<String[]> shots = upload(link, post.shots());
+            shots.addAll(uploadFiles(link, post.files())); // the draft's files go with its shots
             if (!shots.isEmpty() && BubbleChat.messageId(answer(link, "messages.send", BubbleChat.send(target[0], "", shots, post.clientId(), true))) == null) {
                 throw new Failed(german ? "Der PC hat die Screenshots nicht angenommen." : "The PC did not take the screenshots.");
             }
