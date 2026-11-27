@@ -290,7 +290,7 @@ test('unsigned, wrongly signed, foreign, stale, undecryptable and other-session 
   s.relay.deliver(real.frame);
   await waitFor('the stand-in app', () => s.stubLog().length > 0);
   await waitFor('the answer', () => s.relay.replies.length > 0);
-  assert.deepEqual(openJson(real.cipher, s.relay.replies[0]!.c), { ok: true });
+  assert.deepEqual(openJson(real.cipher, (s.relay.replies[0] as Record<string, unknown>).c), { ok: true });
   assert.deepEqual(s.stubLog(), ['START --company=company-9 NODE=']);
 });
 
