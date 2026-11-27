@@ -51,7 +51,7 @@ test('the menu: Copy selection is offered only with a selection; no Select text 
   assert.match(read('src/ui/chat/MessageItem.tsx'), /const build = \(open: MenuOpen\) => messageMenu\(message, open, \{ edit: \(\) => setEditing\(true\) \}\);\s*const menu = useContextMenu\(build, \{ touchByButton: true \}\);/, '17.11.2026: a finger selects natively, the menu is the More button');
   const menu = read('src/ui/lib/context-menu.tsx');
   assert.match(menu, /if \(touch\.current\) dropTouchSelection\(\);\s*openContextMenu\(x, y, build\(\{ touch: touch\.current, at \}\), container\);/, 'a touch open drops the browser\'s one-word pick: one menu');
-  assert.match(menu, /touch\.current = event\.pointerType === 'touch';/);
+  assert.match(menu, /touch\.current = event\.pointerType === 'touch' \|\| event\.pointerType === '';/, 'adb\'s input events have an empty pointer type: a finger (S9 27.11.2026)');
   assert.equal(existsSync(new URL('../../../src/ui/chat/SelectText.tsx', import.meta.url)), false, 'the sheet is gone');
 });
 

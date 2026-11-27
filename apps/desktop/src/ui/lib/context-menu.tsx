@@ -82,7 +82,7 @@ export function useContextMenu(build: (open: MenuOpen) => MenuSection[], options
     onPointerDown: (event: PointerEvent) => {
       fired.current = false;
       cancel();
-      touch.current = event.pointerType === 'touch';
+      touch.current = event.pointerType === 'touch' || event.pointerType === ''; // adb's input events (the test phone) carry no pointer type: a finger all the same (S9, 27.11.2026)
       if (!touch.current || native(event) || options.touchByButton) return;
       const { clientX: x, clientY: y } = event;
       const container = host(event);
