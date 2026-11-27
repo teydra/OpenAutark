@@ -109,7 +109,7 @@ test('a pick writes the keys that make it real', () => {
   assert.deepEqual(writeModel('stt', THIS_PC, 'canary', MODELS, OFFERS), { routing: { stt: 'local' }, voice: { localStt: 'canary' } }, 'this PC first, before the plan');
   assert.deepEqual(writeModel('stt', THIS_PC, 'fastconformer', MODELS, OFFERS), { routing: { stt: 'local' }, download: 'fastconformer' }, 'it has to come first');
   assert.deepEqual(writeModel('embeddings', THIS_PC, 'local', MODELS, []), { routing: { embeddings: 'local' } });
-  assert.deepEqual(writeModel('voice', THIS_PC, '', MODELS, []), { voice: { realtime: 'off' } });
+  assert.deepEqual(writeModel('voice', THIS_PC, '', MODELS, []), { routing: { voice: 'local' }, voice: { realtime: 'off' } });
 });
 
 test('a provider pick takes its first model; Off and This PC write their keys', () => {
@@ -120,6 +120,7 @@ test('a provider pick takes its first model; Off and This PC write their keys', 
   assert.deepEqual(writeProvider('image', 'off', MODELS, ACCOUNTS, [], undefined), { routing: { image: 'off' } });
   assert.deepEqual(writeProvider('stt', THIS_PC, MODELS, ACCOUNTS, OFFERS, { localStt: '', localTts: '' }), { routing: { stt: 'local' }, voice: { localStt: 'canary' } }, 'the one on this PC');
   assert.deepEqual(writeProvider('tts', THIS_PC, MODELS, ACCOUNTS, OFFERS, { localStt: '', localTts: '' }), { routing: { tts: 'local' }, download: 'supertonic' });
+  assert.deepEqual(writeProvider('speech', THIS_PC, MODELS, ACCOUNTS, OFFERS, { localStt: '', localTts: '' }), { routing: { speech: 'local' }, download: 'supertonic' });
   assert.equal(writeProvider('work', '', MODELS, ACCOUNTS, [], undefined), undefined, 'None writes nothing');
 });
 
@@ -156,9 +157,9 @@ test('21.11.2026: Speech to text offers the ChatGPT plan’s dictation; Voice on
   const plan = useRowView('stt', now('stt', { kind: 'plan', accountId: 'acc_codex', modelId: 'codex', name: 'ChatGPT dictation', thisPc: true }), MODELS, ACCOUNTS, OFFERS, undefined, true);
   assert.deepEqual([plan.provider, plan.model, plan.models.map((option) => option.label), plan.modelFixed], ['acc_codex', 'codex', ['ChatGPT dictation'], false]);
   assert.deepEqual(writeProvider('stt', 'acc_codex', MODELS, ACCOUNTS, OFFERS, undefined), { routing: { stt: 'codex' } }, 'the plan keeps this PC’s model as its fallback');
-  assert.deepEqual(writeModel('voice', THIS_PC, 'canary', MODELS, OFFERS), { routing: { stt: 'local' }, voice: { localStt: 'canary', realtime: 'off' } });
-  assert.deepEqual(writeModel('voice', THIS_PC, 'codex', MODELS, OFFERS), { routing: { stt: 'codex' }, voice: { realtime: 'off' } });
-  assert.deepEqual(writeProvider('voice', THIS_PC, MODELS, ACCOUNTS, OFFERS, undefined), { voice: { realtime: 'off' } }, 'This PC alone leaves Speech to text as it is');
+  assert.deepEqual(writeModel('voice', THIS_PC, 'canary', MODELS, OFFERS), { routing: { stt: 'local', voice: 'local' }, voice: { localStt: 'canary', realtime: 'off' } });
+  assert.deepEqual(writeModel('voice', THIS_PC, 'codex', MODELS, OFFERS), { routing: { stt: 'codex', voice: 'local' }, voice: { realtime: 'off' } });
+  assert.deepEqual(writeProvider('voice', THIS_PC, MODELS, ACCOUNTS, OFFERS, undefined), { routing: { voice: 'local' }, voice: { realtime: 'off' } }, 'This PC alone leaves Speech to text as it is');
   const fits = [offer('canary', 'stt', { installed: true, fit: 'good' }), offer('parakeet', 'stt', { fit: 'too-big', downloadMb: 487 })];
   assert.deepEqual(modelOptions('stt', THIS_PC, undefined, MODELS, ACCOUNTS, fits).map((option) => option.hint), ['On this PC · fits well', '487 MB download · too big for this PC']);
   const local = now('embeddings', { kind: 'this-pc', modelId: 'local', name: 'MiniLM', thisPc: true, choices: [{ value: 'local', label: 'MiniLM', fit: 'tight' }] });
