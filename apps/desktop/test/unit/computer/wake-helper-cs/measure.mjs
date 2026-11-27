@@ -160,7 +160,7 @@ try {
     stamp(`wake: ${JSON.stringify(wake)}`);
     client.stop();
   }
-  try { helperLog = readFileSync(path.join(session?.data ?? '', 'logs', 'sleeper.log'), 'utf8').trim().split('\n').slice(-12).join('\n'); } catch { /* no log */ }
+  try { helperLog = readFileSync(path.join(session?.data ?? '', 'logs', 'sleeper.log'), 'utf8').trim().split('\n').slice(args.includes('--log') ? -300 : -12).join('\n'); } catch { /* no log */ }
   result = { exe: exe ? path.basename(exe) : `pid ${attach}`, relay: session ? (fake ? 'stand-in server (plain ws)' : session.relay) : undefined, env: extraEnv, minutes, afterMinutes: { workingSetMB: last.workingSetMB, privateBytesMB: last.privateBytesMB, privateWorkingSetMB: last.privateWorkingSetMB, threads: last.threads, handles: last.handles, moduleCount: last.moduleCount }, modules: last.modules, samples: samples.map(({ modules: _modules, ...rest }) => rest), wake };
 } finally {
   if (child && child.exitCode === null) child.kill();

@@ -1295,9 +1295,18 @@ namespace AutarkWake
 
         public static int Main(string[] argv)
         {
+            if (Environment.GetEnvironmentVariable("WAKE_TRACE_LOADS") == "1")
+                AppDomain.CurrentDomain.AssemblyLoad += delegate(object s, AssemblyLoadEventArgs a)
+                {
+                    StackTrace trace = new StackTrace(1, false);
+                    StringBuilder sb = new StringBuilder("LOAD " + a.LoadedAssembly.GetName().Name + " <-");
+                    for (int i = 0; i < trace.FrameCount && i < 14; i++) { System.Reflection.MethodBase m = trace.GetFrame(i).GetMethod(); sb.Append(" " + (m.DeclaringType != null ? m.DeclaringType.Name : "") + "." + m.Name); }
+                    if (dir == "") pendingLoads.Add(sb.ToString()); else Log(sb.ToString());
+                };
             try { return Run(argv); }
             catch (Exception e) { Log("failed: " + e.GetType().Name); return 1; }
         }
+        static readonly List<string> pendingLoads = new List<string>();
 
         static int Run(string[] argv)
         {
@@ -1309,6 +1318,7 @@ namespace AutarkWake
             }
             if (file.Length == 0 || !Path.IsPathRooted(file)) return 0;
             dir = Path.GetDirectoryName(Path.GetFullPath(file));
+            foreach (string pending in pendingLoads) Log(pending);
             ownImage = Path.GetFileName(Process.GetCurrentProcess().MainModule.FileName);
             startedAt = NowMs();
             WakeFile wake = WakeRules.Parse(Read(Path.GetFileName(file)));
