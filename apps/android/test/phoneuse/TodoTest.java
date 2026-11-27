@@ -44,7 +44,24 @@ public final class TodoTest {
         controlWiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/TodoButton.java"),
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleSettings.java"),
                 source("app/src/main/AndroidManifest.xml"));
+        typingKeyboard(source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleTyping.java"));
         System.out.println(assertions + " to-do button place, post and wiring assertions passed.");
+    }
+
+    /** S9, Android 10, 27.11.2026: the keyboard never came (mInputShown=false). The 1-px window under the status bar got
+     *  its content inset to 1×0, the sizeless field lost its focus (ic=null at the window's focus), and showSoftInput came
+     *  before the window had focus ("showSoftInput - cancel : mServedView != view"). */
+    private static void typingKeyboard(String typing) {
+        int create = typing.indexOf("protected void onCreate("), focus = typing.indexOf("public void onWindowFocusChanged(");
+        check(create >= 0 && focus > create);
+        String created = typing.substring(create, focus), focused = typing.substring(focus);
+        // The content takes no system insets, so the field keeps its pixel and its focus
+        check(created.contains("setOnApplyWindowInsetsListener(") && created.contains("replaceSystemWindowInsets(0, 0, 0, 0)")
+                && created.indexOf("setOnApplyWindowInsetsListener(") < created.indexOf("setContentView(input)"));
+        // The keyboard is asked for only once the window has the focus, never from onCreate
+        check(!created.contains("showSoftInput(") && focused.contains("if (!focused || shown == null) return;")
+                && focused.contains("shown.post(") && focused.indexOf("shown.post(") < focused.indexOf("showSoftInput(shown, 0)"));
+        check(typing.contains("SOFT_INPUT_STATE_ALWAYS_VISIBLE | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING"));
     }
 
     private static void holdAndSend() {
