@@ -2,7 +2,9 @@
 // a routine, the successor of an archived agent and the watcher's owner pick for a row without one:
 //  - receiverOf: who a word names – "me", "team", an agent (id or name), the person (human, their name) or a colleague;
 //  - pickOwner ("team"): Autark picks one owner now – one cheap decision among the active agents and the colleagues the
-//    giver may give to (a colleague: only agents they work with), each with role and open work; unsure, no model or
+//    giver may give to (a colleague: only agents they work with), each with role, open work and whether it is free right
+//    now (Stanislaus 17.11.2026 "welche Mitarbeiter sind gerade aktiv und welcher passt"); a paused agent is no choice –
+//    its work would stand until the person resumes it; unsure, no model or
 //    fewer than two → the responsible manager; no agent at all → the giver keeps it (an agent or a colleague) or it
 //    lands on the person's own list;
 //  - giveTask: the colleague rules (people/task-rules.ts) and the chat it lives in, the owner, "given by", its last move,
@@ -69,16 +71,19 @@ function mayGiveTo(t: TaskServiceImpl, by: string, agentId: string): boolean {
   try { checkMayGive(t.s, by, { kind: 'agent', id: agentId }, undefined); return true; } catch { return false; }
 }
 
+/** How an agent is right now, for the pick (idle and waiting agents are free to start). */
+const NOW: Partial<Record<Agent['status'], string>> = { working: 'busy right now', error: 'not running right now' };
+
 function candidates(t: TaskServiceImpl, by: string, team?: string): Array<{ id: string; label: string }> {
   const s = t.s;
   const fold = (text: string) => text.trim().toLowerCase();
-  const agents = (s.org?.list() ?? []).filter((agent) => agent.archivedAt === undefined && agent.id !== by && (!team || fold(agent.team ?? '') === fold(team)) && mayGiveTo(t, by, agent.id));
+  const agents = (s.org?.list() ?? []).filter((agent) => agent.archivedAt === undefined && agent.status !== 'paused' && agent.id !== by && (!team || fold(agent.team ?? '') === fold(team)) && mayGiveTo(t, by, agent.id));
   const people = team ? [] : (s.people?.list?.() ?? []).filter((person) => person.id !== by && !person.owner && person.status !== 'revoked' && (() => {
     try { checkMayGive(s, by, { kind: 'human', id: person.id }, undefined); return true; } catch { return false; }
   })());
   const load = loads(s);
   return [
-    ...agents.map((agent: Agent) => ({ id: agent.id, label: `${agent.name}${agent.role ? ` (${agent.role})` : ''} · ${load.get(agent.id) ?? 0} open` })),
+    ...agents.map((agent: Agent) => ({ id: agent.id, label: `${agent.name}${agent.role ? ` (${agent.role})` : ''} · ${load.get(agent.id) ?? 0} open · ${NOW[agent.status] ?? 'free'}` })),
     ...people.map((person) => ({ id: person.id, label: `${person.name}${person.title ? ` (${person.title}, person)` : ' (person)'} · ${load.get(person.id) ?? 0} open` })),
   ];
 }
@@ -108,7 +113,7 @@ export async function pickOwner(t: TaskServiceImpl, task: Pick<Task, 'title' | '
   try {
     const result = await s.decisions!.decide({
       purpose: 'route', type: 'choice', timeoutMs: PICK_TIMEOUT_MS,
-      question: 'Who owns this task? I pick the one whose role fits it best; with two that fit, the one with less open work.',
+      question: 'Who owns this task? I pick the one whose role fits it best; of those that fit, a free one before a busy one, then the one with less open work.',
       options: options.map((option) => option.label),
       context: `Task: ${excerpt(task.title, 200)}${task.notes.trim() ? `\n${excerpt(task.notes, NOTES_CHARS)}` : ''}`,
     });

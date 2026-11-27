@@ -121,6 +121,30 @@ test('"team" with no decision model: the giver keeps it when no manager exists',
   assert.equal(out.owner, 'me');
 });
 
+test('"team" with the decision model: it sees who fits and who is free right now; a paused colleague is no choice (task_3d1wvxtq 4)', async () => {
+  const asked: Array<{ question: string; options: string[] }> = [];
+  const decisions = {
+    available: () => true,
+    decide: async (request: { question: string; options: string[] }) => {
+      asked.push(request);
+      return { choice: request.options.find((option) => option.startsWith('Mara')), confidence: 0.9, by: 'test' };
+    },
+  };
+  const h = harness({ decisions: decisions as never });
+  h.org.add(agent('ag_ida', 'Ida', { role: 'QA' }));
+  h.org.add(agent('ag_jonas', 'Jonas', { role: 'Dev', status: 'working' }));
+  h.org.add(agent('ag_mara', 'Mara', { role: 'Dev' }));
+  h.org.add(agent('ag_paul', 'Paul', { role: 'Dev', status: 'paused' }));
+  const chat = h.chats.create({ agentIds: ['ag_ida'], createdBy: HUMAN_ID });
+  const ctx: ToolContext = { agent: h.org.get('ag_ida')!, runId: 'run_1', conversationId: chat.id, mode: 'general', services: h.services as RuntimeServices, signal: new AbortController().signal, status: () => {} };
+  const out = await taskTools.find((tool) => tool.name === 'tasks.add')!.run({ title: 'Login-Bug beheben', for: 'team' } as never, ctx);
+  const result = JSON.parse(String((out.content[0] as { text?: string }).text));
+  assert.equal(result.owner, 'Mara (ag_mara)');
+  assert.equal(asked.length, 1);
+  assert.deepEqual(asked[0].options, ['Jonas (Dev) · 0 open · busy right now', 'Mara (Dev) · 0 open · free'], 'never the giver, never a paused colleague');
+  assert.match(asked[0].question, /a free one before a busy one/);
+});
+
 test('the watcher wakes nobody on a timer of its own: open work and a person\'s untouched to-do stay quiet for days', () => {
   const h = setup();
   h.tasks.create({ conversationId: h.chat.id, title: 'Wochenbericht', assigneeKind: 'agent', assigneeId: 'ag_ida', createdBy: 'ag_ida' });
