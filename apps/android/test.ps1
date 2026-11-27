@@ -58,6 +58,7 @@ $sources = @(Get-ChildItem (Join-Path $root 'app/src/main/java/com/teydralab/aut
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/AppNames.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/StepDeadline.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/EndSignal.java') +
+    (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/DotDodge.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/SpokenAudio.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/SpokenPieces.java') +
     (Join-Path $root 'app/src/main/java/com/teydralab/autark/android/phoneuse/PlanHearing.java') +
@@ -76,7 +77,7 @@ $sources = @(Get-ChildItem (Join-Path $root 'app/src/main/java/com/teydralab/aut
 if ($LASTEXITCODE -ne 0) { throw 'Host test compilation failed.' }
 $classpath = "$out;$libs"
 # B-078: the SAS interop vectors (desktop remote/sas.ts) and phone use's screen tree and gestures run here too.
-foreach ($test in 'ConnectionAddressTest', 'RelayCryptoTest', 'relay.RemotePairTest', 'phoneuse.ScreenTreeTest', 'phoneuse.DisclosureTest', 'phoneuse.UseLinkThreadTest', 'phoneuse.TypedTextTest', 'phoneuse.UseStateTest', 'phoneuse.SayChoicesTest', 'phoneuse.TypeTargetTest', 'phoneuse.TodoTest', 'phoneuse.AppNamesTest', 'phoneuse.StepDeadlineTest', 'phoneuse.EndSignalTest', 'phoneuse.SpokenAudioTest', 'phoneuse.SpokenPiecesTest', 'phoneuse.PlanHearingTest', 'UpdateReleaseTest', 'pair.QrDecodeTest', 'CompaniesTest', 'CssColorTest', 'relay.ReconnectTest', 'relay.CodeChainTest', 'relay.LinksTest', 'relay.DirectRouteTest', 'relay.RtcSignalTest', 'relay.RtcWayTest', 'relay.WakeTest', 'PhoneRoutesTest', 'ShellWiringTest', 'VolumePairTest', 'PhoneUseAskRuleTest', 'usage.UsageCounterTest') {
+foreach ($test in 'ConnectionAddressTest', 'RelayCryptoTest', 'relay.RemotePairTest', 'phoneuse.ScreenTreeTest', 'phoneuse.DisclosureTest', 'phoneuse.UseLinkThreadTest', 'phoneuse.TypedTextTest', 'phoneuse.UseStateTest', 'phoneuse.SayChoicesTest', 'phoneuse.TypeTargetTest', 'phoneuse.TodoTest', 'phoneuse.AppNamesTest', 'phoneuse.StepDeadlineTest', 'phoneuse.EndSignalTest', 'phoneuse.DotDodgeTest', 'phoneuse.SpokenAudioTest', 'phoneuse.SpokenPiecesTest', 'phoneuse.PlanHearingTest', 'UpdateReleaseTest', 'pair.QrDecodeTest', 'CompaniesTest', 'CssColorTest', 'relay.ReconnectTest', 'relay.CodeChainTest', 'relay.LinksTest', 'relay.DirectRouteTest', 'relay.RtcSignalTest', 'relay.RtcWayTest', 'relay.WakeTest', 'PhoneRoutesTest', 'ShellWiringTest', 'VolumePairTest', 'PhoneUseAskRuleTest', 'usage.UsageCounterTest') {
     # autark.android: UpdateReleaseTest reads UpdateCheck/SelfUpdate's wiring from the sources.
     & $runtime "-Dautark.android=$root" -cp $classpath "com.teydralab.autark.android.$test"
     if ($LASTEXITCODE -ne 0) { throw "Host test $test failed." }

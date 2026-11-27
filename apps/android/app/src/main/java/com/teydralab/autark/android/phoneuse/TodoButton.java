@@ -159,6 +159,12 @@ final class TodoButton {
     private boolean overBin;
     /** A manual screenshot is on its way. */
     private boolean shooting;
+    /** DotDodge: the app is in front; the resting dot lies at the side as the tab now (stored place untouched); the person
+     *  touched that tab, so the dot stays out until the app has been left. */
+    private boolean appFront;
+    private boolean dodging;
+    private boolean dodgeTouched;
+    private final Runnable dodgeStep = this::settleDodge;
 
     private FrameLayout root;
     private WindowManager.LayoutParams params;
@@ -383,7 +389,44 @@ final class TodoButton {
         params.y = TodoPlace.clamp(place.getInt("y", screen[1] / 3), dp(DOT_DP), screen[1]);
         try { windows.addView(root, params); } catch (RuntimeException error) { root = null; params = null; return; }
         show(asTab ? Look.TAB : Look.DOT);
+        appFront = UseService.appFront();
+        settleDodge();
         BubblePull.changed(service);
+    }
+
+    // ------------------------------------------------------------------ the dot steps aside in the open app (DotDodge)
+
+    /** MainActivity came to the front (the dot goes to the side at once) or left it (the dot returns after DotDodge.LEAVE_MS). Any thread. */
+    void appFront(boolean front) {
+        main.post(() -> {
+            appFront = front;
+            if (!front) dodgeTouched = false; // the next visit of the app starts again
+            main.removeCallbacks(dodgeStep);
+            if (front) settleDodge(); else main.postDelayed(dodgeStep, DotDodge.LEAVE_MS);
+        });
+    }
+
+    /** Something goes on at the dot now (not a resting dot): a drag, a hold, a call, a shot, a send, the AI's bubble or question. */
+    private boolean engaged() {
+        return bin != null || hold.active() || calling != null || shooting || busy || dictation != null || recording != null
+                || dotCheck.getVisibility() == View.VISIBLE || service.agentShows();
+    }
+
+    /** Puts the dot to the side or back as DotDodge says; while the app is in front it looks again every POLL_MS. */
+    private void settleDodge() {
+        main.removeCallbacks(dodgeStep);
+        if (root == null || params == null || closed) return;
+        boolean atRest = dodging || look == Look.DOT;
+        boolean want = DotDodge.docks(appFront, atRest, place.getBoolean("tab", false), engaged(), dodgeTouched);
+        if (want && !dodging) { dodging = true; show(Look.TAB); }
+        else if (!want && dodging) show(Look.DOT); // show() ends the dodge
+        if (appFront) main.postDelayed(dodgeStep, DotDodge.POLL_MS);
+    }
+
+    /** The tab's side: the person's own tab's, else (the dodge) the side the dot's stored place is nearer to. */
+    private boolean tabLeft(int[] screen) {
+        if (dodging) return TodoPlace.left(place.getInt("x", screen[0] - dp(DOT_DP) - dp(8)), dp(DOT_DP), screen[0]);
+        return place.getBoolean("left", false);
     }
 
     /** A window laid out in screen coordinates: the status bar, the navigation bar and a cutout move nothing. */
@@ -409,6 +452,8 @@ final class TodoButton {
         root = null;
         params = null;
         look = Look.DOT;
+        dodging = false;
+        main.removeCallbacks(dodgeStep);
         BubblePull.changed(service);
     }
 
@@ -421,12 +466,13 @@ final class TodoButton {
     private void show(Look next) {
         if (root == null) return;
         look = next;
+        if (next != Look.TAB) dodging = false; // only the dodge itself calls show(TAB) with dodging set
         dot.setVisibility(next == Look.DOT ? View.VISIBLE : View.GONE);
         tab.setVisibility(next == Look.TAB ? View.VISIBLE : View.GONE);
         panel.setVisibility(next == Look.PANEL ? View.VISIBLE : View.GONE);
         int[] screen = screen();
         if (next == Look.TAB) {
-            boolean left = place.getBoolean("left", false);
+            boolean left = tabLeft(screen);
             params.x = TodoPlace.sideX(left, dp(TAB_W_DP), screen[0]);
             params.y = TodoPlace.clamp(place.getInt("y", screen[1] / 3), dp(TAB_H_DP), screen[1]);
         } else if (next == Look.DOT) {
@@ -608,12 +654,17 @@ final class TodoButton {
         view.setBackground(shape);
         view.setAlpha(0.6f);
         view.setContentDescription(german ? "Autark-Aufgabe zeigen" : "Show Autark to-do");
-        view.setOnClickListener((v) -> { place.edit().putBoolean("tab", false).apply(); show(Look.DOT); });
+        view.setOnClickListener((v) -> {
+            if (dodging) { dodgeTouched = true; show(Look.DOT); return; } // the app's dodge: the dot comes back and stays this visit, nothing stored
+            place.edit().putBoolean("tab", false).apply();
+            show(Look.DOT);
+        });
         return view;
     }
 
     private void toTab(boolean left) {
         place.edit().putBoolean("tab", true).putBoolean("left", left).putInt("y", params.y).apply();
+        dodging = false;
         show(Look.TAB);
     }
 
@@ -680,6 +731,7 @@ final class TodoButton {
 
     /** The app's pull: the dot comes out with its middle under the finger (screen px; x < 0: at its last place). */
     void comeOut(int x, int y) {
+        dodgeTouched = true; // pulled out of the open app on purpose: it stays under the finger, not at the side
         SharedPreferences.Editor edit = place.edit().putBoolean(HIDDEN, false).putBoolean("tab", false);
         if (x >= 0) edit.putInt("x", x - dp(DOT_DP) / 2).putInt("y", y - dp(DOT_DP) / 2);
         edit.apply();

@@ -62,6 +62,9 @@ final class UseBubble {
     private final Runnable gone = this::remove;
     private float density;
     private LinearLayout view;
+
+    /** Whether the AI's bubble is on the screen now (main thread): the to-do dot keeps its place then (DotDodge). */
+    boolean showing() { return view != null; }
     private WindowManager.LayoutParams params;
     private TextView line;
     private LinearLayout row;
