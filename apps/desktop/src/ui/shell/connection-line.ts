@@ -61,6 +61,7 @@ export interface ConnectionActions { pairAgain(): unknown }
 /** The away state's words, or null while the connection is open or within the grace. */
 export function awayText(facts: ConnectionFacts): string | null {
   if (facts.status === 'open' || !facts.down) return null;
+  if (!facts.desktop && (facts.refused === 4401 || facts.refused === 4404)) return null; // it needs the person: connectionLine says it
   if (facts.desktop) return facts.loaded ? 'Autark’s engine is not answering · reconnecting by itself' : 'Autark’s engine is starting…';
   const asOf = facts.cachedAt ?? (facts.loaded ? facts.downSince : null);
   return `${facts.pc || 'Your PC'} not reachable · reconnecting by itself${asOf ? ` · as of ${logTime(asOf, facts.now)}` : ''}`;

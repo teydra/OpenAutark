@@ -128,7 +128,7 @@ test('a call on a half-open socket: probed after 4 s without any frame, replaced
 test('a slow answer on a live socket: frames keep coming or the probe answers â€“ the socket stays', async (t) => {
   const { rpc, opened } = await page(t);
   const socket = await opened();
-  const slow = rpc.call('files.read', { path: 'C:/big.mp4' } as never);
+  const slow = rpc.call('messages.list', { conversationId: 'c1', limit: 60 });
   let answered = false;
   void slow.then(() => { answered = true; }, () => undefined);
 
@@ -146,11 +146,33 @@ test('a slow answer on a live socket: frames keep coming or the probe answers â€
   assert.equal(socket.closed, false, 'the probe answered: the socket stays while the calls wait');
   assert.equal(FakeSocket.all.length, 1);
 
-  socket.answer('files.read', { text: 'x' });
+  socket.answer('messages.list', []);
   socket.answer('devices.list', []);
   await flush();
   assert.equal(answered, true);
   await second;
+});
+
+test('a file\'s bytes on a slow link: no probe and no cut under them for up to five silent minutes', async (t) => {
+  const { rpc, opened } = await page(t);
+  const socket = await opened();
+  const big = rpc.call('files.read', { id: 'f1', maxBytes: 8 * 1024 * 1024 });
+  let answered = false;
+  void big.then(() => { answered = true; }, () => undefined);
+  const send = rpc.call('devices.list'); // its answer waits behind the file's frame too
+
+  mock.timers.tick(10_000);
+  assert.equal(socket.probes().length, 0, 'the probe\'s answer would wait behind the file: none is sent');
+  mock.timers.tick(4 * SILENT_MS - 10_001);
+  assert.equal(socket.closed, false, 'still within the file\'s five minutes');
+  socket.answer('files.read', { dataBase64: '', mime: 'image/jpeg' });
+  socket.answer('devices.list', []);
+  await flush();
+  assert.equal(answered, true);
+  await send;
+
+  mock.timers.tick(SILENT_MS);
+  assert.equal(socket.closed, true, 'no file on the way: a silent minute replaces the socket again');
 });
 
 test('a socket that closed leaves no wait behind: the next socket keeps its own minute', async (t) => {

@@ -56,6 +56,7 @@ test('a PC that does not know this phone (4404) or no longer accepts it (4401): 
   assert.equal(text({ refused: 4404, down: false }), 'Office-PC doesn\'t know this phone yet');
   assert.equal(text({ refused: 4401, down: false, status: 'connecting' }), 'Office-PC no longer accepts this phone');
   assert.equal(text({ refused: 4401, chatOpen: true }), 'Office-PC no longer accepts this phone', 'it needs the person: shown in a chat too');
+  assert.equal(awayText(facts({ refused: 4404, chatOpen: true })), null, 'the header never says "reconnecting by itself" for a refusal');
   assert.deepEqual(labels({ refused: 4404, phoneApp: true }), ['Pair again']);
   assert.deepEqual(labels({ refused: 4401, phoneApp: true }), ['Pair again']);
   assert.deepEqual(labels({ refused: 4404 }), [], 'a plain browser');

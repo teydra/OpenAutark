@@ -196,7 +196,10 @@ export function takeNewest(conversationId: string, page: readonly Message[], lim
   const joins = first !== undefined && held.length > 0 && first.seq <= held[held.length - 1].seq;
   const ids = new Set(sorted.map((message) => message.id));
   const kept = whole || !joins ? [] : held.filter((message) => message.seq < first.seq && !ids.has(message.id));
-  list.value = kept.length ? [...kept, ...sorted] : sorted;
+  const top = sorted[sorted.length - 1]?.seq;
+  // a line the open chat heard while the page was on its way is newer than the page: it stays (review 27.11.2026)
+  const newer = top === undefined ? [] : held.filter((message) => message.seq > top && !ids.has(message.id));
+  list.value = kept.length || newer.length ? [...kept, ...sorted, ...newer] : sorted;
   if (whole) historyComplete.add(conversationId);
   else if (!kept.length) historyComplete.delete(conversationId);
   const floor = kept.length ? (pageFloor.get(conversationId) ?? kept[0].seq) : first?.seq;

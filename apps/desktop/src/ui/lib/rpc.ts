@@ -23,7 +23,8 @@
 // runtime/http/keepalive.ts – a page cannot see pings). A call that heard nothing back for ANSWER_QUIET_MS – no frame of
 // any kind since it went out – sends the one probe (3 s for `session.info`), so a half-open socket under a waiting call
 // is replaced within seconds, never minutes; an idle socket that hears nothing for SILENT_MS (shared/api/protocol.ts) is
-// replaced too. The new socket reloads everything (rpc.open). The desktop port reports its own end.
+// replaced too; while a file's bytes are on the way (MOVING) neither cuts before MOVING_LIMIT silent minutes. The new
+// socket reloads everything (rpc.open). The desktop port reports its own end.
 // Owns: framing, request ids, the event fan-out, connection status, the reconnect steps and the socket's liveness checks.
 // Never: holds app state (see store.ts) or retries calls itself (callers decide; effects
 // must never be blindly repeated).
@@ -82,6 +83,15 @@ const OPEN_LIMIT = OPEN_LIMIT_MS;
 /** A call that heard no frame at all for this long since it went out probes the socket (probe: 3 s more for the answer). */
 export const ANSWER_QUIET_MS = 4_000;
 const PROBE_MS = 3_000;
+/**
+ * Calls that carry a file's bytes in one frame (lib/files.ts: a preview up to 8 MB, an upload chunk of 4 MB): on a slow
+ * link that frame takes longer than a probe, and every frame behind it – the probe's answer and the beats – waits too.
+ * While one is out the socket gets up to MOVING_LIMIT silent minutes and is not probed (review 27.11.2026: cutting under it
+ * would reload, ask again and cut again).
+ */
+const MOVING = new Set<string>(['files.read', 'files.upload', 'files.uploadChunk']);
+const MOVING_LIMIT = 5;
+const moving = (): boolean => [...pending.values()].some((call) => MOVING.has(call.method));
 /** A pending call's error when the connection went away under it (the status line says the rest, never as a line of its own). */
 export const LOST_TEXT = LOST;
 /** A queued call's error after QUEUE_LIMIT_MS without a connection (also never a line of its own: rpc-error.ts connectionFailure). */
@@ -125,7 +135,7 @@ function onOpen(next: Transport): void {
 function watchAnswer(id: number): void {
   if (bridge) return;
   const seen = frames;
-  setTimeout(() => { if (pending.has(id) && frames === seen && status.peek() === 'open' && !probing) probe(); }, ANSWER_QUIET_MS);
+  setTimeout(() => { if (pending.has(id) && frames === seen && status.peek() === 'open' && !probing && !moving()) probe(); }, ANSWER_QUIET_MS);
 }
 
 function onClosed(): void {
@@ -167,10 +177,18 @@ function connectSocket(): Promise<void> {
     const hosted = hostedShell();
     const socket = hosted ? (hosted.socket('/ws') as unknown as WebSocket) : new WebSocket(`${scheme}://${location.host}/ws`);
     let silent: ReturnType<typeof setTimeout> | undefined;
-    /** Heard from the PC (or just opened): the silence wait starts over; SILENT_MS without a frame replaces the socket. */
+    let waits = 0; // silent minutes in a row a file's bytes were given (MOVING)
+    /** SILENT_MS without a frame replaces the socket – unless a file's bytes are on the way: up to MOVING_LIMIT minutes. */
+    const quiet = () => {
+      if (transport !== next) return;
+      if (moving() && ++waits < MOVING_LIMIT) silent = setTimeout(quiet, SILENT_MS);
+      else reconnectNow();
+    };
+    /** Heard from the PC (or just opened): the silence wait starts over. */
     const heard = () => {
+      waits = 0;
       clearTimeout(silent);
-      silent = setTimeout(() => { if (transport === next) reconnectNow(); }, SILENT_MS);
+      silent = setTimeout(quiet, SILENT_MS);
     };
     const next: Transport = { send: (frame) => socket.send(JSON.stringify(frame)), close: () => { clearTimeout(silent); socket.onmessage = null; socket.close(); } };
     let opened = false;

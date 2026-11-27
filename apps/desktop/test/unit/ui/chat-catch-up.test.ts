@@ -88,4 +88,8 @@ test('the open load fills in behind: shown lines never blank, older loaded pages
 
   takeNewest('cv_d', [21, 22].map((seq) => line('cv_d', seq)), 3);
   assert.deepEqual(list.value.map((message) => message.seq), [21, 22], 'a short page is the whole chat (line 20 was deleted)');
+
+  list.value = [21, 22, 23].map((seq) => line('cv_d', seq)); // 23 came by its event while the load was on its way
+  takeNewest('cv_d', [20, 21, 22].map((seq) => line('cv_d', seq)), 3);
+  assert.deepEqual(list.value.map((message) => message.seq), [20, 21, 22, 23], 'a line newer than the page stays');
 });
