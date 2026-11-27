@@ -7,6 +7,7 @@
 
 import type { Task } from '../../shared/model/tasks.ts';
 import { Icon } from '../lib/ui.tsx';
+import { notLoaded } from '../shell/connection-line.ts';
 import { doneToday, forYou } from './page-model.ts';
 import { doneOpen, otherOnly, toggle, type PageScope } from './page-state.ts';
 import { TodoRow } from './TodoRow.tsx';
@@ -33,10 +34,11 @@ export function ForYou(props: ForYouProps) {
     return <TodoRow key={task.id} task={task} scope={props.scope} quest={quest?.kind === 'quest' ? quest : undefined} now={now} selected={props.selected === task.id} />;
   };
   const count = lists.now.length + lists.later.length;
+  const waiting = notLoaded.value; // nothing was ever loaded: no count, no "Nothing for you here" (shell/connection-line.ts)
   return (
     <>
       <h3 class="tasks-sec">
-        For you <span class="tabular">{count}</span>
+        For you {waiting === null && <span class="tabular">{count}</span>}
         {otherOnly.value && (
           <span class="tasks-sec-filter">· Other<button type="button" class="task-chip-x" aria-label="Show all" title="Show all" onClick={() => { otherOnly.value = false; }}>×</button></span>
         )}
@@ -45,10 +47,10 @@ export function ForYou(props: ForYouProps) {
         {lists.now.map(row)}
         {lists.later.length > 0 && <li class="tasks-sec later" aria-hidden="true">Later</li>}
         {lists.later.map(row)}
-        {!count && <li class="tasks-empty">Nothing for you here.</li>}
+        {!count && <li class="tasks-empty">{waiting ?? 'Nothing for you here.'}</li>}
       </ul>
       <button type="button" class={`tasks-fold${doneOpen.value ? ' open' : ''}`} aria-expanded={doneOpen.value} onClick={() => toggle(doneOpen)}>
-        <Icon name="caret-right" size={14} />Done today ({done.length})
+        <Icon name="caret-right" size={14} />Done today{waiting === null && ` (${done.length})`}
       </button>
       {doneOpen.value && <ul class="todo-rows" aria-label="Done today">{done.map(row)}</ul>}
     </>
