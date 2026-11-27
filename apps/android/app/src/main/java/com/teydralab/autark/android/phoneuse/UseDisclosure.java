@@ -1,10 +1,13 @@
 // Owns: the prominent disclosure screen for phone use – shown inside the app before Android's Accessibility settings are
 // opened (the enable notification and a service the person switched on by hand both lead here first). "Agree and continue"
 // stores the agreement (UseConsent) and opens Accessibility settings; "Not now" stores nothing, and if the service is
-// already on it is switched off again. Wording: DisclosureText. Never: opens settings without the tap, or reads anything.
+// already on it is switched off again. Someone who agreed before (the service off again, e.g. the app's pull) goes
+// straight on to the settings with a toast that says what to switch there (S9 check 27.11.2026: no silent jump).
+// Wording: DisclosureText. Never: opens settings without the tap, or reads anything.
 package com.teydralab.autark.android.phoneuse;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -14,13 +17,20 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import java.util.Locale;
 
 public final class UseDisclosure extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (UseConsent.agreed(this)) { openSettings(); finish(); return; }
         boolean german = UiLang.german(this);
+        if (UseConsent.agreed(this)) { // agreed before, the service is off: settings with one line of what to do there
+            String section = DisclosureText.section(german, android.os.Build.MANUFACTURER, android.os.Build.VERSION.SDK_INT);
+            Toast.makeText(getApplicationContext(), DisclosureText.turnOn(german, section), Toast.LENGTH_LONG).show();
+            openSettings();
+            finish();
+            return;
+        }
         float density = getResources().getDisplayMetrics().density;
         int pad = (int) (20 * density);
         LinearLayout column = new LinearLayout(this);
@@ -65,7 +75,15 @@ public final class UseDisclosure extends Activity {
         setContentView(scroll);
     }
 
+    /** Accessibility settings, asked to scroll to and mark Autark's row (the keys Android's Settings app reads for a
+     *  search hit; one that does not know them just opens the list). */
     private void openSettings() {
-        try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); } catch (RuntimeException error) { /* no settings screen */ }
+        String row = new ComponentName(this, UseService.class).flattenToString();
+        Bundle args = new Bundle();
+        args.putString(":settings:fragment_args_key", row);
+        Intent settings = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .putExtra(":settings:fragment_args_key", row)
+                .putExtra(":settings:show_fragment_args", args);
+        try { startActivity(settings); } catch (RuntimeException error) { /* no settings screen */ }
     }
 }

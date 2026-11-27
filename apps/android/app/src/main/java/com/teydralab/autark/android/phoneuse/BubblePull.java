@@ -2,7 +2,8 @@
 // – the round icon left of the title in the app's top row, ui/pwa/bubble-handle.tsx): the page's pull, its moves and its
 // drop (NativePort, screen px) bring the bubble out under the finger and let it follow (TodoButton.comeOut / follow);
 // while the bubble is out a pull does nothing (one bubble). Phone use off (the service not running, the disclosure not
-// agreed): the pull opens the way to turn it on (UseDisclosure, which goes on to Android's Accessibility settings); a
+// agreed): the pull opens the way to turn it on (UseDisclosure, which goes on to Android's Accessibility settings –
+// agreed before, straight there with a toast that says what to switch; never a silent jump); a
 // build without phone use offers its phone-use build (PhoneUseUpgrade). The page hears the state – whether this build
 // has phone use at all, whether the bubble is out – through the one listener (NativePort: 'bubble.state').
 // Never: turns phone use on by itself, or keeps any state but whether the current gesture brought the bubble out.

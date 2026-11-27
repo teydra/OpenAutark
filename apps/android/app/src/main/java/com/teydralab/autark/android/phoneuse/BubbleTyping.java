@@ -120,12 +120,23 @@ public final class BubbleTyping extends Activity {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
             @Override public void afterTextChanged(Editable now) { if (field != null) field.typed(now.toString()); }
         });
+        // The window lies under the status bar, so Android insets its content by the bar: the field came out 1×0, a view
+        // without size loses its focus (Android 9+), and the keyboard never came (S9, Android 10, 27.11.2026: ic=null at
+        // the window's focus). The window shows nothing, so its content takes no system insets and the field keeps 1×1.
+        window.getDecorView().setOnApplyWindowInsetsListener((decor, insets) -> decor.onApplyWindowInsets(insets.replaceSystemWindowInsets(0, 0, 0, 0)));
         setContentView(input);
+        input.requestFocus();
+    }
+
+    /** The keyboard is asked for once the window has the focus: asked before, Android drops it (the field is not served yet). */
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
         EditText shown = input;
-        shown.requestFocus();
+        if (!focused || shown == null) return;
+        if (!shown.isFocused()) shown.requestFocus();
         shown.post(() -> {
             InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (keyboard != null) keyboard.showSoftInput(shown, 0);
+            if (keyboard != null && input == shown) keyboard.showSoftInput(shown, 0);
         });
     }
 
