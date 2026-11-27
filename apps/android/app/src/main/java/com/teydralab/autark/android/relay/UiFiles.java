@@ -6,7 +6,8 @@
 // navigation path without an extension, 404 for any other missing file. /sw.js is the one piece for what an older
 // version left on the phone: the PC-served page registered a service worker that keeps answering its cached interface;
 // this one deletes every cache, unregisters itself and loads the open pages once more (only when it found a cache).
-// It goes in the release after 0.3.22 – by then every phone has run it once.
+// It goes in the release after 0.3.22 – by then every phone has run it once. A document request tells the source that a
+// page starts (UiUpdate then gives that page the newest ready interface list; the running page keeps its own).
 // Never: reads outside its source (no dotfiles, no '..'), answers a data path, or waits for a PC.
 package com.teydralab.autark.android.relay;
 
@@ -21,7 +22,11 @@ import java.util.regex.Pattern;
 
 public final class UiFiles {
     /** The interface's files by path below it ("index.html", "chunks/x-ABCDEFGH.js"); null when there is no such file. */
-    public interface Source { byte[] read(String path) throws IOException; }
+    public interface Source {
+        byte[] read(String path) throws IOException;
+        /** A page starts (a document request): UiUpdate gives it the newest ready list from here on. */
+        default void pageStarts() {}
+    }
 
     /** First path segments that are the PC's (runtime/http/server.ts and static.ts's /turn/): they go through a channel. */
     static final Pattern DATA = Pattern.compile("^/(?:ws|rpc|events|mcp|files|sandbox|turn|peer|\\.well-known)(?:/|$)");
@@ -77,8 +82,15 @@ public final class UiFiles {
         String[] line = head.substring(0, head.indexOf("\r\n")).split(" ");
         String path = path(line[1]);
         String file = path.equals("/") ? "index.html" : path.startsWith("/") ? path.substring(1) : "";
+        // A page starts with its document request (Sec-Fetch-Dest: document; without that header, a request for the shell).
+        String dest = header(head, "sec-fetch-dest");
+        if (dest == null ? file.equals("index.html") : dest.equalsIgnoreCase("document")) source.pageStarts();
         byte[] body = file.equals("sw.js") ? RETIRE_WORKER.getBytes(StandardCharsets.UTF_8) : safe(file) ? source.read(file) : null;
-        if (body == null && safe(file) && !file.substring(file.lastIndexOf('/') + 1).contains(".")) { file = "index.html"; body = source.read(file); }
+        if (body == null && safe(file) && !file.substring(file.lastIndexOf('/') + 1).contains(".")) {
+            if (dest == null) source.pageStarts();
+            file = "index.html";
+            body = source.read(file);
+        }
         StringBuilder reply = new StringBuilder();
         if (body == null) {
             body = "Not found.".getBytes(StandardCharsets.UTF_8);
@@ -91,6 +103,15 @@ public final class UiFiles {
         out.write(reply.toString().getBytes(StandardCharsets.US_ASCII));
         if (line[0].equals("GET")) out.write(body);
         out.flush();
+    }
+
+    /** The value of header `name` (lower case) in a request head, or null. */
+    static String header(String head, String name) {
+        for (String line : head.split("\r\n")) {
+            int colon = line.indexOf(':');
+            if (colon > 0 && line.substring(0, colon).trim().toLowerCase(Locale.ROOT).equals(name)) return line.substring(colon + 1).trim();
+        }
+        return null;
     }
 
     /** The decoded path of a request target, without query or fragment; "" when it cannot be decoded. */

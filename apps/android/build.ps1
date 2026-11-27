@@ -6,8 +6,9 @@
 # bundles are the play flavor (neither – Play updates them). Every build first bundles the feedback video page
 # (16.11.2026 F15: apps/desktop/scripts/tour-page.mjs, esbuild as the desktop build) into app/build/generated/tour/tour.html,
 # which the APK carries as assets/tour.html (app/build.gradle), and the interface (owner 27.11.2026: apps/desktop's
-# `node scripts/build.mjs --only ui`, its app/ui copied to app/build/generated/ui/ui, carried as assets/ui/); a release
-# APK without either fails. Never: installs,
+# `node scripts/build.mjs --only ui`, its app/ui copied to app/build/generated/ui/ui with its list ui.json from
+# scripts/ui-list.mjs, carried as assets/ui/); a release APK without either fails. A newer interface is published apart,
+# file by file, with apps/desktop's `node scripts/ui-publish.mjs --key <ui-key.pem>` (README). Never: installs,
 # publishes or restarts Autark, or prints or stores the key's password.
 param(
     [switch]$Release,
@@ -58,6 +59,11 @@ try {
     if (Test-Path -LiteralPath $uiAssets) { Remove-Item -LiteralPath $uiAssets -Recurse -Force }
     [IO.Directory]::CreateDirectory($uiAssets) | Out-Null
     Copy-Item -LiteralPath $uiBuilt -Destination (Join-Path $uiAssets 'ui') -Recurse
+    # Its list (owner 27.11.2026, relay/UiUpdate): ui.json with every file's sha256, so a later interface is fetched file by
+    # file and only what changed; the APK's own list needs no signature (the APK's is enough).
+    $list = Invoke-Native 'node' @((Join-Path $desktop 'scripts/ui-list.mjs'), (Join-Path $uiAssets 'ui'))
+    $list.output | ForEach-Object { $_ }
+    if ($list.code -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $uiAssets 'ui/ui.json') -PathType Leaf)) { throw 'The interface list (assets/ui/ui.json) was not written.' }
     $gradle = Join-Path $root 'gradlew.bat'
     if (-not (Test-Path -LiteralPath $gradle -PathType Leaf)) { throw 'Gradle wrapper is missing.' }
     $signer = Join-Path $env:ANDROID_HOME 'build-tools/36.0.0/apksigner.bat'
@@ -100,10 +106,10 @@ try {
             $zip = [IO.Compression.ZipFile]::OpenRead($apkFile)
             try {
                 $hasTour = @($zip.Entries | Where-Object { $_.FullName -eq 'assets/tour.html' }).Count -gt 0
-                $hasUi = @($zip.Entries | Where-Object { $_.FullName -eq 'assets/ui/index.html' }).Count -gt 0
+                $hasUi = @($zip.Entries | Where-Object { $_.FullName -eq 'assets/ui/index.html' -or $_.FullName -eq 'assets/ui/ui.json' }).Count -eq 2
             } finally { $zip.Dispose() }
             if (-not $hasTour) { throw "$apkFile lacks assets/tour.html (the feedback video)." }
-            if (-not $hasUi) { throw "$apkFile lacks assets/ui/index.html (the app's own interface)." }
+            if (-not $hasUi) { throw "$apkFile lacks assets/ui/index.html or its list ui.json (the app's own interface)." }
         }
         $check = Invoke-Native $signer @('verify', '--verbose', '--print-certs', $built)
         $check.output | ForEach-Object { $_ }

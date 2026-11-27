@@ -62,8 +62,10 @@ public final class ShellWiringTest {
         check(main.contains("catch (IOException error) { entranceClosed(error.getMessage()); return; }") && main.contains("if (!paused && link == null && paired != null) open(paired);"), "a taken port shows the screen, whose retry opens the company again");
         String navigation = source("PhoneNavigation.java");
         check(!navigation.contains("offline") && !navigation.contains("onReceivedHttpError") && !main.contains("offline("), "a page load never swaps the page for a native screen");
-        check(!main.contains("version()") && !main.contains("web.reload()") && main.contains("@Override public void linked() { on(shown -> shown.port.resume()); }"), "another PC or its version never reloads the page; it hears resume");
-        check(link.contains("assets.open(\"ui/\" + path)") && link.contains("connection.start(port, gate, interfaceOf(app))"), "the entrance answers the interface from the APK's assets/ui");
+        String reload = "optional(() -> { if (pageUp && !setup && !voiceLive && PhoneUi.store(this).reloadDue()) web.reload(); PhoneUi.resumed(this); });";
+        check(!main.contains("version()") && main.indexOf("web.reload()") == main.indexOf(reload) + reload.indexOf("web.reload()") && main.indexOf("web.reload()") == main.lastIndexOf("web.reload()")
+                && main.contains("@Override public void linked() { on(shown -> shown.port.resume()); }"), "another PC or its version never reloads the page (it hears resume); only a newer interface does, on return, voice not live");
+        check(source("PhoneUi.java").contains("assets.open(\"ui/\" + path)") && link.contains("connection.start(port, gate, new UiFiles(PhoneUi.store(app)))"), "the entrance answers the interface from the app's store over the APK's assets/ui");
         check(main.contains("link.connection.front(true)") && main.contains("link.connection.front(false)"), "the link hears whether the app is in front");
         String web = source("PhoneWeb.java");
         check(web.contains("\" AutarkAndroid/\" + UpdateCheck.installedName(activity) + device()") && web.contains("\" (Android \" + release"), "the user agent names Android and the device");

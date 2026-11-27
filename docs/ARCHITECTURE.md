@@ -2179,7 +2179,40 @@ or as employee; one row per device with right-click Rename and Remove (a PC behi
   counts as open only for a PC at least that old – an older one gets nothing else, the quiet state says "Update Autark on
   <PC>" (`shell/connection-line.ts`), the phone app hears `refused` and moves to the company's next PC, and it is asked
   again every 10 s. The constant goes up in the change that makes the interface need something newer of a PC; there is
-  no path for older versions. **Back on screen at once** (B-077, `ui/lib/rpc.ts` `checkAlive`): when the page becomes
+  no path for older versions.
+  **The interface updates file by file** (owner 27.11.2026: an app update fetches only the files that changed, the
+  others stay; the rules both phone apps follow – Android `relay/UiUpdate.java` + `PhoneUi.java`, the iPhone app the
+  same in Swift). *The list* (`apps/desktop/scripts/ui-list.mjs`): `ui.json` beside a built `app/ui`, compact JSON
+  `{"n":<int>,"shell":<int>,"needs":"<version>","files":{"<path>":{"sha256":"<64 lower-case hex>","bytes":<int>}}}`,
+  paths posix below the interface, without `ui.json`, `ui.json.sig` and dot-led names. `n` is the build time in whole
+  seconds since 1970 (it only grows); `shell` is `SHELL` of `ui/pwa/native-port.ts`, the lowest bridge number of the
+  app the interface needs (today 1); `needs` is `OLDEST_PC` (information; the page checks its PC itself).
+  `ui.json.sig` is the raw 64-byte Ed25519 signature over the exact bytes of `ui.json`, made with the interface key
+  (`apps/android/new-ui-key.ps1`: private half `%USERPROFILE%\.autark-release\ui\ui-key.pem` beside the release key,
+  public half as base64url of its raw 32 bytes in each app's constant – Android `UiUpdate.PUBLIC_KEY`). Each app carries
+  its own interface with its unsigned list (Android `assets/ui/` and `assets/ui/ui.json`, `build.ps1`), which is trusted
+  as part of the signed app. *The place*: the pre-release `phone-ui` of `teydra/OpenAutark` (never the latest release),
+  `https://github.com/teydra/OpenAutark/releases/download/phone-ui/` + `ui.json`, `ui.json.sig` and each file under its
+  sha256 as the name; `node scripts/ui-publish.mjs --key <ui-key.pem>` in `apps/desktop` builds the interface, writes and
+  signs the list, uploads only the sha256 names the release lacks, then the signature and the list, then removes the
+  names the list no longer has (a phone mid-fetch of an older list fails and takes the new one at its next look).
+  *The app's rules*: (1) On return to the app, at most once a minute (and at once when the clock went back), with a
+  non-empty public key: read `ui.json` (at most 1 MB) and `ui.json.sig`; take the list only when the signature verifies,
+  it parses (`index.html` among the files; every path safe – no empty, `.`-led or backslashed segment; sha256 64 lower-case
+  hex; each file at most 32 MB, all at most 128 MB), `n` is above the newest list the app has (its own or a ready
+  fetched one) and `shell` is at most the app's own number (Android `UiUpdate.SHELL`, 1). With no public key the app
+  never looks and runs its own interface. (2) Fetch only files whose sha256 the app has neither in its own interface nor
+  among the files it fetched before; each goes to `<sha256>.part`, and only exactly the announced size with the announced
+  sha256 becomes `<sha256>` in the app's private files (`files/ui/blobs` on Android). (3) When every file of the list is
+  there, write the list (`files/ui/lists/<n>.json`): it is ready. Anything else – no network, a cut fetch, a wrong
+  signature, size or hash – changes nothing; files already checked stay for the next look. (4) Which list answers: a page
+  starts with its document request (`Sec-Fetch-Dest: document`; without that header, a request for the shell) and gets
+  the newest ready list from then on; requests in between get the list their page started with, so a running page never
+  mixes two builds. A path is answered from `<sha256>` in the app's files, else from the app's own file with that sha256.
+  (5) With a newer ready list whose files differ, the app loads the page anew at the next return to the app – not while
+  the page's voice is live (Android `MainActivity`: `voiceLive`; then at a later return). (6) Lists other than the running
+  page's and the newest ready one are removed, and so are the fetched files neither names; an app update whose own list
+  has a higher `n` makes every fetched list and file go. **Back on screen at once** (B-077, `ui/lib/rpc.ts` `checkAlive`): when the page becomes
   visible, is shown again (`pageshow`), the network returns or a push arrives (`wf.wake` from the service worker), a
   closed socket reconnects at once and an open one is asked `session.info`; no answer within 3 s ends it as dead and a
   new one opens – its `onOpen` reloads chats, tasks and the open chat (a socket a sleeping phone kept "open" stopped all
