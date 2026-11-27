@@ -19,10 +19,11 @@ function actions() {
   return { done, actions: { answer: (chat: string, call: string, join?: boolean) => done.push(`${join ? 'join' : 'answer'} ${chat} ${call}`), decline: (call: string) => done.push(`decline ${call}`), open: (chat: string) => done.push(`open ${chat}`) } };
 }
 
-test('a ring: "<Agent> calls · <why>" with Accept (primary, opens its chat first) and Decline, above the voice lines', async () => {
+test('a ring: "<Agent> calls · AI voice (machine-generated) · <why>" with Accept (primary, opens its chat first) and Decline, above the voice lines', async () => {
   const { done, actions: run } = actions();
   const [notice] = callNotices([ring], { now: NOW, open: 'ch_other', talking: () => false }, run);
-  assert.equal(notice.text, 'Ava calls · Logo decision');
+  assert.equal(notice.text, 'Ava calls · AI voice (machine-generated) · Logo decision', 'Konrad 27.11.2026: the voice is said to be machine-generated');
+  assert.equal(callNotices([{ ...ring, why: undefined }], { now: NOW, open: 'ch_other', talking: () => false }, run)[0].text, 'Ava calls · AI voice (machine-generated)');
   assert.equal(notice.priority, NOTICE_PRIORITY.ring);
   assert.ok(NOTICE_PRIORITY.ring > NOTICE_PRIORITY.voice);
   assert.deepEqual(notice.actions?.map((action) => [action.label, action.primary ?? false]), [['Accept', true], ['Decline', false]]);
@@ -55,7 +56,7 @@ test('nothing for a call this device talks in or a ring whose time is over; at m
   const talkingHere = (id: string) => id === 'ch_a' || id === 'ch_b';
   assert.deepEqual(callNotices([ring, running], { now: NOW, open: null, talking: talkingHere }, actions().actions), []);
   assert.deepEqual(ringingHere([ring], { now: NOW + 30_000, talking: () => false }), [], 'rang out');
-  assert.deepEqual(callNotices([{ ...ring, why: undefined, agentName: undefined }], { now: NOW, open: null, talking: () => false }, actions().actions).map((notice) => notice.text), ['An agent calls']);
+  assert.deepEqual(callNotices([{ ...ring, why: undefined, agentName: undefined }], { now: NOW, open: null, talking: () => false }, actions().actions).map((notice) => notice.text), ['An agent calls · AI voice (machine-generated)']);
   for (const notice of callNotices([ring, running], { now: NOW, open: null, talking: () => false }, actions().actions)) assert.ok((notice.actions?.length ?? 0) <= MAX_NOTICE_ACTIONS);
 });
 

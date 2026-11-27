@@ -167,8 +167,23 @@ export function localSpeechModel(id: string | undefined, purpose?: LocalSpeechPu
   return found && (!purpose || found.purpose === purpose) ? found : undefined;
 }
 
+/**
+ * Call speed 27.11.2026 (Noah's measure on teydra-server: the local voice is most of the ~6 s from the person's last word to
+ * the first sound): `settings.voice.localTtsSteps`, the steps the local voice takes for each piece it reads aloud
+ * (voice.speak). 3 is about 1 s sooner per sentence, 6 the finer sound; voices without such steps ignore it.
+ */
+export const TTS_STEPS = [3, 6] as const;
+export type TtsSteps = (typeof TTS_STEPS)[number];
+/** The steps while `voice.localTtsSteps` is unset (Konrad 27.11.2026: 6 until the 3-step sample was heard) – the one line for the default. */
+export const DEFAULT_TTS_STEPS: TtsSteps = 6;
+
+/** The steps a setting's value means: 3 or 6, anything else (unset, an old file) the default. */
+export function ttsSteps(value: unknown): TtsSteps {
+  return (TTS_STEPS as readonly unknown[]).includes(value) ? value as TtsSteps : DEFAULT_TTS_STEPS;
+}
+
 /** The ids `settings.voice.localStt` / `localTts` accept besides '' (validate.ts). */
-export const localSpeechIds = (purpose: LocalSpeechPurpose): string[] => LOCAL_SPEECH_MODELS.filter((entry) => entry.purpose === purpose).map((entry) => entry.id);
+export const localSpeechIds =(purpose: LocalSpeechPurpose): string[] => LOCAL_SPEECH_MODELS.filter((entry) => entry.purpose === purpose).map((entry) => entry.id);
 
 /** This PC as the fit sees it (memory in MB). */
 export interface SpeechHardware { totalRamMb: number; freeRamMb: number; cpuCores: number }
