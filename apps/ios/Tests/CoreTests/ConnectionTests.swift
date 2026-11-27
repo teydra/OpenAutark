@@ -250,6 +250,9 @@ final class PairingAndConnectionTests: XCTestCase {
         let (connection, statuses, _) = try connect(w, paired: paired)
         defer { connection.stop() }
         eventually(10, "connected") { statuses.value.contains("+Connected to Studio PC.") }
+        // the page's first channel is up at once now; its PC-list request (traffic the probe would count as life) is answered before the link "dies"
+        eventually(5, "the PC list was asked and answered") { (w.relay.streams.first?.phonePcsAsked ?? 0) >= 1 }
+        Thread.sleep(forTimeInterval: 0.5)
         // the server connection died silently (airplane mode): it never answers a ping
         w.relay.lastSocket?.answerPings = false
         let before = w.relay.helloCount
