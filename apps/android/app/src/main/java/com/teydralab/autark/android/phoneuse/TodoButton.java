@@ -1404,6 +1404,9 @@ final class TodoButton {
         return picture;
     }
 
+    /** Below the words for the agent when the phone cannot take a screenshot (Android 10 or older). English: the agent's line. */
+    static final String NO_SHOT_NOTE = "\n\n(Sent from the bubble on Android 10 or older: no screenshot of the page is possible there.)";
+
     private TodoPost.Shot requiredPicture(FutureTask<TodoPost.Shot> picture) throws Failed, InterruptedException {
         if (picture != null) {
             try {
@@ -1413,7 +1416,9 @@ final class TodoButton {
                 android.util.Log.w("autark", "to-do send screenshot failed: " + error.getCause().getClass().getName());
             }
         }
-        if (Build.VERSION.SDK_INT < 30) throw new Failed(german ? "Nicht gesendet – Screenshots brauchen Android 11 oder neuer." : "Not sent – screenshots require Android 11 or later.");
+        // Android 8–10 (minSdk 26) cannot take a screenshot at all: the words go out without one and say so (deliver),
+        // instead of a bubble that never sends there (Felix, S9 on Android 10, 27.11.2026).
+        if (Build.VERSION.SDK_INT < 30) return null;
         throw new Failed(german ? "Nicht gesendet – kein Screenshot möglich. Prüfe die Bildschirmfreigabe für Autark und tippe erneut auf Senden."
                 : "Not sent – no screenshot available. Check Autark’s screen access and tap Send again.");
     }
@@ -1631,6 +1636,7 @@ final class TodoButton {
         List<String[]> attachments = upload(link, from.shotsWith(currentPage));
         attachments.addAll(uploadFiles(link, from.files()));
         String body = BubbleLock.body(text, BubbleLock.noted(choice, wasLocked));
+        if (currentPage == null && Build.VERSION.SDK_INT < 30) body = body + NO_SHOT_NOTE;
         Object sent = answer(link, "messages.send", BubbleChat.send(target[0], body, attachments, from.clientId(), false));
         if (BubbleChat.messageId(sent) == null) throw new Failed(german ? "Der PC hat die Nachricht nicht angenommen." : "The PC did not take the message.");
         return new String[] { target[0], target[1], agentName(link, target[1]) };
