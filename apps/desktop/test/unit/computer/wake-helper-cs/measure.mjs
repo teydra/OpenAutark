@@ -25,7 +25,9 @@ const fake = args.includes('--fake');
 const realRelay = option('relay', 'wss://telecoding-relay.onrender.com/autark');
 const minutes = Number(option('minutes', '5'));
 const out = option('out');
-const extraEnv = Object.fromEntries(args.flatMap((value, at) => (value === '--env' && args[at + 1]?.includes('=') ? [args[at + 1].split(/=(.*)/s).slice(0, 2)] : [])));
+// like production (broker supervisor and sleeper.ts start the helper with these two GC settings); `--plain` starts it without
+const gcEnv = args.includes('--plain') ? {} : { COMPlus_gcConcurrent: '0', COMPlus_GCgen0size: '100000' };
+const extraEnv = { ...gcEnv, ...Object.fromEntries(args.flatMap((value, at) => (value === '--env' && args[at + 1]?.includes('=') ? [args[at + 1].split(/=(.*)/s).slice(0, 2)] : []))) };
 if (!exe && !attach) { console.error('usage: node measure.mjs --exe <AutarkWakeHelper.exe> | --pid <pid> [--relay wss://… | --fake] [--minutes 5] [--env NAME=VALUE] [--out file.json]'); process.exit(2); }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..'); // apps/desktop

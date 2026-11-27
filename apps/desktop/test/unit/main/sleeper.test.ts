@@ -91,6 +91,8 @@ test('the slim native helper (0.3.22): Windows only, unpacked beside the broker,
   assert.equal(calls[0].exe, helper);
   assert.deepEqual(calls[0].args, [path.join(dataDir, WAKE_FILE), '--app', 'C:\\Autark.exe', '--', '--company=co_1']);
   assert.equal(calls[0].options.env?.ELECTRON_RUN_AS_NODE, undefined, 'the app a wake starts must not inherit Node mode');
+  assert.equal(calls[0].options.env?.COMPlus_gcConcurrent, '0', 'plain GC: no background thread');
+  assert.equal(calls[0].options.env?.COMPlus_GCgen0size, '100000', 'a 1 MB youngest generation (hex)');
   assert.equal(calls[0].options.detached, true);
   // refused or damaged (Smart App Control, missing runtime): the Node helper starts instead
   calls[0].child.emit('error', new Error('spawn UNKNOWN'));

@@ -1288,6 +1288,9 @@ namespace AutarkWake
                 info.UseShellExecute = false;
                 info.WorkingDirectory = Path.GetDirectoryName(appExe);
                 info.EnvironmentVariables.Remove("ELECTRON_RUN_AS_NODE"); // the app starts as the app
+                // the helper's own GC settings (set by whoever started it) are not the app's: its .NET children (PowerShell …) keep their defaults
+                if (info.EnvironmentVariables["COMPlus_gcConcurrent"] == "0") info.EnvironmentVariables.Remove("COMPlus_gcConcurrent");
+                if (info.EnvironmentVariables["COMPlus_GCgen0size"] == "100000") info.EnvironmentVariables.Remove("COMPlus_GCgen0size");
                 Process.Start(info).Dispose();
             }
             catch (Exception e) { Log("app launch failed: " + e.GetType().Name); }
@@ -1305,18 +1308,9 @@ namespace AutarkWake
 
         public static int Main(string[] argv)
         {
-            if (Environment.GetEnvironmentVariable("WAKE_TRACE_LOADS") == "1")
-                AppDomain.CurrentDomain.AssemblyLoad += delegate(object s, AssemblyLoadEventArgs a)
-                {
-                    StackTrace trace = new StackTrace(1, false);
-                    StringBuilder sb = new StringBuilder("LOAD " + a.LoadedAssembly.GetName().Name + " <-");
-                    for (int i = 0; i < trace.FrameCount && i < 14; i++) { System.Reflection.MethodBase m = trace.GetFrame(i).GetMethod(); sb.Append(" " + (m.DeclaringType != null ? m.DeclaringType.Name : "") + "." + m.Name); }
-                    if (dir == "") pendingLoads.Add(sb.ToString()); else Log(sb.ToString());
-                };
             try { return Run(argv); }
             catch (Exception e) { Log("failed: " + e.GetType().Name); return 1; }
         }
-        static readonly List<string> pendingLoads = new List<string>();
 
         static int Run(string[] argv)
         {
@@ -1328,7 +1322,6 @@ namespace AutarkWake
             }
             if (file.Length == 0 || !Path.IsPathRooted(file)) return 0;
             dir = Path.GetDirectoryName(Path.GetFullPath(file));
-            foreach (string pending in pendingLoads) Log(pending);
             ownImage = Path.GetFileName(Process.GetCurrentProcess().MainModule.FileName);
             startedAt = NowMs();
             WakeFile wake = WakeRules.Parse(Read(Path.GetFileName(file)));

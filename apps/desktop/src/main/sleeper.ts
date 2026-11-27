@@ -83,6 +83,9 @@ function startNative(input: SleeperStart, helper: string, wakeFile: string): boo
   try {
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
+    // memory: a plain GC and a 1 MB youngest generation (hex) – about 4 MB less private memory (the helper removes both again from the app it starts; the broker sets the same pair)
+    env.COMPlus_gcConcurrent = '0';
+    env.COMPlus_GCgen0size = '100000';
     const child = (input.spawn ?? spawnChild)(helper, [wakeFile, '--app', input.exe, '--', ...input.args], { detached: true, stdio: 'ignore', windowsHide: true, env });
     child.on('error', (error) => {
       input.log?.(`native wake helper did not start: ${error.message}`);

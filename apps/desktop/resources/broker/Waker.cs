@@ -355,7 +355,13 @@ namespace AutarkBroker
         /// "K=V" entries -> a UTF-16 block "K=V\0K=V\0\0", sorted by name like Windows does; an existing ELECTRON_RUN_AS_NODE is replaced.
         public static string Build(IEnumerable<string> entries) { return Build(entries, true); }
 
-        /// `runAsNode` false (the native helper): no ELECTRON_RUN_AS_NODE at all – the app the helper starts must not inherit it.
+        /// The native helper's memory settings for the .NET runtime (WakeHelper.cs removes them again from the app it starts): a plain
+        /// GC without the background thread and a 1 MB youngest generation (hex) instead of a size taken from the CPU cache – about
+        /// 4 MB less private memory. The same pair is set where the app starts the helper itself (sleeper.ts).
+        public const string GcConcurrent = "COMPlus_gcConcurrent", GcConcurrentValue = "0", GcGen0Size = "COMPlus_GCgen0size", GcGen0SizeValue = "100000";
+
+        /// `runAsNode` false (the native helper): no ELECTRON_RUN_AS_NODE at all – the app the helper starts must not inherit it –,
+        /// and the GC settings above.
         public static string Build(IEnumerable<string> entries, bool runAsNode)
         {
             List<string> list = new List<string>();
@@ -364,9 +370,11 @@ namespace AutarkBroker
                 {
                     if (string.IsNullOrEmpty(entry) || entry.IndexOf('=', entry.Length > 0 && entry[0] == '=' ? 1 : 0) < 0) continue;
                     if (string.Equals(NameOf(entry), RunAsNode, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!runAsNode && (string.Equals(NameOf(entry), GcConcurrent, StringComparison.OrdinalIgnoreCase) || string.Equals(NameOf(entry), GcGen0Size, StringComparison.OrdinalIgnoreCase))) continue;
                     list.Add(entry);
                 }
             if (runAsNode) list.Add(RunAsNode + "=1");
+            else { list.Add(GcConcurrent + "=" + GcConcurrentValue); list.Add(GcGen0Size + "=" + GcGen0SizeValue); }
             list.Sort((a, b) => string.Compare(NameOf(a), NameOf(b), StringComparison.OrdinalIgnoreCase));
             StringBuilder sb = new StringBuilder();
             foreach (string entry in list) sb.Append(entry).Append('\0');

@@ -462,10 +462,11 @@ namespace AutarkBroker
                 return Expect(line, "\"C:\\Program Files\\Autark\\AutarkWakeHelper.exe\" \"C:\\Users\\x\\Roaming\\Autark\\wake.json\" --app \"C:\\Program Files\\Autark\\Autark.exe\" -- --company=company-2 \"two words\"", "line")
                     ?? Expect(WakerCommandLine.BuildNative(@"C:\h.exe", @"C:\a.exe", @"C:\w.json", null), "\"C:\\h.exe\" \"C:\\w.json\" --app \"C:\\a.exe\" --", "no args");
             });
-            Case("native helper environment: no ELECTRON_RUN_AS_NODE at all (an inherited one is removed), the rest stays sorted", () =>
+            Case("native helper environment: no ELECTRON_RUN_AS_NODE at all (an inherited one is removed), the GC settings (replacing the person's own), the rest stays sorted", () =>
             {
-                string block = WakerEnvironment.Build(new List<string> { "electron_run_as_node=1", "PATH=C:\\x", "Alpha=2" }, false);
-                return Expect(block, "Alpha=2\0PATH=C:\\x\0\0", "block") ?? Expect(WakerEnvironment.Build(new List<string>(), false), "\0", "empty");
+                string block = WakerEnvironment.Build(new List<string> { "electron_run_as_node=1", "PATH=C:\\x", "Alpha=2", "comPlus_gcconcurrent=1" }, false);
+                return Expect(block, "Alpha=2\0COMPlus_gcConcurrent=0\0COMPlus_GCgen0size=100000\0PATH=C:\\x\0\0", "block")
+                    ?? Expect(WakerEnvironment.Build(new List<string>(), false), "COMPlus_gcConcurrent=0\0COMPlus_GCgen0size=100000\0\0", "empty");
             });
 
             // ---- files of the app ---------------------------------------------------------------------------------------------
