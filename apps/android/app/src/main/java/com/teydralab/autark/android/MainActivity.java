@@ -398,6 +398,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     private void resumed() {
         current = this;
         paused = false;
+        optional(() -> com.teydralab.autark.android.phoneuse.UseService.appFront(true)); // the resting to-do dot steps aside (DotDodge)
         AppNotices.resumed(true);
         optional(() -> AppNotices.clear(this));
         if (link != null) { link.connection.check(); optional(() -> KeepAlive.start(this)); }
@@ -407,7 +408,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         optional(() -> PhoneUseAsk.settle(this)); // phone use there and agreed (or the full build after the upgrade): the request goes
         optional(() -> UpdateCheck.start(this, updates));
     }
-    @Override protected void onPause() { paused = true; UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
+    @Override protected void onPause() { paused = true; optional(() -> com.teydralab.autark.android.phoneuse.UseService.appFront(false)); UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         String place = web == null || setup ? null : PhoneRoutes.place(web.getUrl());

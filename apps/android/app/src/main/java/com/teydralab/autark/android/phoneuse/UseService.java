@@ -80,6 +80,22 @@ public final class UseService extends AccessibilityService {
     /** The service while it is on (Accessibility settings), else null. */
     public static UseService current() { return current; }
 
+    /** The Autark app's main screen is in front (MainActivity tells; the main thread): read when the to-do button appears. */
+    private static volatile boolean appFront;
+
+    /** MainActivity came to the front or left it: the resting to-do dot steps aside in the open app and returns after it (DotDodge). */
+    public static void appFront(boolean front) {
+        appFront = front;
+        UseService service = current;
+        TodoButton button = service == null ? null : service.todo;
+        if (button != null) button.appFront(front);
+    }
+
+    static boolean appFront() { return appFront; }
+
+    /** The AI's bubble or its question is on the screen (main thread). */
+    boolean agentShows() { return (bubble != null && bubble.showing()) || asking != null; }
+
     /** The person's to-do button while the service is on (BubblePull: the app's pull brings it out). Main thread. */
     TodoButton todo() { return todo; }
 
