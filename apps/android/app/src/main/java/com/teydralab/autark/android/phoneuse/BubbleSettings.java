@@ -26,7 +26,7 @@ public final class BubbleSettings extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        boolean german = "de".equals(Locale.getDefault().getLanguage());
+        boolean german = UiLang.german(this);
         KeyguardManager keyguard = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
         if (keyguard != null && keyguard.isKeyguardLocked()) {
             Toast.makeText(this, german ? "Entsperre das Handy, um das zu ändern." : "Unlock the phone to change this.", Toast.LENGTH_LONG).show();

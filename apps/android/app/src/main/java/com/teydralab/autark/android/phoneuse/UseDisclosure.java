@@ -20,7 +20,7 @@ public final class UseDisclosure extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (UseConsent.agreed(this)) { openSettings(); finish(); return; }
-        boolean german = DisclosureText.isGerman(Locale.getDefault().getLanguage());
+        boolean german = UiLang.german(this);
         float density = getResources().getDisplayMetrics().density;
         int pad = (int) (20 * density);
         LinearLayout column = new LinearLayout(this);

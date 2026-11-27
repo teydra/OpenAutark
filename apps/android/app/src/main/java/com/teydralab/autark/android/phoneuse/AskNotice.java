@@ -36,7 +36,7 @@ public final class AskNotice extends BroadcastReceiver {
         if (screenOn && AppNotices.onScreen()) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
-        boolean german = "de".equals(Locale.getDefault().getLanguage());
+        boolean german = UiLang.german(context);
         NotificationChannel channel = new NotificationChannel(CHANNEL, german ? "Fragen am Handy" : "Phone questions", NotificationManager.IMPORTANCE_HIGH);
         channel.enableVibration(false); // the one vibration is buzz()'s
         manager.createNotificationChannel(channel);

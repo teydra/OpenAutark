@@ -25,6 +25,7 @@
 // Never: connects, reads or sends anything, records itself, or posts its plain notice again while nothing changed.
 package com.teydralab.autark.android;
 
+import com.teydralab.autark.android.phoneuse.UiLang;
 import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -219,7 +220,7 @@ public final class KeepAlive extends Service {
 
     /** "Call running" / "Recording" with its running time; a tap opens the app, End asks the page to end its voice. */
     private Notification voiceNotice() {
-        boolean german = "de".equals(Locale.getDefault().getLanguage());
+        boolean german = UiLang.german(this);
         boolean call = "call".equals(kind);
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {

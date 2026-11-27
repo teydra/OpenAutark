@@ -10,6 +10,7 @@
 // Never: answers or declines by itself, or rings past the ring's time.
 package com.teydralab.autark.android;
 
+import com.teydralab.autark.android.phoneuse.UiLang;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -44,7 +45,7 @@ public final class CallNotice extends BroadcastReceiver {
         if (manager == null) return;
         if (left <= 0) { manager.cancel(callId, ID); return; } // the ring is over (answered, declined or missed on a PC): the notice goes
         Context app = context.getApplicationContext();
-        boolean german = "de".equals(Locale.getDefault().getLanguage());
+        boolean german = UiLang.german(app);
         NotificationChannel channel = new NotificationChannel(CHANNEL, german ? "Anrufe" : "Calls", NotificationManager.IMPORTANCE_HIGH);
         channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());

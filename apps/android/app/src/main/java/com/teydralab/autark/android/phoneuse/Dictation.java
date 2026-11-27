@@ -33,7 +33,7 @@ final class Dictation {
     private final String language;
     private final Done done;
     private final Runnable full;
-    private final boolean german = "de".equals(Locale.getDefault().getLanguage());
+    private final boolean german;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService work = Executors.newSingleThreadExecutor((job) -> {
         Thread thread = new Thread(job, "autark-dictation");
@@ -55,6 +55,7 @@ final class Dictation {
     /** `full` runs on the main thread when the take reached TAKE_MAX_MS or the microphone went; the owner then finishes it. */
     Dictation(Context context, UseLink link, String language, Done done, Runnable full) {
         this.mic = new Mic(context);
+        this.german = UiLang.german(context);
         this.link = link;
         this.language = language;
         this.done = done;

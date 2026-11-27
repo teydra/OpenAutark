@@ -75,7 +75,7 @@ public final class BubblePick extends Activity {
     private static Done waiting;
     private static boolean wantPhoto;
     private static int thumbPx = 96;
-    private final boolean german = "de".equals(Locale.getDefault().getLanguage());
+    private boolean german; // set in onCreate: the profile language, read once the activity has its context
     private final Handler main = new Handler(Looper.getMainLooper());
     private Done done;
     private boolean photo;
@@ -96,7 +96,7 @@ public final class BubblePick extends Activity {
         try { context.startActivity(intent); }
         catch (RuntimeException failed) {
             waiting = null;
-            boolean de = "de".equals(Locale.getDefault().getLanguage());
+            boolean de = UiLang.german(context);
             to.picked(Collections.emptyList(), de ? "Die Auswahl ging nicht auf." : "The picker did not open.");
         }
     }
@@ -117,6 +117,7 @@ public final class BubblePick extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        german = UiLang.german(this);
         done = waiting;
         waiting = null;
         photo = wantPhoto;

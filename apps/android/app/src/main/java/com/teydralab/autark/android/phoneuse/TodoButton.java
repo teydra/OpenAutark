@@ -132,7 +132,7 @@ final class TodoButton {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final SharedPreferences place;
     private final float density;
-    private final boolean german = "de".equals(Locale.getDefault().getLanguage());
+    private volatile boolean german; // the profile language from the PC (UiLang), English until one arrives
     private final TodoPost post = new TodoPost();
     private final ExecutorService work = Executors.newSingleThreadExecutor((job) -> {
         Thread thread = new Thread(job, "autark-todo");
@@ -234,6 +234,7 @@ final class TodoButton {
         this.place = service.getSharedPreferences("todo_button", Context.MODE_PRIVATE);
         this.density = service.getResources().getDisplayMetrics().density;
         this.profileLanguage = SpeechLang.valid(place.getString("speech_lang", null));
+        this.german = UiLang.german(profileLanguage);
         this.keyguard = (KeyguardManager) service.getSystemService(Context.KEYGUARD_SERVICE);
         this.power = (PowerManager) service.getSystemService(Context.POWER_SERVICE);
     }
@@ -338,6 +339,7 @@ final class TodoButton {
                 if (!SpeechLang.isActive(languageFor, link) || !SpeechLang.isActive(UseLink.linked(), link)) return;
                 if (again) { languageFor = null; return; }
                 profileLanguage = found;
+                german = UiLang.german(found);
                 if (found == null) place.edit().remove("speech_lang").remove("speech_lang_origin").apply(); // an older PC, or none set: the phone's own
                 else place.edit().putString("speech_lang", found).putString("speech_lang_origin", origin).apply();
             });

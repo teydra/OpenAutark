@@ -54,7 +54,7 @@ final class UseBubble {
     private final WindowManager windows;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Person person;
-    private final boolean german = "de".equals(Locale.getDefault().getLanguage());
+    private final boolean german;
     private final Runnable hide = this::remove;
     private float density;
     private LinearLayout view;
@@ -77,6 +77,7 @@ final class UseBubble {
         this.service = service;
         this.windows = (WindowManager) service.getSystemService(AccessibilityService.WINDOW_SERVICE);
         this.person = person;
+        this.german = UiLang.german(service);
     }
 
     /** Who acts and for which job (any thread): the agent's name for the line; a new job clears the AI's status line. */

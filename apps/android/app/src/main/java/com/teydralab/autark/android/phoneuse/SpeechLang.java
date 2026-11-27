@@ -1,6 +1,6 @@
 // Owns: which language the PC hears the to-do bubble's speech in (Dictation, BubbleCall: voice.transcribe's hint) – the
 // language of the Autark profile (the person's own, one validated field of the PC's answer) before the phone's – and
-// where the panel sits when the lock screen laid it out too far right. Pure, so a host test pins it. Never: Android
+// where the panel sits when the lock screen laid it out too far right; whether the app's own words are German (UiLang). Pure, so a host test pins it. Never: Android
 // classes, or a profile's free text as the language.
 package com.teydralab.autark.android.phoneuse;
 
@@ -28,6 +28,18 @@ final class SpeechLang {
         if (!(answer instanceof Map)) return null;
         Object language = ((Map<?, ?>) answer).get("language");
         return language instanceof String ? valid((String) language) : null;
+    }
+
+    /**
+     * Whether the app's own words are German (UiLang): only when the profile language is German ("de", "de-AT", "de_DE");
+     * anything else, nothing or a non-tag is English – the phone's own language never counts (owner 18.11.2026).
+     */
+    static boolean german(String profileLanguage) {
+        String language = valid(profileLanguage);
+        if (language == null) return false;
+        String base = language.replace('_', '-');
+        int dash = base.indexOf('-');
+        return (dash < 0 ? base : base.substring(0, dash)).equalsIgnoreCase("de");
     }
 
     /**

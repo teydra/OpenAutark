@@ -29,6 +29,7 @@ public final class TodoTest {
         post();
         chatLine();
         speech();
+        uiLanguage();
         resend();
         wiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/TodoButton.java"),
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/UseService.java"),
@@ -104,6 +105,25 @@ public final class TodoTest {
         // the panel that the lock screen laid out too far right moves left until it is whole; never past the left edge
         check(SpeechLang.shiftInto(763, 690, 1080) == 390 && SpeechLang.shiftInto(100, 690, 1080) == 100 && SpeechLang.shiftInto(-40, 690, 1080) == 0
                 && SpeechLang.shiftInto(500, 1200, 1080) == 0);
+    }
+
+    private static void uiLanguage() throws Exception {
+        // Owner 18.11.2026 ("Generell nichts in der App … standardmäßig nirgendwo"): the app's own words are German only
+        // when the Autark profile says German – never because the phone is set to German
+        check(SpeechLang.german("de") && SpeechLang.german("de-AT") && SpeechLang.german("de_DE") && SpeechLang.german(" DE "));
+        check(!SpeechLang.german(null) && !SpeechLang.german("") && !SpeechLang.german("en") && !SpeechLang.german("en-DE")
+                && !SpeechLang.german("Deutsch") && !SpeechLang.german("dex") && !SpeechLang.german("fr-CH"));
+        String base = "app/src/main/java/com/teydralab/autark/android/";
+        for (String file : new String[] {"CallNotice.java", "KeepAlive.java", "phoneuse/AskNotice.java", "phoneuse/BubbleCall.java",
+                "phoneuse/BubblePick.java", "phoneuse/BubbleSettings.java", "phoneuse/Dictation.java", "phoneuse/TodoButton.java",
+                "phoneuse/UseBubble.java", "phoneuse/UseDisclosure.java"}) {
+            String text = source(base + file);
+            check(text.contains("UiLang.german(") && !text.contains("Locale.getDefault().getLanguage()"));
+        }
+        String ui = source(base + "phoneuse/UiLang.java"), button = source(base + "phoneuse/TodoButton.java");
+        // the stored profile language TodoButton keeps is the one UiLang reads; a fresh answer switches the bubble's words
+        check(ui.contains("PLACE = \"todo_button\", KEY = \"speech_lang\"") && button.contains("getSharedPreferences(\"todo_button\"")
+                && button.contains("putString(\"speech_lang\", found)") && button.contains("german = UiLang.german(found);"));
     }
 
     private static void resend() {

@@ -79,7 +79,7 @@ final class BubbleCall implements UseLink.Events {
     private final String language;
     private final Host host;
     private final Mic mic;
-    private final boolean german = "de".equals(Locale.getDefault().getLanguage());
+    private final boolean german;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService work = Executors.newSingleThreadExecutor((job) -> {
         Thread thread = new Thread(job, "autark-bubble-call");
@@ -136,6 +136,7 @@ final class BubbleCall implements UseLink.Events {
         this.context = context;
         this.link = link;
         this.language = language;
+        this.german = UiLang.german(context);
         this.host = host;
         this.mic = new Mic(context);
     }
