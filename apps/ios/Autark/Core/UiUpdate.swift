@@ -39,8 +39,9 @@ public final class UiUpdate: UiSource {
         "LdtLJGLSC54dj8bVrHxKxe4KCkYKofJMu5FvHjPfbnw", // active
         "Haes-56_0BQE7NuBsZqlQVqkRObOjRWv34weAzbuGuc", // spare
     ]
-    /// Where ui.json, ui.json.sig and the files by sha256 are published (the one place the app reads the address from).
-    public static let base = "https://github.com/teydra/OpenAutark/releases/download/phone-ui/"
+    /// Where ui.json, ui.json.sig and the files by sha256 are published: assets of the repository's latest versioned release, beside the
+    /// app (the same address as Android's UiUpdate.BASE; Konrad 27.11.2026). The one place the app reads the address from.
+    public static let base = "https://github.com/teydra/OpenAutark/releases/latest/download/"
     public static let listName = "ui.json", signatureName = "ui.json.sig"
     static let intervalMs: Int64 = 60_000
     static let maxList = 1 << 20
