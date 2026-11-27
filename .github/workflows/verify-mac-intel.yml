@@ -67,6 +67,8 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/contents/.github/release-ci/native-release-check.cjs?ref=$GITHUB_SHA" -H 'Accept: application/vnd.github.raw' > scripts/native-release-check.cjs && test -s scripts/native-release-check.cjs
       - name: Install the pinned checking dependencies
         run: npm ci --no-fund --no-audit
+      - name: Rebuild app/ from the tag, so the check compares every built file with the shipped archive
+        run: npm run build
       - name: Open the unchanged universal bundle on Intel
         shell: bash
         run: |
