@@ -142,6 +142,35 @@ export async function undoLast(task: Task): Promise<void> {
   if (view) { applyTask(view); pushToast({ title: 'Undone' }, 3000); }
 }
 
+/** P7: one answer for a "Waiting on you" card – every task on it hears it and stops waiting. True when it stood. */
+export async function answerCard(ids: readonly string[], answer: { reply?: string; choice?: string; decline?: boolean } = {}): Promise<boolean> {
+  const views = await attempt(() => rpc.call('tasks.answerCard', { ids: [...ids], ...answer }), 'Could not send the answer');
+  for (const view of views ?? []) applyTask(view);
+  return Boolean(views);
+}
+
+/** P7 "Later": the card rests until its follow-up (tomorrow 09:00 local unless `until`). */
+export async function laterCard(ids: readonly string[], until?: number): Promise<boolean> {
+  const views = await attempt(() => rpc.call('tasks.laterCard', { ids: [...ids], ...(until !== undefined ? { until } : {}) }), 'Could not put it off');
+  for (const view of views ?? []) applyTask(view);
+  if (views) pushToast({ title: 'Later: tomorrow 09:00' }, 3000);
+  return Boolean(views);
+}
+
+/** Give a checklist item to an owner; update the holder with its new link. */
+export async function handOverItem(task: Task, itemId: string, to: string): Promise<boolean> {
+  const view = await attempt(() => rpc.call('tasks.handOverItem', { id: task.id, itemId, to }), 'Could not hand over the checklist item');
+  if (view) applyTask(view);
+  return Boolean(view);
+}
+
+/** P5 "Run again": the finished task as a new one, its checklist unticked; answers the new task. */
+export async function runAgain(task: Task): Promise<TaskView | undefined> {
+  const view = await attempt(() => rpc.call('tasks.runAgain', { id: task.id }), 'Could not run it again');
+  if (view) applyTask(view);
+  return view;
+}
+
 /** "Remove" on a to-do the person added: gone at once. */
 export async function removeOwn(task: Task): Promise<void> {
   const done = await attempt(() => rpc.call('todos.remove', { id: task.id }), 'Could not remove it');

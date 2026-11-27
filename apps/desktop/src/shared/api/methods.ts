@@ -139,6 +139,10 @@ export interface Methods {
   'tasks.undo': { params: { id: string; changeId?: string }; result: TaskView }; // 17.11.2026: takes back the latest logged change of a task within 24 hours (the person's "Undo"; tasks/changes.ts)
   'tasks.finish': { params: { id: string; status?: 'done' | 'dropped'; answer?: unknown; note?: string; clientId?: string }; result: TaskView };
   'tasks.reorder': { params: { ids: string[] }; result: { ok: true } };
+  'tasks.answerCard': { params: { ids: string[]; reply?: string; choice?: string; decline?: boolean }; result: TaskView[] }; // P7: one answer for a "Waiting on you" card – every task on it hears it and stops waiting (tasks/cards.ts)
+  'tasks.laterCard': { params: { ids: string[]; until?: number }; result: TaskView[] }; // P7 "Later": the card rests until its follow-up (default tomorrow 09:00 local)
+  'tasks.handOverItem': { params: { id: string; itemId: string; to: string }; result: TaskView };
+  'tasks.runAgain': { params: { id: string; title?: string }; result: TaskView }; // P5 "Run again": a finished task as a new one, checklist ticks reset, same owners
   'tasks.delete': { params: { id: string }; result: { ok: true } };
   /** Human to-dos: open tasks assigned to the human, across all chats. */
   'todos.list': { params: { limit?: number } | void; result: TaskView[] };

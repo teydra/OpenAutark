@@ -17,6 +17,7 @@ import type {
   CreateTaskInput, Schedule, Task, TaskFilter, TaskResult, TaskView, TodoRepeat,
 } from '../shared/model/tasks.ts';
 import type { FinishInput, TaskPatch } from './tasks/service.ts';
+import type { CardAnswer } from './tasks/cards.ts';
 import type { NextRoute } from './agents/next-route.ts';
 import type { Handoff, KnowledgeHit, KnowledgeItem, KnowledgeQuery, ModeInfo, SkillInfo } from '../shared/model/knowledge.ts';
 import type {
@@ -192,6 +193,14 @@ export interface TaskService {
   pause(id: string, by: string): TaskView;
   /** Ends a pause: open again, its owner goes on. */
   resume(id: string, by: string): TaskView;
+  /** P5: hands checklist item `itemId` of task `id` to `to` – a linked task of its own, ticked there when done (tasks/checklist.ts). */
+  handOverItem(id: string, itemId: string, to: string, by: string, options?: { givenIn?: string }): Promise<TaskView>;
+  /** P5 "Run again": a finished task as a new one with its checklist, every tick reset, the same owners. */
+  runAgain(id: string, by: string, input?: { title?: string }): Promise<TaskView>;
+  /** P7: the person's one answer to a "Waiting on you" card – every task on it hears it and stops waiting (tasks/cards.ts). */
+  answerCard(input: CardAnswer, by: string): TaskView[];
+  /** P7 "Later": the card's waits rest with a follow-up at `until`; its ask moves there. */
+  laterCard(ids: readonly string[], until: number, by: string): TaskView[];
 }
 
 /** The follow-up of each turn of an owner on its task, and the start (tasks/watch.ts – the watcher). */

@@ -18,6 +18,9 @@ import { answerWithSecrets } from '../../secrets/capture.ts';
 import { MAX_DECLINE_REASON, declineAnswer, removeTodo } from '../../tasks/decline.ts';
 import { POST_PRIORITIES, rewordPost } from '../../schedules/post.ts';
 import { registerTaskLinks } from './task-links.ts';
+import { MAX_CARD_TASKS } from '../../tasks/cards.ts';
+import { nextFollowUp } from '../../tasks/follow-up.ts';
+import { dayZone } from '../../day/clock.ts';
 import { PREVIEW_MAX, previewTimes } from '../../schedules/preview.ts';
 import {
   bad, capJson, id, ids, input, notFound, num, onlyKeys, optBool, optId, optIds, optNum, optObj, optOneOf, optStrings, optText, text,
@@ -176,6 +179,33 @@ export function register(table: HandlerTable): void {
   }, TODO);
   table.add('tasks.finish', (params, ctx) => finish(params, ctx), TODO);
   table.add('tasks.reorder', (params, ctx) => reorder(params, ctx), TASKS);
+  // P7 (tasks/cards.ts): the person answers a "Waiting on you" card, or puts it off ("Later", default tomorrow 09:00 local)
+  table.add('tasks.answerCard', (params, ctx) => {
+    const o = input(params);
+    onlyKeys(o, ['ids', 'reply', 'choice', 'decline']);
+    return ctx.services.tasks.answerCard({
+      ids: ids(o, 'ids', MAX_CARD_TASKS), reply: optText(o, 'reply', { max: 4000, allowEmpty: true, multiline: true }),
+      choice: optText(o, 'choice', { max: 300 }), decline: optBool(o, 'decline'),
+    }, HUMAN_ID);
+  }, TODO);
+  table.add('tasks.laterCard', (params, ctx) => {
+    const o = input(params);
+    onlyKeys(o, ['ids', 'until']);
+    const until = optNum(o, 'until', { min: 0 }) ?? nextFollowUp(ctx.services.clock.now(), dayZone(ctx.services));
+    return ctx.services.tasks.laterCard(ids(o, 'ids', MAX_CARD_TASKS), until, HUMAN_ID);
+  }, TODO);
+  table.add('tasks.handOverItem', async (params, ctx) => {
+    const o = input(params);
+    onlyKeys(o, ['id', 'itemId', 'to']);
+    const task = taskOrThrow(ctx.services, id(o));
+    await ctx.services.tasks.handOverItem(task.id, text(o, 'itemId', { max: 80 }), text(o, 'to', { max: 120 }), HUMAN_ID);
+    return ctx.services.tasks.get(task.id)!;
+  }, TASKS);
+  table.add('tasks.runAgain', (params, ctx) => {
+    const o = input(params);
+    onlyKeys(o, ['id', 'title']);
+    return ctx.services.tasks.runAgain(taskOrThrow(ctx.services, id(o)).id, HUMAN_ID, { title: optText(o, 'title', { max: 300 }) });
+  }, TASKS);
   table.add('tasks.delete', (params, ctx) => {
     ctx.services.tasks.remove(taskOrThrow(ctx.services, id(input(params))).id, HUMAN_ID);
     return { ok: true };
