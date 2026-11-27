@@ -459,6 +459,6 @@ export const TYPE_DOCS: Record<string, string> = {
   "Topic": "type Topic = 'chats' | 'tasks' | 'org' | 'providers' | 'system' | `chat:${string}` | `runs:${string}` | `browser:${string}`",
   "UiBlock": "interface UiBlock { type: BlockType; id?: string; title?: string; todo?: boolean; important?: boolean; due?: string; priority?: 'normal' | 'high'; why?: string; [prop: string]: unknown; }",
   "Verification": "type Verification = 'reported_by_human' | 'claimed_by_agent' | 'verified'",
-  "VoiceSettings": "interface VoiceSettings { ttsVoice?: string; vocabulary: string[]; realtime: 'auto' | 'off'; talker?: boolean; localStt?: string; localTts?: string; }",
+  "VoiceSettings": "interface VoiceSettings { ttsVoice?: string; vocabulary: string[]; realtime: 'auto' | 'off'; talker?: boolean; localStt?: string; localTts?: string; localTtsSteps?: 3 | 6; }",
   "WebScope": "type WebScope = 'yes' | 'chosen' | 'ask'",
 };

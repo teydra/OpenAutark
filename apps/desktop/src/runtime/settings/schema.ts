@@ -12,7 +12,7 @@ import type { Settings } from '../../shared/model/system.ts';
 import { ONBOARDING_STEPS } from '../../shared/model/system.ts';
 import { DEFAULT_DAY_SETTINGS, MAX_BUFFER_MIN } from '../../shared/model/day-settings.ts';
 import { DEFAULT_RETENTION, MAX_RETENTION_DAYS } from '../../shared/model/lifecycle.ts';
-import { localSpeechIds } from '../../shared/model/local-speech-models.ts';
+import { DEFAULT_TTS_STEPS, TTS_STEPS, localSpeechIds } from '../../shared/model/local-speech-models.ts';
 import { MODEL_USES, OFFABLE_USES, USE_ABOUT, USE_AUTO, USE_LABELS, type ModelUse } from '../../shared/model/models-uses.ts';
 import { KEY_HANDLE, PROVIDER_ID, PROVIDER_PROTOCOLS, providerNotes } from '../../shared/model/provider-entries.ts';
 import { DEFAULT_RELAY, DEFAULT_STUN } from '../../shared/model/relay.ts';
@@ -156,6 +156,9 @@ export const SECTIONS: readonly SectionDef[] = [
     flag('talker', 'A call without a real-time model: the Decisions model answers each spoken line at once while the agent works (false: the agent itself answers every line)', true),
     choice('localStt', 'This PC\'s speech-to-text model ("" = none; wf call voice.pullLocal downloads one)', ['', ...localSpeechIds('stt')], ''),
     choice('localTts', 'This PC\'s text-to-speech model, the voice every device reads with ("" = none chosen: a downloaded one, else the PC fetches its default voice when the disk has room; meanwhile each device\'s own voice)', ['', ...localSpeechIds('tts')], ''),
+    // Call speed 27.11.2026: no stored default – an unset key follows DEFAULT_TTS_STEPS, so changing that one line reaches every PC
+    { key: 'localTtsSteps', about: 'Steps this PC\'s voice takes for each sentence it reads aloud: 3 speaks about a second sooner, 6 sounds finer', type: 'integer',
+      options: TTS_STEPS, min: TTS_STEPS[0], max: TTS_STEPS[TTS_STEPS.length - 1], allowed: `only ${TTS_STEPS.join(' or ')}; null = the app's default, now ${DEFAULT_TTS_STEPS}` },
   ] },
   { key: 'routing', title: 'Models', keys: [
     ...MODEL_USES.map((use) => useKey(use)),

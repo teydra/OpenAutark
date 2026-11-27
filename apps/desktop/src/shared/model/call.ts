@@ -85,6 +85,16 @@ export interface CallRing { by: string; why: string; say?: string; until: number
 export const RING_MS = 45_000;
 /** B-081: why a device's part of a call ended when another device took it over (no fallback, no error). */
 export const TAKEN_OVER = 'The call goes on on another device.';
+/**
+ * Konrad 27.11.2026 (the local voice's licence, OpenRAIL-M, asks for a clear notice that its speech is machine-generated):
+ * the words the call card shows for as long as it shows, and every ring notice carries (the Android app: CallVoiceNote).
+ */
+export const AI_VOICE_NOTICE = 'AI voice (machine-generated)';
+
+/** A ring notice's body (the PC's OS notice, the phones' push): the AI voice notice first – it stays when a long why is cut –, then why. */
+export function ringBody(why: string): string {
+  return why ? `${AI_VOICE_NOTICE}\n${why}` : AI_VOICE_NOTICE;
+}
 
 export type CallState = 'ringing' | 'running' | 'missed' | 'declined' | 'ended';
 

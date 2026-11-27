@@ -72,6 +72,8 @@ export interface VoiceSettings {
   localStt?: string;
   /** The local text-to-speech voice model (same catalog; '' or unset = none – speechSynthesis reads). */
   localTts?: string;
+  /** The steps the local voice takes for each piece it reads aloud: 3 sooner, 6 finer (shared/model/local-speech-models.ts TTS_STEPS; unset = DEFAULT_TTS_STEPS). */
+  localTtsSteps?: 3 | 6;
 }
 
 /**

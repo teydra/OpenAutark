@@ -13,7 +13,7 @@
 // Owner 19.11.2026 ("der Call soll weitergehen", the same for dictation): while the page's voice is live (NativePort
 // 'voice.live', MainActivity → voice()) the service is also of type microphone – the page starts its voice while on
 // screen, which is when Android 14+ lets a service take the microphone into the background – and its notice becomes
-// "Call running" / "Recording" with the time and End on the channel "voice" (End asks the page through
+// "Call running" (its line "AI voice (machine-generated)", CallVoiceNote) / "Recording" with the time and End on the channel "voice" (End asks the page through
 // MainActivity.voiceStop → {t:'voice.stop'}; with no page to ask the notice goes by itself). Meanwhile it holds a
 // partial wake lock (when the manifest grants WAKE_LOCK) and, for a call, the audio focus; when the voice ends it is the
 // plain service again. The to-do bubble's call (phoneuse/BubbleCall, bubbleCall()) gets the same hold, "Call running"
@@ -234,8 +234,9 @@ public final class KeepAlive extends Service {
         PendingIntent open = PendingIntent.getActivity(this, ID + 1, app, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent end = PendingIntent.getService(this, ID + 2, new Intent(this, KeepAlive.class).setAction(END), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String title = call ? (german ? "Anruf läuft" : "Call running") : (german ? "Aufnahme läuft" : "Recording");
-        return AppNotices.branded(new Notification.Builder(this, VOICE_CHANNEL))
-                .setContentTitle(title).setContentIntent(open).setOngoing(true).setShowWhen(true).setWhen(since).setUsesChronometer(true)
+        Notification.Builder builder = AppNotices.branded(new Notification.Builder(this, VOICE_CHANNEL)).setContentTitle(title);
+        if (call) builder.setContentText(CallVoiceNote.TEXT); // Konrad 27.11.2026: the call's voice is machine-generated, said for as long as the call runs
+        return builder.setContentIntent(open).setOngoing(true).setShowWhen(true).setWhen(since).setUsesChronometer(true)
                 .setVisibility(Notification.VISIBILITY_PUBLIC).setCategory(call ? Notification.CATEGORY_CALL : Notification.CATEGORY_SERVICE).setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(null, german ? "Beenden" : "End", end).build()).build();
     }
