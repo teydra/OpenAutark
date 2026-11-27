@@ -342,12 +342,9 @@ namespace AutarkWake
 
         static byte[] Sha512(params byte[][] parts)
         {
-            using (SHA512 sha = SHA512.Create())
-            {
-                MemoryStream all = new MemoryStream();
-                foreach (byte[] part in parts) all.Write(part, 0, part.Length);
-                return sha.ComputeHash(all.ToArray());
-            }
+            MemoryStream all = new MemoryStream();
+            foreach (byte[] part in parts) all.Write(part, 0, part.Length);
+            return Digest.Sha512(all.ToArray());
         }
 
         static BigInteger Scalar(byte[] hash) { return Le(hash, 0, hash.Length) % L; }
@@ -469,28 +466,62 @@ namespace AutarkWake
         /// HKDF-SHA256 (RFC 5869): `length` bytes.
         public static byte[] Hkdf(byte[] ikm, byte[] salt, byte[] info, int length)
         {
-            byte[] prk;
-            using (HMACSHA256 extract = new HMACSHA256(salt)) prk = extract.ComputeHash(ikm);
+            byte[] prk = Digest.HmacSha256(salt, ikm);
             byte[] okm = new byte[length];
             byte[] previous = new byte[0];
             int done = 0;
             byte counter = 1;
-            using (HMACSHA256 expand = new HMACSHA256(prk))
+            while (done < length)
             {
-                while (done < length)
-                {
-                    MemoryStream block = new MemoryStream();
-                    block.Write(previous, 0, previous.Length);
-                    block.Write(info, 0, info.Length);
-                    block.WriteByte(counter++);
-                    previous = expand.ComputeHash(block.ToArray());
-                    int take = Math.Min(previous.Length, length - done);
-                    Buffer.BlockCopy(previous, 0, okm, done, take);
-                    done += take;
-                }
+                MemoryStream block = new MemoryStream();
+                block.Write(previous, 0, previous.Length);
+                block.Write(info, 0, info.Length);
+                block.WriteByte(counter++);
+                previous = Digest.HmacSha256(prk, block.ToArray());
+                int take = Math.Min(previous.Length, length - done);
+                Buffer.BlockCopy(previous, 0, okm, done, take);
+                done += take;
             }
             return okm;
         }
+    }
+
+    /// SHA-1/256/512 and HMAC-SHA256 through CNG (bcrypt.dll). Not the framework's classes: since .NET 4.7 every one of them loads
+    /// System.Core.dll (3.3 MB of private memory in a process that otherwise never needs it).
+    public static class Digest
+    {
+        [DllImport("bcrypt.dll", CharSet = CharSet.Unicode)] static extern uint BCryptOpenAlgorithmProvider(out IntPtr alg, string id, string impl, uint flags);
+        [DllImport("bcrypt.dll")] static extern uint BCryptCloseAlgorithmProvider(IntPtr alg, uint flags);
+        [DllImport("bcrypt.dll")] static extern uint BCryptCreateHash(IntPtr alg, out IntPtr hash, IntPtr hashObject, int hashObjectSize, byte[] secret, int secretSize, uint flags);
+        [DllImport("bcrypt.dll")] static extern uint BCryptHashData(IntPtr hash, byte[] input, int size, uint flags);
+        [DllImport("bcrypt.dll")] static extern uint BCryptFinishHash(IntPtr hash, byte[] output, int size, uint flags);
+        [DllImport("bcrypt.dll")] static extern uint BCryptDestroyHash(IntPtr hash);
+
+        static byte[] Run(string algorithm, int size, byte[] key, byte[] data)
+        {
+            IntPtr alg;
+            if (BCryptOpenAlgorithmProvider(out alg, algorithm, null, key != null ? 8u : 0u) != 0) throw new CryptographicException("hash");
+            IntPtr hash = IntPtr.Zero;
+            try
+            {
+                byte[] secret = key == null ? null : key.Length == 0 ? new byte[size] : key; // an empty HMAC key is the same as zeros
+                if (BCryptCreateHash(alg, out hash, IntPtr.Zero, 0, secret, secret == null ? 0 : secret.Length, 0) != 0) throw new CryptographicException("hash");
+                if (BCryptHashData(hash, data, data.Length, 0) != 0) throw new CryptographicException("hash");
+                byte[] output = new byte[size];
+                if (BCryptFinishHash(hash, output, size, 0) != 0) throw new CryptographicException("hash");
+                return output;
+            }
+            finally
+            {
+                if (hash != IntPtr.Zero) BCryptDestroyHash(hash);
+                BCryptCloseAlgorithmProvider(alg, 0);
+            }
+        }
+
+        public static byte[] Sha1(byte[] data) { return Run("SHA1", 20, null, data); }
+        public static byte[] Sha256(byte[] data) { return Run("SHA256", 32, null, data); }
+        public static byte[] Sha512(byte[] data) { return Run("SHA512", 64, null, data); }
+        public static byte[] HmacSha256(byte[] key, byte[] data) { return Run("SHA256", 32, key, data); }
     }
 
     /// AES-256-GCM through CNG (bcrypt.dll): 12-byte nonce, 16-byte tag, no associated data.
@@ -590,7 +621,7 @@ namespace AutarkWake
 
         public PairBox()
         {
-            using (RandomNumberGenerator rng = RandomNumberGenerator.Create()) rng.GetBytes(priv);
+            using (RandomNumberGenerator rng = new RNGCryptoServiceProvider()) rng.GetBytes(priv);
             Pub = X25519.Public(priv);
             PubText = B64.Enc(Pub);
         }
@@ -679,7 +710,7 @@ namespace AutarkWake
 
         public static string FingerprintOf(byte[] pub)
         {
-            using (SHA256 sha = SHA256.Create()) return B64.Hex(sha.ComputeHash(pub));
+            return B64.Hex(Digest.Sha256(pub));
         }
 
         static bool IsFp(string s)
@@ -991,7 +1022,7 @@ namespace AutarkWake
         Stream stream;
         readonly object gate = new object();
         readonly byte[] mask = new byte[4];
-        readonly RandomNumberGenerator rng = RandomNumberGenerator.Create();
+        readonly RandomNumberGenerator rng = new RNGCryptoServiceProvider();
 
         /// Connects (TCP 10 s, TLS for wss, HTTP upgrade 10 s); afterwards a read waits at most `readMs`.
         public static WsClient Connect(string url, int readMs)
@@ -1047,7 +1078,7 @@ namespace AutarkWake
             string text = head.ToString();
             if (!text.StartsWith("HTTP/1.1 101", StringComparison.Ordinal)) throw new IOException("upgrade refused");
             string accept;
-            using (SHA1 sha = SHA1.Create()) accept = Convert.ToBase64String(sha.ComputeHash(Encoding.ASCII.GetBytes(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
+            accept = Convert.ToBase64String(Digest.Sha1(Encoding.ASCII.GetBytes(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
             bool ok = false;
             foreach (string line in text.Split(new string[] { "\r\n" }, StringSplitOptions.None))
                 if (line.StartsWith("sec-websocket-accept:", StringComparison.OrdinalIgnoreCase) && line.Substring(21).Trim() == accept) ok = true;
@@ -1325,7 +1356,7 @@ namespace AutarkWake
             bool appOk = appExe.Length >= 7 && appExe[1] == ':' && (appExe[2] == '\\' || appExe[2] == '/') && appExe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(appExe);
             if (wake == null || !appOk || Running()) return 0;
             bool created;
-            string tag = B64.Hex(SHA1.Create().ComputeHash(Encoding.UTF8.GetBytes(dir.ToLowerInvariant()))).Substring(0, 16);
+            string tag = B64.Hex(Digest.Sha1(Encoding.UTF8.GetBytes(dir.ToLowerInvariant()))).Substring(0, 16);
             single = new Mutex(true, "Local\\AutarkWakeHelper-" + tag, out created);
             if (!created || Life.OtherHelper(MarkPid(), Process.GetCurrentProcess().Id, HelperAlive)) return 0;
             markFile = Path.Combine(dir, "sleeper.json");

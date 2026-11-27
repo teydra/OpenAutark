@@ -217,6 +217,19 @@ namespace AutarkWakeTests
                 return Expect(X(Kdf.Hkdf(ikm, H("000102030405060708090a0b0c"), H("f0f1f2f3f4f5f6f7f8f9"), 42)),
                     "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865", "okm");
             });
+            Case("digests: SHA-1, SHA-256, SHA-512 of \"abc\" and HMAC-SHA256 (RFC 4231 case 2; an empty key is zeros)", () =>
+            {
+                byte[] abc = Utf8("abc");
+                string r = Expect(X(Digest.Sha1(abc)), "a9993e364706816aba3e25717850c26c9cd0d89d", "sha1");
+                if (r != null) return r;
+                r = Expect(X(Digest.Sha256(abc)), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "sha256");
+                if (r != null) return r;
+                r = Expect(X(Digest.Sha512(abc)), "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f", "sha512");
+                if (r != null) return r;
+                r = Expect(X(Digest.HmacSha256(Utf8("Jefe"), Utf8("what do ya want for nothing?"))), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843", "hmac");
+                if (r != null) return r;
+                return Expect(X(Digest.HmacSha256(new byte[0], abc)), X(Digest.HmacSha256(new byte[32], abc)), "empty key");
+            });
             Case("aes-256-gcm: NIST test cases 13 and 14, round trip and tamper", () =>
             {
                 byte[] key = new byte[32], nonce = new byte[12];
