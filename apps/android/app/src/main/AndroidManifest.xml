@@ -91,6 +91,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <!-- phone.key wakeup (phoneuse/WakeActivity): showWhenLocked/turnScreenOn as attributes so Android 8.1–10 turns the
+             screen on while starting the activity, not only after onCreate; the lock stays. -->
+        <activity android:name=".phoneuse.WakeActivity" android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:launchMode="singleInstance"
+            android:taskAffinity="" android:excludeFromRecents="true"
+            android:showWhenLocked="true" android:turnScreenOn="true" />
         <receiver android:name=".phoneuse.AskNotice" android:exported="false" />
         <receiver android:name=".CallNotice" android:exported="false" />
         <service android:name=".phoneuse.UseService" android:exported="true"

@@ -388,6 +388,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         optional(() -> SelfUpdate.resumed(this, updates::step));
         optional(() -> PhoneUseUpgrade.resumed(this, updates::step)); // back from Android's "install unknown apps" switch
         optional(() -> PhoneUseAsk.settle(this)); // phone use there and agreed (or the full build after the upgrade): the request goes
+        optional(() -> BatteryExempt.ask(this, preferences)); // phone use on: once, so the AI reaches the phone behind a dark screen
         optional(() -> UpdateCheck.start(this, updates));
         // Owner 27.11.2026: a newer interface fetched file by file loads now, unless the page's voice is live (PhoneUi).
         optional(() -> { if (pageUp && !setup && !voiceLive && PhoneUi.store(this).reloadDue()) web.reload(); PhoneUi.resumed(this); });
