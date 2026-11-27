@@ -43,9 +43,24 @@ public final class DisclosureText {
     public static String agree(boolean german) { return german ? "Zustimmen und weiter" : "Agree and continue"; }
 
     /** The short hint as Android's Accessibility settings open for someone who already agreed (no silent jump there). */
-    public static String turnOn(boolean german) {
-        return german ? "Die Blase braucht die Bedienungshilfe: tippe in der Liste auf Autark und schalte sie ein."
-                : "The bubble needs the accessibility service: tap Autark in the list and turn it on.";
+    public static String turnOn(boolean german) { return turnOn(german, ""); }
+
+    /** The same hint naming the part of the list Autark stands in (section(); "" keeps the general words). */
+    public static String turnOn(boolean german, String section) {
+        if (section == null || section.isEmpty()) {
+            return german ? "Die Blase braucht die Bedienungshilfe: tippe in der Liste auf Autark und schalte sie ein."
+                    : "The bubble needs the accessibility service: tap Autark in the list and turn it on.";
+        }
+        return german ? "Die Blase braucht die Bedienungshilfe: unten unter „" + section + "“ auf Autark tippen und einschalten."
+                : "The bubble needs the accessibility service: further down under \"" + section + "\", tap Autark and turn it on.";
+    }
+
+    /** Where the Accessibility list shows an app's own service, as this phone names it: Samsung's One UI 2 (Android 10,
+     *  S9 27.11.2026) puts the areas first and the services at the bottom under "Installed services"; later One UI and other
+     *  makers name and place it differently, so there "" – the hint stays general rather than wrong. */
+    public static String section(boolean german, String maker, int sdk) {
+        if (!"samsung".equalsIgnoreCase(maker) || sdk != 29) return "";
+        return german ? "Installierte Dienste" : "Installed services";
     }
 
     public static String decline(boolean german) { return german ? "Nicht jetzt" : "Not now"; }

@@ -7,6 +7,7 @@
 package com.teydralab.autark.android.phoneuse;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -24,7 +25,8 @@ public final class UseDisclosure extends Activity {
         super.onCreate(savedInstanceState);
         boolean german = UiLang.german(this);
         if (UseConsent.agreed(this)) { // agreed before, the service is off: settings with one line of what to do there
-            Toast.makeText(getApplicationContext(), DisclosureText.turnOn(german), Toast.LENGTH_LONG).show();
+            String section = DisclosureText.section(german, android.os.Build.MANUFACTURER, android.os.Build.VERSION.SDK_INT);
+            Toast.makeText(getApplicationContext(), DisclosureText.turnOn(german, section), Toast.LENGTH_LONG).show();
             openSettings();
             finish();
             return;
@@ -73,7 +75,15 @@ public final class UseDisclosure extends Activity {
         setContentView(scroll);
     }
 
+    /** Accessibility settings, asked to scroll to and mark Autark's row (the keys Android's Settings app reads for a
+     *  search hit; one that does not know them just opens the list). */
     private void openSettings() {
-        try { startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); } catch (RuntimeException error) { /* no settings screen */ }
+        String row = new ComponentName(this, UseService.class).flattenToString();
+        Bundle args = new Bundle();
+        args.putString(":settings:fragment_args_key", row);
+        Intent settings = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .putExtra(":settings:fragment_args_key", row)
+                .putExtra(":settings:show_fragment_args", args);
+        try { startActivity(settings); } catch (RuntimeException error) { /* no settings screen */ }
     }
 }
