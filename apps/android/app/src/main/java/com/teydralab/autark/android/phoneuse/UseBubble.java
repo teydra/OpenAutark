@@ -8,9 +8,11 @@
 // Touches outside it reach the app as before and change nothing for the AI (owner 20.11.2026: the person keeps using
 // the phone while the AI works; there is no touch-pause). For the AI's screenshot it is invisible for one
 // frame (hideForShot), and while the AI's own gesture runs touches pass through it (passThrough: FLAG_NOT_TOUCHABLE),
-// so the AI neither sees nor presses it. It goes HIDE_AFTER_MS after the last step, and at once when the PC says the
-// AI's run is over (finished). Never: stays after ✕ (it closes at once), hides while paused or asking, or treats the
-// AI's text as anything but text.
+// so the AI neither sees nor presses it. When the PC says the AI's run is over (finished), and HIDE_AFTER_MS after the
+// last step, Pause and ✕ go at once and the line says for EndSignal.SHOW_MS that the AI is done (EndSignal.line,
+// task_wz8y4krs), touches passing through it; then it goes – a new step in between brings the active look back.
+// Never: stays after ✕ (it closes at once and says nothing), says done for another job or while asking, hides while
+// paused or asking, or treats the AI's text as anything but text.
 package com.teydralab.autark.android.phoneuse;
 
 import android.accessibilityservice.AccessibilityService;
@@ -42,9 +44,10 @@ final class UseBubble {
         void end();
     }
 
-    private enum Look { ACTIVE, HELD }
+    private enum Look { ACTIVE, HELD, DONE }
 
-    /** Without a step this long the AI is thinking or done elsewhere: the bubble goes (the next step brings it back). */
+    /** Without a step this long the AI is thinking or done elsewhere: the bubble says done and goes (the next step
+     *  brings it back). */
     static final long HIDE_AFTER_MS = 2 * 60_000;
     /** After a frame was drawn, this long until it is on the screen (composited). */
     private static final long FRAME_MS = 32;
@@ -55,7 +58,8 @@ final class UseBubble {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Person person;
     private final boolean german;
-    private final Runnable hide = this::remove;
+    private final Runnable hide = () -> end(null);
+    private final Runnable gone = this::remove;
     private float density;
     private LinearLayout view;
     private WindowManager.LayoutParams params;
@@ -99,24 +103,31 @@ final class UseBubble {
 
     void close() { main.post(() -> { main.removeCallbacks(hide); remove(); }); }
 
-    /** The PC's run `forJob` is over (any thread): the bubble goes now – unless it shows another job, or a question
-     *  still waits for its answer. */
-    void finished(String forJob) {
-        main.post(() -> {
-            String now = job;
-            if (forJob != null && now != null && !forJob.equals(now)) return;
-            if (question != null) return;
-            said = null;
-            main.removeCallbacks(hide);
-            remove();
-        });
+    /** The PC's run `forJob` is over (any thread): the short done, then gone – unless it shows another job, or a
+     *  question still waits for its answer. */
+    void finished(String forJob) { main.post(() -> end(forJob)); }
+
+    /** An end (main thread; forJob null: HIDE_AFTER_MS without a step) as EndSignal decides it. */
+    private void end(String forJob) {
+        if (look == Look.DONE && view != null) return; // already saying it
+        EndSignal.Outcome outcome = EndSignal.on(forJob, job, question != null, view != null);
+        if (outcome == EndSignal.Outcome.IGNORE) return;
+        said = null;
+        main.removeCallbacks(hide);
+        if (outcome == EndSignal.Outcome.GONE) { remove(); return; }
+        look = Look.DONE;
+        render();
+        touchable(false);
+        main.removeCallbacks(gone);
+        main.postDelayed(gone, EndSignal.SHOW_MS);
     }
 
     /** The AI's question (any thread) with its buttons (SayChoices; empty: only ✕): `then` hears the tapped label – ✕
      *  for the ✕ cell – once, on the main thread. */
     void ask(String text, List<String> buttons, Consumer<String> then) {
         main.post(() -> {
-            shownBeforeQuestion = view != null;
+            shownBeforeQuestion = view != null && look != Look.DONE;
+            if (look == Look.DONE) leaveDone(Look.ACTIVE);
             question = text;
             choices = buttons;
             answer = then;
@@ -158,9 +169,7 @@ final class UseBubble {
         CountDownLatch applied = new CountDownLatch(1);
         main.post(() -> {
             if (view == null || params == null) { applied.countDown(); return; }
-            if (on) params.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            else params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-            try { windows.updateViewLayout(view, params); } catch (RuntimeException gone) { /* removed meanwhile */ }
+            touchable(!on && look != Look.DONE); // the done line lets touches through anyway
             afterFrame(applied::countDown);
         });
         if (on) await(applied);
@@ -175,7 +184,23 @@ final class UseBubble {
         try { latch.await(WAIT_MS, TimeUnit.MILLISECONDS); } catch (InterruptedException stop) { Thread.currentThread().interrupt(); }
     }
 
+    /** Touches on the bubble reach it (true) or pass through to the app below (false); main thread. */
+    private void touchable(boolean on) {
+        if (view == null || params == null) return;
+        if (on) params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        else params.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        try { windows.updateViewLayout(view, params); } catch (RuntimeException removed) { /* removed meanwhile */ }
+    }
+
+    /** Out of the done look into `next` (a new step or question in its 2 s): the bubble stays and takes touches again. */
+    private void leaveDone(Look next) {
+        main.removeCallbacks(gone);
+        look = next;
+        touchable(true);
+    }
+
     private void show(Look next) {
+        if (look == Look.DONE) leaveDone(next);
         look = next;
         ensure();
         render();
@@ -189,6 +214,7 @@ final class UseBubble {
         if (question != null) {
             line.setText(question);
             primary.setVisibility(View.GONE);
+            close.setVisibility(View.VISIBLE);
             close.setContentDescription(german ? "Gerade nicht" : "Not now");
             for (String label : SayChoices.row(choices)) row.addView(choice(label, true), cell(LinearLayout.LayoutParams.WRAP_CONTENT));
             for (String label : SayChoices.below(choices)) below.addView(choice(label, false), under());
@@ -196,7 +222,14 @@ final class UseBubble {
             return;
         }
         below.setVisibility(View.GONE);
+        if (look == Look.DONE) { // only the line: no Pause, no ✕
+            line.setText(EndSignal.line(german, by));
+            primary.setVisibility(View.GONE);
+            close.setVisibility(View.GONE);
+            return;
+        }
         primary.setVisibility(View.VISIBLE);
+        close.setVisibility(View.VISIBLE);
         close.setContentDescription(german ? "Beenden" : "End");
         switch (look) {
             case HELD: set(german ? "Pausiert · das Handy gehört dir" : "Paused · the phone is yours", german ? "Weiter" : "Continue"); break;
@@ -326,6 +359,8 @@ final class UseBubble {
     }
 
     private void remove() {
+        main.removeCallbacks(gone);
+        if (look == Look.DONE) look = Look.ACTIVE; // the next showing starts fresh
         if (view == null) return;
         try { windows.removeView(view); } catch (RuntimeException ignored) { /* already gone */ }
         view = null;
