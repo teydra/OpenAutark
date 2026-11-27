@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -155,6 +156,23 @@ public final class UiUpdateTest {
         place.publish(40, UiUpdate.SHELL + 1, fourth, SEED);
         place.asked.clear();
         check(!again.check(place, now + 300_000) && !place.asked.contains(sha("four")), "a list for a newer app fetches nothing");
+        // 28.11.2026 (8c): a stored blob changed under its name, cut short or gone makes the start drop the list; the APK's UI runs.
+        File three = new File(dir, "blobs/" + sha("three"));
+        byte[] good = Files.readAllBytes(three.toPath());
+        byte[] bent = good.clone();
+        bent[0] ^= 1; // same size, other content
+        Files.write(three.toPath(), bent);
+        UiUpdate bad = new UiUpdate(dir, assets::get, KEYS);
+        check(bad.ns()[0] == 10 && bad.ns()[1] == 10 && text(get(new UiFiles(bad), "/main.js", false)).equals("one") && names(new File(dir, "lists")).isEmpty(), "a blob changed under its name: the list is dropped, the APK's interface runs");
+        place.publish(30, 1, third, RESERVE_SEED);
+        check(bad.check(place, now + 400_000) && Arrays.equals(Files.readAllBytes(three.toPath()), good), "the normal look fetches the list and its blob again");
+        Files.write(three.toPath(), Arrays.copyOf(good, good.length - 1));
+        check(new UiUpdate(dir, assets::get, KEYS).ns()[1] == 10, "a blob of another size: the list is dropped");
+        place.publish(30, 1, third, RESERVE_SEED);
+        check(new UiUpdate(dir, assets::get, KEYS).check(place, now + 500_000), "the list comes back through the look");
+        check(three.delete() && new UiUpdate(dir, assets::get, KEYS).ns()[1] == 10, "a missing blob: the list is dropped");
+        place.publish(30, 1, third, RESERVE_SEED);
+        check(new UiUpdate(dir, assets::get, KEYS).check(place, now + 600_000) && new UiUpdate(dir, assets::get, KEYS).ns()[1] == 30, "an unchanged list stays");
         // A newer APK whose own list is above the fetched ones: they go.
         assets.put(UiUpdate.LIST, list(50, 1, shipped));
         UiUpdate newer = new UiUpdate(dir, assets::get, KEYS);
