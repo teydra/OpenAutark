@@ -24,7 +24,7 @@
 
 import os from 'node:os';
 import type { RuntimeServices } from '../../contracts.ts';
-import { fitLocalSpeech, LOCAL_SPEECH_MODELS, localSpeechModel, SILERO_VAD, SMART_TURN, type LocalSpeechModel, type LocalSpeechModels, type LocalSpeechOffer, type LocalSpeechPull, type SpeechHardware, type SpokenAudio } from '../../../shared/model/local-speech-models.ts';
+import { fitLocalSpeech, LOCAL_SPEECH_MODELS, localSpeechModel, SILERO_VAD, SMART_TURN, ttsSteps, type LocalSpeechModel, type LocalSpeechModels, type LocalSpeechOffer, type LocalSpeechPull, type SpeechHardware, type SpokenAudio, type TtsSteps } from '../../../shared/model/local-speech-models.ts';
 import { pcm16Bytes, resample, type MonoAudio } from '../../../shared/voice/wav.ts';
 import { WorkforceError } from '../../../shared/errors.ts';
 import { hearFormat, hostDecodes, pcmOf, WHOLE_BYTES } from '../../media/hear-any.ts';
@@ -161,6 +161,11 @@ export class LocalSpeech {
     try { voice = this.deps.services().settings.get().voice; } catch { return undefined; }
     const model = localSpeechModel(purpose === 'stt' ? voice?.localStt : voice?.localTts, purpose);
     return model && this.installed(model) ? model : undefined;
+  }
+
+  /** Call speed 27.11.2026: the steps the voice takes per piece read aloud (settings.voice.localTtsSteps, unset: DEFAULT_TTS_STEPS). */
+  private steps(): TtsSteps {
+    try { return ttsSteps(this.deps.services().settings.get().voice?.localTtsSteps); } catch { return ttsSteps(undefined); }
   }
 
   private profileLanguage(): string | undefined {
@@ -309,7 +314,7 @@ export class LocalSpeech {
     const sid = /^\d{1,2}$/.test(input.voice ?? '') ? Number(input.voice) : 0;
     this.speaking++;
     try {
-      const audio = await this.engine.synthesize(model, text, { sid, language: modelLanguage(model, [input.language, this.profileLanguage()], this.systemLocale()), signal: input.signal });
+      const audio = await this.engine.synthesize(model, text, { sid, language: modelLanguage(model, [input.language, this.profileLanguage()], this.systemLocale()), steps: this.steps(), signal: input.signal });
       const from = audio.sampleRate || SPOKEN_RATE;
       const rate = Math.min(from, SPOKEN_RATE);
       const samples = resample(audio.samples, from, rate);

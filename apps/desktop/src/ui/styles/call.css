@@ -11,8 +11,8 @@
 /* ---------------------------------------------------------------- the floating card */
 .call-card {
   position: absolute; z-index: 7; top: calc(anchor(--status-top top, 0px) + 8px); left: 12px;
-  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-rows: 44px 36px; column-gap: 12px; row-gap: 8px;
-  box-sizing: border-box; width: min(372px, calc(100% - 24px)); height: 110px; padding: 12px 12px 10px;
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-rows: 44px 36px 14px; column-gap: 12px; row-gap: 8px;
+  box-sizing: border-box; width: min(372px, calc(100% - 24px)); height: 132px; padding: 12px 12px 10px;
   border-radius: 18px; background: var(--call-bg); color: var(--call-fg); box-shadow: inset 0 0 0 1px var(--call-edge), var(--call-shadow);
   animation: call-in .18s ease-out;
 }
@@ -64,6 +64,10 @@
 .call-caption { /* the newest line of the call; two lines reserved, the card never grows */
   grid-column: 1 / -1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   margin: 0; font-size: calc(13px * var(--ui-text, 1)); line-height: max(18px, calc(18px * var(--ui-text, 1))); overflow-wrap: anywhere;
+}
+.call-ai-voice { /* Konrad 27.11.2026: the call's voice is machine-generated – one fixed line at the card's foot, always shown */
+  grid-column: 1 / -1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--call-muted); font-size: calc(11px * var(--ui-text, 1)); line-height: 14px;
 }
 .call-caption > strong { font-weight: 600; }
 .call-caption[data-side=agent] > strong { color: var(--call-agent); }

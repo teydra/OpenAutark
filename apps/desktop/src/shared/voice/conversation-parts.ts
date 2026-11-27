@@ -113,9 +113,17 @@ const ABBREVIATION = /(?:^|\s)(?:[\p{L}\d]|[\p{L}\d]+\.[\p{L}\d.]*|ca|bzw|usw|et
 /** A dot that a lowercase word follows ends no sentence either. */
 const GOES_ON = /^["'”’)\]]*\s+\p{Ll}/u;
 
+/** Call speed 27.11.2026: a comma followed by space (or the end) – before the first finished sentence it ends the first piece. */
+const CLAUSE_END = /,(?=\s|$)/g;
+/** The first piece cut at a comma is at least this long, so "Ja," alone waits for the next comma or the sentence end. */
+export const FIRST_CLAUSE_MIN = 8;
+
 /**
  * KI-Runde 17.11.2026: the leading part of a text whose last sentence is finished ('' while none is) – what the call voice
- * can already say while it still writes the rest (conversation.ts, runtime/calls/voice-text.ts).
+ * can already say while it still writes the rest (conversation.ts, runtime/calls/voice-text.ts). Call speed 27.11.2026
+ * (Konrad: the first piece from the first comma): while no sentence is finished yet, the part up to the first comma is
+ * the first piece – a short first piece is heard ~2 s sooner from the local voice; every later piece ends at a sentence
+ * end as before. The part only ever grows while the text grows (the reader reads on past what it already has).
  */
 export function sentencesDone(text: string): string {
   let at = 0;
@@ -124,7 +132,18 @@ export function sentencesDone(text: string): string {
     if (match[0] === '.' && (ABBREVIATION.test(text.slice(Math.max(0, match.index - 40), end)) || GOES_ON.test(text.slice(end)))) continue;
     if (end - at >= PIECE_MIN) at = end;
   }
+  if (at === 0) at = firstClause(text);
   return at > 0 ? text.slice(0, at).trim() : '';
+}
+
+/** Where the first comma ends the first piece (at least FIRST_CLAUSE_MIN long), else 0; "3," at the very end may still become "3,5". */
+function firstClause(text: string): number {
+  for (const match of text.matchAll(CLAUSE_END)) {
+    const end = match.index + 1;
+    if (end === text.length && /\d$/.test(text.slice(0, match.index))) return 0;
+    if (end >= FIRST_CLAUSE_MIN) return end;
+  }
+  return 0;
 }
 
 /** A take with this share of its word pairs (single words for one or two) among what others just said is their echo. */
