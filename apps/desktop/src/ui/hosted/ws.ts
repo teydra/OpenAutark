@@ -2,21 +2,17 @@
 // window.autarkHosted.socket('/ws') is a WebSocket-like on one stream to the PC's own /ws – RFC 6455 spoken here: an
 // HTTP/1.1 Upgrade with Host 127.0.0.1 and no Origin, the Sec-WebSocket-Accept checked (SHA-1), masked client frames,
 // fragments joined, ping answered with pong, the PC's close code passed through (4401/4403 still drive lib/refusal.ts), a
-// stream that just ends closes with 1006. No compression is offered. It waits up to 8 s for a channel, as Android does.
-// The PC pings every 15 s (runtime/http/keepalive.ts), so an open socket that hears nothing for SILENT_MS lost its way
-// without an end (owner 19.11.2026: the phone stopped showing that the AI works): it closes with 1006, and lib/rpc.ts
-// reconnects and reloads – one timer, started again by every frame, no polling.
-// Owns: this framing and the socket's states. Never: holds more than one message being joined, or retries by itself
-// (lib/rpc.ts reconnects).
+// stream that just ends closes with 1006. No compression is offered. It waits up to OPEN_LIMIT_MS for a channel, as long
+// as lib/rpc.ts gives a socket to open. A socket that goes silent is lib/rpc.ts's to find (its one liveness rule for
+// every socket): this file keeps no timer of its own (owner 27.11.2026).
+// Owns: this framing and the socket's states. Never: holds more than one message being joined, waits on silence, or
+// retries by itself (lib/rpc.ts reconnects).
 
 import type { HostedSocket } from '../pwa/hosted.ts';
 import { b64std, concat, fromLatin1, fromUtf8, latin1, random, utf8, type Bytes } from './bytes.ts';
 import { sha1 } from './crypto.ts';
 import type { Stream, StreamMux } from './streams.ts';
-import { SILENT_MS } from '../../shared/api/protocol.ts';
-
-/** Four of the PC's pings missed: the way to the PC is gone (one name with lib/rpc.ts, shared/api/protocol.ts). */
-export { SILENT_MS };
+import { OPEN_LIMIT_MS } from '../../shared/api/protocol.ts';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_MESSAGE = 32 * 1024 * 1024;
@@ -54,19 +50,10 @@ export class StreamSocket implements HostedSocket {
   private partsSize = 0;
   private closeSent = false;
   private closedFired = false;
-  private silent: ReturnType<typeof setTimeout> | undefined;
-  private readonly silentMs: number;
 
   /** `mux`: the current stream mux, waited for up to `waitMs`. */
-  constructor(mux: (waitMs: number) => Promise<StreamMux | undefined>, path = '/ws', waitMs = 8_000, silentMs = SILENT_MS) {
-    this.silentMs = silentMs;
+  constructor(mux: (waitMs: number) => Promise<StreamMux | undefined>, path = '/ws', waitMs = OPEN_LIMIT_MS) {
     void this.start(mux, path, waitMs);
-  }
-
-  /** Heard from the PC: the silence wait starts over. */
-  private heard(): void {
-    if (this.silent) clearTimeout(this.silent);
-    this.silent = setTimeout(() => { this.silent = undefined; this.fail(); }, this.silentMs);
   }
 
   send(data: string): void {
@@ -91,12 +78,10 @@ export class StreamSocket implements HostedSocket {
     stream.listen({ data: (bytes) => this.data(bytes, expected), end: () => this.fireClose(1006, '') });
     const head = [`GET ${path} HTTP/1.1`, 'Host: 127.0.0.1', 'Upgrade: websocket', 'Connection: Upgrade', `Sec-WebSocket-Key: ${key}`, 'Sec-WebSocket-Version: 13'];
     void stream.write(fromLatin1(`${head.join('\r\n')}\r\n\r\n`));
-    this.heard(); // an upgrade that never answers ends the same way
   }
 
   private data(bytes: Bytes, expected: string): void {
     if (this.closedFired) return;
-    this.heard();
     this.buffer = this.buffer.length ? concat(this.buffer, bytes) : bytes;
     if (!this.upgraded) {
       const text = latin1(this.buffer.subarray(0, Math.min(this.buffer.length, 16_384)));
@@ -175,8 +160,6 @@ export class StreamSocket implements HostedSocket {
     if (this.closedFired) return;
     this.closedFired = true;
     this.readyState = 3;
-    if (this.silent) clearTimeout(this.silent);
-    this.silent = undefined;
     this.onclose?.({ code, reason });
   }
 }

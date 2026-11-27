@@ -1,7 +1,8 @@
 // Chat header (lib/header.tsx): one row above the chat column and its side panel. The title cell: the chat's
 // avatar (a 1:1's other member opens their page; a group's picture toggles the details) and two fixed lines –
-// the chat name, a button that toggles the details panel, and the sub line, always reserved: who is working
-// (LiveLine.tsx – a click opens the lines of the live bar above the composer, LiveBar.tsx) or the chat's resting line. Right-click (long press) on the title opens the chat's menu (chat-actions.ts).
+// the chat name, a button that toggles the details panel, and the sub line, always reserved: while the connection is
+// away the PC's quiet state (shell/connection-line.ts connectionAway, owner 27.11.2026: no line over the chat), else who
+// is working (LiveLine.tsx – a click opens the lines of the live bar above the composer, LiveBar.tsx) or the chat's resting line. Right-click (long press) on the title opens the chat's menu (chat-actions.ts).
 // Desktop: a segmented row – the title track has one fixed width and right after it sit Call (the chat's voice
 // mode, call/CallHeader.tsx) and Chat tabs (opens and closes the chat's area above the messages, ChatArea.tsx; pressed
 // while open, a dot while an agent's new tab waits there – workspace/attention.ts), so nothing moves when the title, the
@@ -28,6 +29,7 @@ import { useCallCell } from './call/CallHeader.tsx';
 import { chatMenu } from './chat-actions.ts';
 import { chatAttention } from '../workspace/attention.ts';
 import { feedbackCell } from '../feedback/cell.tsx';
+import { connectionAway } from '../shell/connection-line.ts';
 
 export const PANEL_TITLES: Record<ChatPanel, string> = { details: 'Chat details', thread: 'Thread' };
 
@@ -45,6 +47,7 @@ function ChatTitle(props: { chat: ConversationSummary }) {
   const nameOf = (id: string) => knownAgentMap.value.get(id)?.name;
   const status = live ? liveStatus(chat, solo, entries, nameOf) : '';
   const resting = status ? '' : chatSubtitle(chat);
+  const away = connectionAway.value; // the connection away: said here, in the line the header reserves (shell/connection-line.ts)
   const open = chatPanel.value === 'details';
   const runIds = (chat.live ?? []).map((run) => run.runId); // F21: each agent's Stop sits at its line in the live bar – one Stop per run in view
   const menu = useContextMenu(() => chatMenu(chat));
@@ -61,7 +64,7 @@ function ChatTitle(props: { chat: ConversationSummary }) {
           <Icon name={open ? 'caret-up' : 'caret-down'} size={12} class="chat-title-caret" />
         </button>
         <div class="chat-sub" data-clock={clock12 ? '12' : undefined}>
-          {status
+          {away ? <span class="chat-resting chat-away">{away}</span> : status
             ? <LiveLine text={status} short={liveShort(chat, solo, entries, nameOf)} names={liveNames(chat, solo, entries, nameOf)} open={linesOpen(runIds)} onToggle={() => toggleLines(runIds)} />
             : resting && <span class="chat-resting">{resting}</span>}
         </div>

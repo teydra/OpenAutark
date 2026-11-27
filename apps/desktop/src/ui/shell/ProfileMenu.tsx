@@ -7,7 +7,7 @@
 // role there – "CEO" in their own, how the firm names them in another ("Designer · Kim"). In the phone layout, where
 // the rail with its quota badges is hidden, the menu shows the same badges (QuotaRail). B-084 (decision 7): inside the
 // Android app (once its port is here) the menu is the phone sheet – the photo, the name and one status line
-// "<company> · <PC>" (a tap shows the app's PC picker), the companies this phone is paired with (their pictures, the
+// "<company> · 2 of 3 PCs online" (only words: every online PC is linked, there is no picker), the companies this phone is paired with (their pictures, the
 // current one ticked; a pick lets the app switch), "Add a company" (the app's scanner screens) and Settings. "Forget
 // this phone" lives in Settings › Devices now. 20.11.2026 (owner: "ein Drei-Punkte-Menü ... neben der Firma ... dass man da
 // austreten kann ... wie Account-Einstellung"): each company row has its ⋯ (MenuItem.more, its slot always there); it
@@ -36,7 +36,7 @@ import { companyLine, companyMenu } from '../settings/company-actions.ts';
 import type { CompanyAction } from '../settings/company-actions.ts';
 import { isAndroidApp } from '../pwa/native.ts';
 import { hasNativePort } from '../pwa/native-port.ts';
-import { addCompany, phoneCompanies, phoneStatus, showPcs, statusLine, switchCompany } from '../pwa/phone-companies.ts';
+import { addCompany, phoneCompanies, phoneStatus, statusLine, switchCompany } from '../pwa/phone-companies.ts';
 import type { PhoneCompany } from '../pwa/phone-companies.ts';
 import { QuotaRail } from './QuotaRail.tsx';
 
@@ -135,7 +135,7 @@ export function ProfileButton(props: { size?: number; placement?: 'right-end' | 
       <HumanAvatar size={40} />
       <div class="profile-head-text">
         <span class="profile-name">{name}</span>
-        <button type="button" class="profile-status" onClick={() => { setOpen(false); showPcs(); }}>{statusLine(current?.name ?? companyLabel(profile, null), phoneStatus.value)}</button>
+        <span class="profile-status">{statusLine(current?.name ?? companyLabel(profile, null), phoneStatus.value)}</span>
       </div>
     </div>
   ) : (

@@ -1,8 +1,8 @@
 // B-084 (decision 7) the Android app's companies as the page sees them, over the native port (native-port.ts): the
 // 'companies' list (each pairing its own origin, the current one ticked) and the 'status' of the link ("<company> ·
-// <PC>" in the profile sheet, shell/ProfileMenu.tsx). A pick, "Add a company" and the PC picker are one message each;
-// the app does the switching. Back to the app go this company's card (name + a 64 px JPEG of the profile photo, the
-// picture the app shows in its list) and the colours of the top row and the tab bar (decision 2: the app paints its
+// <PC>" in the profile sheet, shell/ProfileMenu.tsx). A pick and "Add a company" are one message each; the app does the
+// switching. There is no PC picker (owner 27.11.2026: every PC of the company that is online is linked). Back to the
+// app go this company's card (name + a 64 px JPEG of the profile photo, the picture the app shows in its list) and the colours of the top row and the tab bar (decision 2: the app paints its
 // status and navigation strips with them) – on the port's arrival, on a theme or screen change and on 'resume'.
 // Owns: those signals and messages. Never: switches, adds or forgets a company itself (the app does), draws anything.
 
@@ -67,7 +67,6 @@ export function statusLine(company: string, status: PhoneStatus | null): string 
 
 export const switchCompany = (id: string): boolean => sendNative({ t: 'switch', id });
 export const addCompany = (): boolean => sendNative({ t: 'add' });
-export const showPcs = (): boolean => sendNative({ t: 'pcs' });
 
 const CARD_PX = 64;
 

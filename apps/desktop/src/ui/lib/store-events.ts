@@ -12,7 +12,7 @@ import type { TaskView } from '../../shared/model/tasks.ts';
 import type { Agent } from '../../shared/model/org.ts';
 import { rpc } from './rpc.ts';
 import {
-  accounts, activeConversationId, activity, agents, archivedAgents, conversations, loadAll, messages, models, putMessage,
+  accounts, activeConversationId, activity, agents, archivedAgents, catchUp, conversations, loadAll, messages, models, putMessage,
   removeById, route, settings, systemInfo, tasks, todoClock, todos, updateState, upsertById, usage,
 } from './store.ts';
 import { onForYouList } from '../../shared/model/todo-later.ts';
@@ -95,7 +95,7 @@ export function wireEvents(): void {
   rpc.onOpen(() => { void loadAll(); });
 
   // chats / messages
-  rpc.on('conversation.upserted', (chat) => upsertById(conversations, chat));
+  rpc.on('conversation.upserted', (chat) => { upsertById(conversations, chat); catchUp(chat); }); // its new line, before it is opened
   rpc.on('conversation.removed', ({ id }) => { removeById(conversations, id); messages.delete(id); });
   rpc.on('message.created', putMessage);
   rpc.on('message.updated', putMessage);

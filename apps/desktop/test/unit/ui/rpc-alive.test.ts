@@ -60,29 +60,38 @@ async function page(t: TestContext) {
   return { mod, rpc: mod.rpc, doc, fire, opened };
 }
 
-test('visible with a dead socket: connects at once, with the backoff back at 500 ms', async (t) => {
+test('the reconnect steps: none after a close, then 250 ms doubling to 2 s in front – 10 s at most while hidden or refused', async (t) => {
+  const { mod } = await page(t);
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 9].map((failed) => mod.retryDelay(failed, false)), [0, 250, 500, 1_000, 2_000, 2_000, 2_000]);
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 9].map((failed) => mod.retryDelay(failed, true)), [0, 500, 1_000, 2_000, 4_000, 8_000, 10_000]);
+});
+
+test('a close: the first attempt goes out at once; visible with a dead socket connects at once, the steps start over', async (t) => {
   const { rpc, doc, fire, opened } = await page(t);
   const first = await opened();
-  first.onclose!({ code: 1006 }); // the OS finally reported the drop; the next try waits 500 ms, then 1 s
+  first.onclose!({ code: 1006 }); // the OS finally reported the drop
   assert.equal(rpc.status.value, 'closed');
+  mock.timers.tick(0);
+  assert.equal(FakeSocket.all.length, 2, 'the first attempt after a close waits for nothing');
+  last().onclose!({ code: 1006 }); // that attempt failed before it opened: the next one waits a short step (250 ms)
+  await flush();
+  assert.equal(FakeSocket.all.length, 2);
 
   doc.visibilityState = 'hidden';
   fire('visibilitychange');
-  assert.equal(FakeSocket.all.length, 1, 'hidden: nothing happens');
+  assert.equal(FakeSocket.all.length, 2, 'hidden: nothing happens');
 
   doc.visibilityState = 'visible';
   fire('visibilitychange');
-  assert.equal(FakeSocket.all.length, 2, 'visible: a new socket right away, no waiting for the timer');
+  assert.equal(FakeSocket.all.length, 3, 'visible: a new socket right away, no waiting for the timer');
   assert.equal(last().url, 'wss://phone.test/ws');
   assert.equal(first.probes().length, 0, 'a closed socket is never probed');
 
   const second = await opened();
   assert.equal(rpc.status.value, 'open');
   second.onclose!({ code: 1006 });
-  mock.timers.tick(499);
-  assert.equal(FakeSocket.all.length, 2);
-  mock.timers.tick(1);
-  assert.equal(FakeSocket.all.length, 3, 'the backoff was reset to 500 ms (else 1 s)');
+  mock.timers.tick(0);
+  assert.equal(FakeSocket.all.length, 4, 'the steps started over: the first attempt at once again');
 });
 
 test('visible with a live socket: only a probe, the socket stays', async (t) => {
@@ -116,8 +125,8 @@ test('a probe without an answer in 3 s: the socket counts as dead, calls reject,
   const { rpc, fire, opened } = await page(t);
   const first = await opened();
   first.onclose!({ code: 1006 });
-  mock.timers.tick(500);
-  const half = await opened(); // never answers anything: the backoff stays grown (1 s, next 2 s)
+  mock.timers.tick(0);
+  const half = await opened(); // never answers anything: the steps stay grown (next 250 ms)
   let reloads = 0;
   rpc.onOpen(() => { reloads += 1; });
   const hanging = rpc.call('devices.list');
@@ -139,10 +148,8 @@ test('a probe without an answer in 3 s: the socket counts as dead, calls reject,
   half.onclose?.({ code: 1006 }); // the OS reports the old one late: nothing changes
   assert.equal(rpc.status.value, 'open');
   fresh.onclose!({ code: 1006 });
-  mock.timers.tick(499);
-  assert.equal(FakeSocket.all.length, 3);
-  mock.timers.tick(1);
-  assert.equal(FakeSocket.all.length, 4, 'the backoff was reset to 500 ms (else 2 s)');
+  mock.timers.tick(0);
+  assert.equal(FakeSocket.all.length, 4, 'the steps were reset: the first attempt at once (else 250 ms)');
 });
 
 test('one probe at a time: visible, pageshow, online and a push together send one probe and reconnect once', async (t) => {

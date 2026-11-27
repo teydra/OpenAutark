@@ -1,6 +1,6 @@
-// B-084 reconnect on the phone (src/ui/lib/rpc.ts): a socket that does not open within 8 s is given up (a dead tunnel
-// would keep it 'connecting' for minutes and block every resume check); a page coming back replaces a connect attempt
-// older than 8 s even when a sleeping phone froze its timer; refresh() (pull-down) connects at once when not open and,
+// B-084 reconnect on the phone (src/ui/lib/rpc.ts): a socket that does not open within 5 s (OPEN_LIMIT_MS) is given up (a
+// dead tunnel would keep it 'connecting' for minutes and block every resume check); a page coming back replaces a connect
+// attempt older than that even when a sleeping phone froze its timer; refresh() (pull-down) connects at once when not open and,
 // on an open socket, reloads everything (rpc.open) once the probe answers; window.autarkResume and the Android app's
 // native `resume` message run the same check. The older liveness rules: rpc-alive.test.ts.
 // Owns: these assertions only. Never: a real socket, browser, phone or runtime.
@@ -61,30 +61,30 @@ async function page(t: TestContext) {
   return { mod, rpc: mod.rpc, win, opened, reloads: () => reloads };
 }
 
-test('a socket that does not open within 8 s is given up; the backoff then tries again', async (t) => {
+test('a socket that does not open within 5 s is given up; the next try goes out at once', async (t) => {
   const { rpc } = await page(t);
   const stuck = last();
-  mock.timers.tick(7_999);
+  mock.timers.tick(4_999);
   assert.equal(stuck.closed, false);
   assert.equal(rpc.status.value, 'connecting');
   mock.timers.tick(1);
   await flush();
-  assert.equal(stuck.closed, true, 'given up after 8 s');
+  assert.equal(stuck.closed, true, 'given up after 5 s (OPEN_LIMIT_MS)');
   assert.equal(stuck.onopen, null, 'a late open of it changes nothing');
   assert.equal(rpc.status.value, 'closed');
-  mock.timers.tick(500);
-  assert.equal(FakeSocket.all.length, 2, 'the next try after the 500 ms backoff');
+  mock.timers.tick(0);
+  assert.equal(FakeSocket.all.length, 2, 'the next try without a wait');
 });
 
-test('a page coming back replaces an attempt older than 8 s whose timer a sleeping phone froze; a young one stays', async (t) => {
+test('a page coming back replaces an attempt older than 5 s whose timer a sleeping phone froze; a young one stays', async (t) => {
   const { mod, rpc, opened } = await page(t);
   const first = last();
   mock.timers.setTime(3_000); // no timer fires: the phone slept
   mod.checkAlive();
   assert.equal(FakeSocket.all.length, 1, 'a 3 s old attempt goes on');
-  mock.timers.setTime(9_000);
+  mock.timers.setTime(6_000);
   mod.checkAlive();
-  assert.equal(FakeSocket.all.length, 2, 'a 9 s old attempt is replaced at once');
+  assert.equal(FakeSocket.all.length, 2, 'a 6 s old attempt is replaced at once');
   assert.equal(first.closed, true);
   await flush();
   assert.equal(rpc.status.value, 'connecting', 'the given-up attempt settling late changes nothing');

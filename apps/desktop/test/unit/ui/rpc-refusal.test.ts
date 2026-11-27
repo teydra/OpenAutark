@@ -100,9 +100,8 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   first.onclose!({ code: 4403 }); // the owner pressed Remove while the phone was connected
   assert.equal(page.refused.value, 4403);
 
-  mock.timers.tick(499);
   assert.equal(FakeSocket.all.length, 1);
-  mock.timers.tick(1);
+  mock.timers.tick(0); // the first attempt after a close waits for nothing
   const second = last();
   assert.notEqual(second, first);
   second.onopen!();
@@ -110,9 +109,9 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   second.onclose!({ code: 4401 }); // what the runtime answers a revoked token's Hello
   assert.equal(page.refused.value, 4403, 'still "This phone was removed.", not "This device is no longer paired."');
 
-  // The refused socket had opened, but the runtime never answered: the delay keeps growing.
-  mock.timers.tick(999);
-  assert.equal(FakeSocket.all.length, 2, 'no reconnect every 500 ms');
+  // The refused socket had opened, but the runtime never answered: the delay keeps growing (a refusal's slower steps).
+  mock.timers.tick(499);
+  assert.equal(FakeSocket.all.length, 2, 'no reconnect at once again');
   mock.timers.tick(1);
   assert.equal(FakeSocket.all.length, 3); // left connecting, so this instance makes no further sockets
 
@@ -146,6 +145,6 @@ test('rpc: a removed phone stays "removed" through reconnects and a reload; back
   assert.equal(storage.getItem(REVOKED_KEY), null, 'the old marker is dropped once a token works');
   fifth.onclose!({ code: 1006 });
   const before = FakeSocket.all.length;
-  mock.timers.tick(500);
-  assert.equal(FakeSocket.all.length, before + 1, 'an accepted connection reconnects after 500 ms');
+  mock.timers.tick(0);
+  assert.equal(FakeSocket.all.length, before + 1, 'an accepted connection reconnects at once');
 });

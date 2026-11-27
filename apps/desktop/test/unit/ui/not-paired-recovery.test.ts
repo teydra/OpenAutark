@@ -4,7 +4,7 @@
 // a refusal (4401) goes to the app ('refused') so it tries the company's next PC.
 // Sicher-Runde 19.11.2026 (D1, D4, D5): "Not paired" (4401) and a PC that does not know the phone yet (4404) no longer
 // replace the shell – they are a line in the status line (shell/connection-line.ts, texts in connection-line.test.ts)
-// with Choose PC / Pair again; 4404 goes to the Android app as 'refused' too, so it tries the company's next PC.
+// with Pair again; 4404 goes to the Android app as 'refused' too, so it tries the company's next PC.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

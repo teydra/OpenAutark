@@ -1,6 +1,9 @@
 // Client state as signals: snapshots loaded once per connection (loadAll – the model catalog with them), then kept fresh
 // by event deltas (store-events.ts). Every view reads from here; nothing keeps a second copy. A view that loads data of
-// its own reloads it on the same reconnect (lib/use-load.ts).
+// its own reloads it on the same reconnect (lib/use-load.ts). Each chat's lines live in one list (messagesFor): the open
+// chat's from its events, every other chat of the list catches up its newest lines when its summary says there are
+// new ones (catchUp), and a load fills in behind what is shown (takeNewest) – so a chat opens with the line its preview
+// already shows (owner 27.11.2026).
 // Owns: the data signals, loaders and small upsert helpers.
 // Never: renders, or polls – freshness comes from events and reconnect reloads only.
 
@@ -22,6 +25,7 @@ import { loadPeople, personName } from './people.ts';
 import { loadDay } from './day-store.ts';
 import { selfIdentity } from './self-identity.ts';
 import { SYSTEM_ID } from '../../shared/ids.ts';
+import { chatSection } from '../../shared/text/chat-sections.ts';
 
 export { route, isMobile };
 
@@ -133,6 +137,9 @@ export function agentName(id: string): string {
 // ------------------------------------------------------------------ loaders
 
 const PAGE = 60;
+/** How long a failed loadAll waits before it asks again on the same open socket (no Try now: the page asks by itself). */
+const LOAD_RETRY_MS = 5_000;
+let retryLoad: ReturnType<typeof setTimeout> | undefined;
 
 const fetching = new Map<string, Promise<ConversationSummary | undefined>>();
 
@@ -173,14 +180,59 @@ function keepOpenChat(list: ConversationSummary[]): ConversationSummary[] {
   return [...list, held];
 }
 
-export async function loadMessages(conversationId: string): Promise<void> {
-  const page = await rpc.call('messages.list', { conversationId, limit: PAGE });
+/**
+ * Puts a page of a chat's newest lines (asked with `limit`) into its held list without blanking it (owner 27.11.2026: a
+ * chat opens with what is already here, the load fills in behind): the page stands for everything from its oldest seq
+ * on; held lines older than that stay when the page joins them (its oldest seq at or below the held newest), so a view
+ * scrolled into older pages keeps them. A page that does not join (more new lines than it holds) replaces the list. A
+ * page shorter than `limit` reaches the chat's first line.
+ */
+export function takeNewest(conversationId: string, page: readonly Message[], limit: number): void {
   const sorted = page.slice().sort((a, b) => a.seq - b.seq);
-  messagesFor(conversationId).value = sorted;
-  if (sorted.length) pageFloor.set(conversationId, sorted[0].seq);
-  else pageFloor.delete(conversationId);
-  if (page.length < PAGE) historyComplete.add(conversationId);
-  else historyComplete.delete(conversationId);
+  const list = messagesFor(conversationId);
+  const held = list.peek();
+  const first = sorted[0];
+  const whole = page.length < limit;
+  const joins = first !== undefined && held.length > 0 && first.seq <= held[held.length - 1].seq;
+  const ids = new Set(sorted.map((message) => message.id));
+  const kept = whole || !joins ? [] : held.filter((message) => message.seq < first.seq && !ids.has(message.id));
+  list.value = kept.length ? [...kept, ...sorted] : sorted;
+  if (whole) historyComplete.add(conversationId);
+  else if (!kept.length) historyComplete.delete(conversationId);
+  const floor = kept.length ? (pageFloor.get(conversationId) ?? kept[0].seq) : first?.seq;
+  if (floor === undefined) pageFloor.delete(conversationId);
+  else pageFloor.set(conversationId, floor);
+}
+
+export async function loadMessages(conversationId: string): Promise<void> {
+  takeNewest(conversationId, await rpc.call('messages.list', { conversationId, limit: PAGE }), PAGE);
+}
+
+/** How many of a chat's newest lines a catch-up asks for. */
+const NEWEST = 10;
+const catching = new Set<string>();
+
+/**
+ * A chat of the list that has a line this page does not hold yet (its summary's lastSeq above the held newest – the
+ * list's preview already shows it): its newest lines are asked for now, so the chat opens with that line at once
+ * instead of after the open's load (owner 27.11.2026). Only chats of the main list (where the person reads and the
+ * preview shows), one ask per chat at a time, never for the open chat (it hears its own lines on chat:<id>). Asked again
+ * when the summary moved on meanwhile; a failed ask waits for the next open socket (loadAll).
+ */
+export function catchUp(chat: ConversationSummary): void {
+  const id = chat.id;
+  if (id === activeConversationId.peek() || chatSection(chat) !== 'main' || catching.has(id) || rpc.status.peek() !== 'open') return;
+  const held = messages.get(id)?.peek() ?? [];
+  if (!chat.lastSeq || chat.lastSeq <= (held[held.length - 1]?.seq ?? 0)) return;
+  const asked = chat.lastSeq;
+  catching.add(id);
+  rpc.call('messages.list', { conversationId: id, limit: NEWEST })
+    .then((page) => { if (id !== activeConversationId.peek()) takeNewest(id, page, NEWEST); }, () => undefined)
+    .finally(() => {
+      catching.delete(id);
+      const now = conversationMap.peek().get(id);
+      if (now && now.lastSeq > asked) catchUp(now);
+    });
 }
 
 /** Loads one older page; returns how many messages were added. */
@@ -211,9 +263,12 @@ export async function loadModels(refresh = false): Promise<ModelInfo[]> {
  * can(); scoped ones: skipped when the session says no, tried while it is unknown). A refused
  * snapshot never sets loadError or blocks `loaded` – it is empty. A failed load (session.info too) keeps every signal
  * as it was (D2, 19.11.2026: the shown data and the session stay) and records loadError. After the batch, without
- * waiting: the calendar window, the open chat's messages, system.info and – where this connection may – the model catalog.
+ * waiting: the calendar window, the open chat's messages, the held chats' catch-up (catchUp), system.info and – where this
+ * connection may – the model catalog. A failed load asks again after LOAD_RETRY_MS while the socket stays open.
  */
 export async function loadAll(): Promise<void> {
+  clearTimeout(retryLoad);
+  retryLoad = undefined;
   try {
     await loadSession(rpc.call);
     void loadPeople(); // F-52: people of the organisation (only when this connection may read them)
@@ -240,14 +295,17 @@ export async function loadAll(): Promise<void> {
     });
     // The Tasks page's calendar window (lib/day-store.ts; only what this connection may read).
     void loadDay(undefined, { tz: snapshot.settings.profile?.timezone });
-    // Refresh the open chat (events may have been missed while disconnected).
+    // Refresh the open chat (events may have been missed while disconnected) and catch up the chats this page holds lines of.
     const open = activeConversationId.value;
     if (open && messages.has(open)) void loadMessages(open).catch(() => undefined);
+    for (const chat of conversations.peek()) if (messages.has(chat.id)) catchUp(chat);
     void rpc.call('system.info').then((info) => { systemInfo.value = info; }).catch(() => undefined);
     // The model catalog every picker and model name reads (models.updated keeps it fresh between connects).
     if (can('models.list')) void loadModels().catch(() => undefined);
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : 'Could not load data.';
+    // the page asks again by itself while the socket stays open (owner 27.11.2026: no Try now); a new socket loads anyway
+    if (rpc.status.peek() === 'open') retryLoad = setTimeout(() => { retryLoad = undefined; if (rpc.status.peek() === 'open') void loadAll(); }, LOAD_RETRY_MS);
   }
 }
 

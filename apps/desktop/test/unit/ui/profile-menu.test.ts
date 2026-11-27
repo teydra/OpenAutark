@@ -51,7 +51,8 @@ test('B-084 the phone sheet inside the Android app: photo, name, one status line
   assert.match(source, /\{avatar \? <img src=\{avatar\} alt="" \/> : <span>\{avatarInitials\(name\)\}<\/span>\}/, 'the card photo, else initials');
   assert.match(source, /data-color=\{paletteIndex\(id\)\}/, 'on a colour from the id');
   assert.match(source, /const ADD_COMPANY: MenuItem = \{ label: 'Add a company', icon: 'plus', description: 'Scan or type another company\\'s code', onSelect: \(\) => \{ addCompany\(\); \} \};/);
-  assert.match(source, /<button type="button" class="profile-status" onClick=\{\(\) => \{ setOpen\(false\); showPcs\(\); \}\}>\{statusLine\(current\?\.name \?\? companyLabel\(profile, null\), phoneStatus\.value\)\}<\/button>/, 'the status line shows the PC picker');
+  assert.match(source, /<span class="profile-status">\{statusLine\(current\?\.name \?\? companyLabel\(profile, null\), phoneStatus\.value\)\}<\/span>/, 'the status line is words only: there is no PC picker (owner 27.11.2026)');
+  assert.doesNotMatch(source, /showPcs/);
   assert.match(source, /<HumanAvatar size=\{40\} \/>/);
 });
 

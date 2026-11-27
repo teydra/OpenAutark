@@ -187,15 +187,14 @@ select.set-input:focus { outline: none; border-color: var(--focus); }
 .profile-quota:empty { display: none; }
 .profile-quota { margin: 0 0 4px; padding: 0 6px 6px; border-bottom: 1px solid var(--line); }
 .profile-quota .usage-stack { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; max-height: none; overflow: visible; }
-/* the Android app's profile sheet (B-084, shell/ProfileMenu.tsx): photo, name, one fixed-height status line (a tap shows
-   the app's PC picker), the paired companies with a 24 px picture in the icon's place */
+/* the Android app's profile sheet (B-084, shell/ProfileMenu.tsx): photo, name, one fixed-height status line (words only),
+   the paired companies with a 24 px picture in the icon's place */
 .profile-head-row.phone-head { align-items: center; gap: 10px; padding: 10px 8px 8px 10px; }
 .phone-head .profile-head-text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
 .profile-status {
   display: block; height: 32px; max-width: 100%; padding: 0; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--muted); font-size: calc(12px * var(--ui-text, 1)); line-height: max(32px, calc(32px * var(--ui-text, 1))); text-align: left;
 }
-.profile-status:hover, .profile-status:focus-visible { color: var(--text); }
 .menu-item > .company-pic { flex: none; width: 24px; height: 24px; font-size: calc(10px * var(--ui-text, 1)); }
 
 /* ---------------------------------------------------------------- number field, the learned words (voice-words.tsx) */
