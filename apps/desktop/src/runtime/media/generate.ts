@@ -1,5 +1,6 @@
 // Media generation (MM3; B-058 G11–G13 dispatcher): images, speech, music, sound effects and video through
-// the function models (models/functions.ts: the Settings choice routing.<fn> while available, else
+// the function models (models/functions.ts: the Settings choice routing.<use> while available – speech: routing.speech, else
+// Text to speech's –, else
 // the first connected specialist) and the adapter of the account's provider (providers/index.ts adapterFor –
 // OpenAI-compatible, Gemini API, ElevenLabs, fal.ai). The free fallbacks (an image on the ChatGPT plan,
 // speech in the local voice) and the choice between the routes live in generate-route.ts.
@@ -12,6 +13,7 @@
 
 import type { RuntimeServices } from '../contracts.ts';
 import type { Account, ModelFunction, ProviderId } from '../../shared/model/providers.ts';
+import type { ModelUse } from '../../shared/model/models-uses.ts';
 import { WorkforceError } from '../../shared/errors.ts';
 import { functionStatus } from '../models/functions.ts';
 import { accountCharge } from '../../shared/model/charge.ts';
@@ -46,11 +48,13 @@ export const DEADLINE_MS: Record<GenerationKind, number> = { image: 120_000, spe
 const GRACE_MS = 2_000;
 
 export const FUNCTION_OF: Record<GenerationKind, ModelFunction> = { image: 'image', speech: 'tts', music: 'music', sound: 'sound', video: 'video' };
+/** The use whose value routes a kind (routing.<use>): media.speak has its own, Speech, apart from Text to speech. */
+export const USE_OF: Record<GenerationKind, ModelUse> = { image: 'image', speech: 'speech', music: 'music', sound: 'sound', video: 'video' };
 
 const MODELS = 'Settings › Models';
 export const ABILITY: Record<GenerationKind, { what: string; noun: string; where: string; keys: string }> = {
   image: { what: 'Image generation', noun: 'images', where: `${MODELS} › Images`, keys: 'sign in to Codex with a ChatGPT plan, or add an OpenAI or Gemini API key' },
-  speech: { what: 'Speech generation', noun: 'speech', where: `${MODELS} › Text to speech`, keys: 'download the local voice, or add a Gemini API key or an ElevenLabs key' },
+  speech: { what: 'Speech generation', noun: 'speech', where: `${MODELS} › Speech`, keys: 'download the local voice, or add a Gemini API key or an ElevenLabs key' },
   music: { what: 'Music generation', noun: 'music', where: `${MODELS} › Music`, keys: 'add a Gemini API key, an ElevenLabs key or a fal.ai key' },
   sound: { what: 'Sound effect generation', noun: 'sound effects', where: `${MODELS} › Sound effects`, keys: 'add an ElevenLabs key or a fal.ai key' },
   video: { what: 'Video generation', noun: 'video', where: `${MODELS} › Video`, keys: 'add a Gemini API key or a fal.ai key' },
@@ -76,12 +80,15 @@ export interface MediaTarget {
 
 const kindOf = (fn: ModelFunction | GenerationKind): GenerationKind => (fn === 'tts' ? 'speech' : fn as GenerationKind);
 
-/** Model, account and adapter for `kind` (or its function name, 'tts' for speech), or an error saying why none. */
-export function resolveTarget(s: GenerateServices, fn: ModelFunction | GenerationKind): { target?: MediaTarget; error?: WorkforceError; off?: boolean } {
+/**
+ * Model, account and adapter for `kind` (or its function name, 'tts' for speech), or an error saying why none. `use`: the
+ * use whose value counts (default the kind's, USE_OF; Settings' Text to speech row reads its own with 'tts').
+ */
+export function resolveTarget(s: GenerateServices, fn: ModelFunction | GenerationKind, use?: ModelUse): { target?: MediaTarget; error?: WorkforceError; off?: boolean } {
   const kind = kindOf(fn);
   const { what, noun, where, keys } = ABILITY[kind];
   const lower = what.toLowerCase();
-  const status = functionStatus(s, FUNCTION_OF[kind]);
+  const status = functionStatus(s, FUNCTION_OF[kind], use ?? USE_OF[kind]);
   if (status.off) return { off: true, error: new WorkforceError('unavailable', `${what} is turned off (${where}).`) };
   if (!status.choice) {
     return {

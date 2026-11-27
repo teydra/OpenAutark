@@ -21,8 +21,11 @@ test('useWrite: each value becomes the settings that make it real', () => {
   assert.deepEqual(useWrite('stt', 'off', OFFERS), { routing: { stt: 'off' }, voice: { localStt: '' } });
   assert.deepEqual(useWrite('stt', 'auto', OFFERS), { routing: { stt: 'auto' } });
   assert.deepEqual(useWrite('tts', 'supertonic', OFFERS), { routing: { tts: 'local' }, voice: { localTts: 'supertonic' } });
-  assert.deepEqual(useWrite('voice', 'local', OFFERS), { voice: { realtime: 'off' } });
-  assert.deepEqual(useWrite('voice', 'canary', OFFERS), { routing: { stt: 'local' }, voice: { localStt: 'canary', realtime: 'off' } });
+  assert.deepEqual(useWrite('voice', 'local', OFFERS), { routing: { voice: 'local' }, voice: { realtime: 'off' } });
+  assert.deepEqual(useWrite('voice', 'canary', OFFERS), { routing: { stt: 'local', voice: 'local' }, voice: { localStt: 'canary', realtime: 'off' } });
+  assert.deepEqual(useWrite('speech', 'local', OFFERS), { routing: { speech: 'local' } });
+  assert.deepEqual(useWrite('speech', 'supertonic', OFFERS), { routing: { speech: 'local' }, voice: { localTts: 'supertonic' } });
+  assert.deepEqual(useWrite('speech', 'google:gemini-3.8-flash-tts', OFFERS), { routing: { speech: 'google:gemini-3.8-flash-tts' } });
   assert.deepEqual(useWrite('voice', 'gem:gemini-3.8-live', OFFERS), { routing: { voice: 'gem:gemini-3.8-live' }, voice: { realtime: 'auto' } });
   assert.deepEqual(useWrite('embeddings', 'local', OFFERS), { routing: { embeddings: 'local' } });
   assert.deepEqual(useWrite('work', 'codex', OFFERS), { routing: { work: 'codex' } });

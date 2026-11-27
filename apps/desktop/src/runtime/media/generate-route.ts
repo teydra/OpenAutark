@@ -10,10 +10,10 @@
 
 import type { RuntimeServices } from '../contracts.ts';
 import type { Account } from '../../shared/model/providers.ts';
-import { FREE_ROUTE_CHOICE, useValue } from '../../shared/model/models-uses.ts';
+import { FREE_ROUTE_CHOICE, routeValue, type ModelUse } from '../../shared/model/models-uses.ts';
 import { WorkforceError } from '../../shared/errors.ts';
 import { codexImage, codexImageAccount } from './codex-image.ts';
-import { DEADLINE_MS, generateMedia, mayFallBack, notSetUp, resolveTarget, type GenerateOptions, type GenerateServices, type MediaTarget } from './generate.ts';
+import { DEADLINE_MS, generateMedia, mayFallBack, notSetUp, resolveTarget, USE_OF, type GenerateOptions, type GenerateServices, type MediaTarget } from './generate.ts';
 import { localVoiceReady, speakLocally } from './generate-local.ts';
 import type { Generated, GenerationKind, GenerationRequest } from './providers/types.ts';
 
@@ -44,11 +44,15 @@ function freeRoute(s: RouteServices, kind: GenerationKind): Route | undefined {
   return undefined;
 }
 
-/** The routes of `kind` now (no network): the model first, the free route as its fallback (see the header). */
-export function routesFor(s: RouteServices, kind: GenerationKind): Routes {
-  const named = (kind === 'speech' || kind === 'image') && useValue(s.settings.get().routing, kind === 'speech' ? 'tts' : 'image') === FREE_ROUTE_CHOICE[kind] ? freeRoute(s, kind) : undefined;
+/**
+ * The routes of `kind` now (no network): the model first, the free route as its fallback (see the header). `use`: whose
+ * value counts – the kind's own (media.speak: Speech, which follows Text to speech while "auto"); Settings' Text to speech
+ * row passes 'tts'.
+ */
+export function routesFor(s: RouteServices, kind: GenerationKind, use: ModelUse = USE_OF[kind]): Routes {
+  const named = (kind === 'speech' || kind === 'image') && routeValue(s.settings.get().routing, use) === FREE_ROUTE_CHOICE[kind] ? freeRoute(s, kind) : undefined;
   if (named) return { first: named };
-  const { target, error, off } = resolveTarget(s, kind);
+  const { target, error, off } = resolveTarget(s, kind, use);
   if (off) return { error };
   const free = freeRoute(s, kind);
   if (target) return { first: { via: 'model', target }, ...(free ? { fallback: free } : {}) };

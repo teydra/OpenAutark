@@ -20,7 +20,7 @@ const model = (id: string, patch: Partial<ModelInfo> = {}): ModelInfo => {
 };
 
 test('the uses: one fixed list, every one "auto" by default in settings.json', () => {
-  assert.deepEqual([...MODEL_USES], ['work', 'decision', 'voice', 'stt', 'tts', 'image', 'video', 'music', 'sound', 'embeddings']);
+  assert.deepEqual([...MODEL_USES], ['work', 'decision', 'voice', 'stt', 'tts', 'speech', 'image', 'video', 'music', 'sound', 'embeddings']);
   for (const use of MODEL_USES) assert.equal(defaults.routing[use], 'auto', use);
   const text = settingsText(defaults, pc);
   assert.match(text, /\/\/ Work – every agent turn[^\n]*"auto"[^\n]*a plan such as "codex"/);

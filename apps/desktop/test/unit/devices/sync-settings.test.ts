@@ -284,7 +284,7 @@ const SECTION_FORM: Record<string, string[]> = {
   preferences: ['theme', 'enterSends', 'openAtLogin', 'autoDownloadUpdates'], // the window layout never travels
   notifications: ['enabled', 'sound', 'quietHours', 'pushFor'],
   voice: ['ttsVoice', 'vocabulary', 'realtime', 'talker', 'localStt', 'localTts'],
-  routing: ['work', 'decision', 'voice', 'stt', 'tts', 'image', 'video', 'music', 'sound', 'embeddings', 'costMode', 'allowPaidFallback'],
+  routing: ['work', 'decision', 'voice', 'stt', 'tts', 'speech', 'image', 'video', 'music', 'sound', 'embeddings', 'costMode', 'allowPaidFallback'],
   day: ['workStart', 'workEnd', 'bufferMin', 'planAt', 'aiHelps'],
   calendar: ['googleClientId', 'googleSecretId'],
   lifecycle: ['retention'],

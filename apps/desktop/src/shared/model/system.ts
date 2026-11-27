@@ -85,6 +85,8 @@ export interface RoutingSettings {
   voice: string;
   stt: string;
   tts: string;
+  /** media.speak's voice; "auto": Text to speech's choice (shared/model/models-uses.ts routeValue). */
+  speech: string;
   image: string;
   video: string;
   music: string;
