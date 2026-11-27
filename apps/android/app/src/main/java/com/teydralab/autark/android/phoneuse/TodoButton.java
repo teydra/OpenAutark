@@ -2,7 +2,7 @@
 // shown while this phone is paired (UseLink.linked()), also while the Autark app is closed. Three looks in one window:
 // the dot (40 dp, the Autark mark, see-through; a drag beyond the touch slop moves it, a tap opens the panel, a drop
 // with the finger at a side edge – or an accessibility long-click – turns it into the tab), the tab (10 × 36 dp at the nearest side edge; a
-// tap brings the dot back) and the panel beside the dot: call and close (back to the dot) at its top, a strip of what
+// tap brings the dot back) and the panel beside the dot (opaque – nothing below shows through): call and close (back to the dot) at its top, a strip of what
 // goes along (shots and photos as small pictures, recordings and files as chips; a tap removes one), the input line as
 // in a chat (owner 24.11.2026, task_r0y9wcex: "hinter einem Plus-Symbol … in eine Eingabezeile … Rechts … den
 // Senden-Button") – [+] [text field, 1 line up to 4] [mic: dictate] [send] – and one short status line. The plus opens a
@@ -37,7 +37,8 @@
 // The quick area (owner 24.11.2026, task_r0y9wcex: "so ein Pfeil nach oben und dann klappt über dem Fenster … noch ein
 // kleiner Bereich auf"): the arrow at the head's left opens a narrow part above the head – the panel grows upwards – with
 // the newest important unread lines (BubbleQuick: chats.list and messages.list, one line each; a tap opens that chat in
-// the app), Tasks (the app's Tasks page) and the lock-screen choice (BubbleSettings); it loads on its own thread and
+// the app), Tasks (the app's Tasks page) and the lock-screen choice (BubbleSettings; both rows keep their › whatever
+// the words' length); it loads on its own thread and
 // remembers whether it was open. The lock screen (BubbleLock): until the person chose, and in Off, the bubble goes while
 // the keyguard shows or the screen is off (the screen and unlock broadcasts and BubbleSettings' change call sync); in On
 // it stays; in On with a note every line sent while locked carries the note for the agent, and calls need On. The first
@@ -115,6 +116,10 @@ final class TodoButton {
     private static final long CALL_MS = 60_000;
     private static final long DONE_MS = 900;
     private static final int BG = Color.argb(235, 32, 36, 34);
+    /** The panel is fully opaque (S9 check 27.11.2026: the home screen's icon showed through behind + and the field). */
+    private static final int PANEL_BG = Color.rgb(32, 36, 34);
+    /** The input field's box: the old white veil over PANEL_BG, as a solid colour. */
+    private static final int FIELD_BG = Color.rgb(67, 70, 69);
     /** A press this long without moving is the quick task (owner 18.11.2026: ~350 ms). */
     private static final long HOLD_MS = 350;
     private static final int RED = Color.rgb(229, 57, 53);
@@ -154,6 +159,12 @@ final class TodoButton {
     private boolean overBin;
     /** A manual screenshot is on its way. */
     private boolean shooting;
+    /** DotDodge: the app is in front; the resting dot lies at the side as the tab now (stored place untouched); the person
+     *  touched that tab, so the dot stays out until the app has been left. */
+    private boolean appFront;
+    private boolean dodging;
+    private boolean dodgeTouched;
+    private final Runnable dodgeStep = this::settleDodge;
 
     private FrameLayout root;
     private WindowManager.LayoutParams params;
@@ -378,7 +389,44 @@ final class TodoButton {
         params.y = TodoPlace.clamp(place.getInt("y", screen[1] / 3), dp(DOT_DP), screen[1]);
         try { windows.addView(root, params); } catch (RuntimeException error) { root = null; params = null; return; }
         show(asTab ? Look.TAB : Look.DOT);
+        appFront = UseService.appFront();
+        settleDodge();
         BubblePull.changed(service);
+    }
+
+    // ------------------------------------------------------------------ the dot steps aside in the open app (DotDodge)
+
+    /** MainActivity came to the front (the dot goes to the side at once) or left it (the dot returns after DotDodge.LEAVE_MS). Any thread. */
+    void appFront(boolean front) {
+        main.post(() -> {
+            appFront = front;
+            if (!front) dodgeTouched = false; // the next visit of the app starts again
+            main.removeCallbacks(dodgeStep);
+            if (front) settleDodge(); else main.postDelayed(dodgeStep, DotDodge.LEAVE_MS);
+        });
+    }
+
+    /** Something goes on at the dot now (not a resting dot): a drag, a hold, a call, a shot, a send, the AI's bubble or question. */
+    private boolean engaged() {
+        return bin != null || hold.active() || calling != null || shooting || busy || dictation != null || recording != null
+                || dotCheck.getVisibility() == View.VISIBLE || service.agentShows();
+    }
+
+    /** Puts the dot to the side or back as DotDodge says; while the app is in front it looks again every POLL_MS. */
+    private void settleDodge() {
+        main.removeCallbacks(dodgeStep);
+        if (root == null || params == null || closed) return;
+        boolean atRest = dodging || look == Look.DOT;
+        boolean want = DotDodge.docks(appFront, atRest, place.getBoolean("tab", false), engaged(), dodgeTouched);
+        if (want && !dodging) { dodging = true; show(Look.TAB); }
+        else if (!want && dodging) show(Look.DOT); // show() ends the dodge
+        if (appFront) main.postDelayed(dodgeStep, DotDodge.POLL_MS);
+    }
+
+    /** The tab's side: the person's own tab's, else (the dodge) the side the dot's stored place is nearer to. */
+    private boolean tabLeft(int[] screen) {
+        if (dodging) return TodoPlace.left(place.getInt("x", screen[0] - dp(DOT_DP) - dp(8)), dp(DOT_DP), screen[0]);
+        return place.getBoolean("left", false);
     }
 
     /** A window laid out in screen coordinates: the status bar, the navigation bar and a cutout move nothing. */
@@ -404,6 +452,8 @@ final class TodoButton {
         root = null;
         params = null;
         look = Look.DOT;
+        dodging = false;
+        main.removeCallbacks(dodgeStep);
         BubblePull.changed(service);
     }
 
@@ -416,12 +466,13 @@ final class TodoButton {
     private void show(Look next) {
         if (root == null) return;
         look = next;
+        if (next != Look.TAB) dodging = false; // only the dodge itself calls show(TAB) with dodging set
         dot.setVisibility(next == Look.DOT ? View.VISIBLE : View.GONE);
         tab.setVisibility(next == Look.TAB ? View.VISIBLE : View.GONE);
         panel.setVisibility(next == Look.PANEL ? View.VISIBLE : View.GONE);
         int[] screen = screen();
         if (next == Look.TAB) {
-            boolean left = place.getBoolean("left", false);
+            boolean left = tabLeft(screen);
             params.x = TodoPlace.sideX(left, dp(TAB_W_DP), screen[0]);
             params.y = TodoPlace.clamp(place.getInt("y", screen[1] / 3), dp(TAB_H_DP), screen[1]);
         } else if (next == Look.DOT) {
@@ -603,12 +654,17 @@ final class TodoButton {
         view.setBackground(shape);
         view.setAlpha(0.6f);
         view.setContentDescription(german ? "Autark-Aufgabe zeigen" : "Show Autark to-do");
-        view.setOnClickListener((v) -> { place.edit().putBoolean("tab", false).apply(); show(Look.DOT); });
+        view.setOnClickListener((v) -> {
+            if (dodging) { dodgeTouched = true; show(Look.DOT); return; } // the app's dodge: the dot comes back and stays this visit, nothing stored
+            place.edit().putBoolean("tab", false).apply();
+            show(Look.DOT);
+        });
         return view;
     }
 
     private void toTab(boolean left) {
         place.edit().putBoolean("tab", true).putBoolean("left", left).putInt("y", params.y).apply();
+        dodging = false;
         show(Look.TAB);
     }
 
@@ -675,6 +731,7 @@ final class TodoButton {
 
     /** The app's pull: the dot comes out with its middle under the finger (screen px; x < 0: at its last place). */
     void comeOut(int x, int y) {
+        dodgeTouched = true; // pulled out of the open app on purpose: it stays under the finger, not at the side
         SharedPreferences.Editor edit = place.edit().putBoolean(HIDDEN, false).putBoolean("tab", false);
         if (x >= 0) edit.putInt("x", x - dp(DOT_DP) / 2).putInt("y", y - dp(DOT_DP) / 2);
         edit.apply();
@@ -819,10 +876,9 @@ final class TodoButton {
         view.setOrientation(LinearLayout.VERTICAL);
         view.setPadding(dp(6), dp(4), dp(6), dp(6));
         GradientDrawable background = new GradientDrawable();
-        background.setColor(BG);
+        background.setColor(PANEL_BG);
         background.setCornerRadius(dp(16));
-        view.setBackground(background);
-        view.setAlpha(0.94f);
+        view.setBackground(background); // opaque, and no alpha on the panel: nothing below shows through
         // above the head: the first question (the lock screen, once) and the quick area the arrow opens
         ask = makeAsk();
         LinearLayout.LayoutParams askAt = new LinearLayout.LayoutParams(-1, -2);
@@ -880,7 +936,7 @@ final class TodoButton {
         field.setMaxLines(4);
         field.setPadding(dp(8), dp(6), dp(8), dp(6));
         GradientDrawable box = new GradientDrawable();
-        box.setColor(Color.argb(40, 255, 255, 255));
+        box.setColor(FIELD_BG);
         box.setCornerRadius(dp(8));
         field.setBackground(box);
         field.setOnTouchListener((v, event) -> {
@@ -923,8 +979,8 @@ final class TodoButton {
         title.setTextSize(13);
         box.addView(title, new LinearLayout.LayoutParams(-1, -2));
         TextView why = new TextView(service);
-        why.setText(german ? "Darf die Blase auch bei gesperrtem Handy da sein? Ändern kannst du das jederzeit über den Pfeil oben in der Blase oder in Android unter App-Info › Autark."
-                : "May the bubble be there while the phone is locked? You can change this any time with the arrow at the top of the bubble, or in Android's App info › Autark.");
+        why.setText(german ? "Darf die Blase auch bei gesperrtem Handy da sein? Ändern kannst du das jederzeit über den Pfeil oben in der Blase."
+                : "May the bubble be there while the phone is locked? You can change this any time with the arrow at the top of the bubble.");
         why.setTextColor(Color.argb(200, 255, 255, 255));
         why.setTextSize(11);
         box.addView(why, new LinearLayout.LayoutParams(-1, -2));
@@ -1074,8 +1130,8 @@ final class TodoButton {
             int more = quickCount - quickRows.size();
             if (more > 0) quick.addView(quickRow(german ? "… und " + more + " weitere in den Chats" : "… and " + more + " more in the chats", () -> openRoute("#/chats"), false));
         }
-        quick.addView(quickRow((german ? "Aufgaben" : "Tasks") + "  ›", () -> openRoute("#/tasks"), true));
-        quick.addView(quickRow(BubbleLock.row(lockChoiceNow(), german) + "  ›", this::lockSettings, true));
+        quick.addView(quickLink(german ? "Aufgaben" : "Tasks", () -> openRoute("#/tasks")));
+        quick.addView(quickLink(BubbleLock.row(lockChoiceNow(), german), this::lockSettings));
         if (before >= 0) moveBy(before);
     }
 
@@ -1101,6 +1157,23 @@ final class TodoButton {
         if (action != null) view.setOnClickListener((v) -> { if (!busy) action.run(); });
         view.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
         return view;
+    }
+
+    /** A row that leads somewhere (Tasks, the lock-screen choice): its words cut at the end, the › its own view, always shown. */
+    private LinearLayout quickLink(String text, Runnable action) {
+        LinearLayout row = new LinearLayout(service);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView words = quickRow(text, null, true);
+        words.setTextColor(Color.WHITE);
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView more = quickRow("›", null, true);
+        more.setTextColor(Color.WHITE);
+        row.addView(more, new LinearLayout.LayoutParams(-2, -2));
+        row.setContentDescription(text);
+        row.setOnClickListener((v) -> { if (!busy) action.run(); });
+        row.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        return row;
     }
 
     /** A place of the app (a chat, Tasks): the panel folds to the dot and the app opens there (after unlocking, when locked). */

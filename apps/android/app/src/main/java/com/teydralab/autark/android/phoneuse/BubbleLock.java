@@ -84,8 +84,14 @@ final class BubbleLock {
         return german ? "Blase auf dem Sperrbildschirm" : "Bubble on the lock screen";
     }
 
-    /** The quick area's row: the title and the current choice. */
+    /** A choice in a few words, for the quick area's narrow row (S9 check 27.11.2026: the long label hid its ›). */
+    static String brief(String value, boolean german) {
+        if (NOTE.equals(value)) return german ? "An + Hinweis" : "On + note";
+        return label(value, german);
+    }
+
+    /** The quick area's row: "Lock screen" and the current choice, short enough for the 264 dp panel. */
     static String row(String stored, boolean german) {
-        return title(german) + ": " + label(mode(stored), german);
+        return (german ? "Sperrbildschirm" : "Lock screen") + ": " + brief(mode(stored), german);
     }
 }

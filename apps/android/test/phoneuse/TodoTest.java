@@ -44,7 +44,24 @@ public final class TodoTest {
         controlWiring(source("app/src/main/java/com/teydralab/autark/android/phoneuse/TodoButton.java"),
                 source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleSettings.java"),
                 source("app/src/main/AndroidManifest.xml"));
+        typingKeyboard(source("app/src/main/java/com/teydralab/autark/android/phoneuse/BubbleTyping.java"));
         System.out.println(assertions + " to-do button place, post and wiring assertions passed.");
+    }
+
+    /** S9, Android 10, 27.11.2026: the keyboard never came (mInputShown=false). The 1-px window under the status bar got
+     *  its content inset to 1×0, the sizeless field lost its focus (ic=null at the window's focus), and showSoftInput came
+     *  before the window had focus ("showSoftInput - cancel : mServedView != view"). */
+    private static void typingKeyboard(String typing) {
+        int create = typing.indexOf("protected void onCreate("), focus = typing.indexOf("public void onWindowFocusChanged(");
+        check(create >= 0 && focus > create);
+        String created = typing.substring(create, focus), focused = typing.substring(focus);
+        // The content takes no system insets, so the field keeps its pixel and its focus
+        check(created.contains("setOnApplyWindowInsetsListener(") && created.contains("replaceSystemWindowInsets(0, 0, 0, 0)")
+                && created.indexOf("setOnApplyWindowInsetsListener(") < created.indexOf("setContentView(input)"));
+        // The keyboard is asked for only once the window has the focus, never from onCreate
+        check(!created.contains("showSoftInput(") && focused.contains("if (!focused || shown == null) return;")
+                && focused.contains("shown.post(") && focused.indexOf("shown.post(") < focused.indexOf("showSoftInput(shown, 0)"));
+        check(typing.contains("SOFT_INPUT_STATE_ALWAYS_VISIBLE | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING"));
     }
 
     private static void holdAndSend() {
@@ -446,7 +463,11 @@ public final class TodoTest {
         check(Arrays.equals(BubbleLock.ORDER, new String[] {"off", "on", "note"}));
         check("Aus".equals(BubbleLock.label("off", true)) && "On".equals(BubbleLock.label("on", false)) && BubbleLock.label("note", true).contains("Hinweis an die KI")
                 && BubbleLock.label("note", false).contains("note to the AI") && "Off".equals(BubbleLock.label(null, false)));
-        check(BubbleLock.row(null, true).equals("Blase auf dem Sperrbildschirm: Aus") && BubbleLock.row("note", false).equals("Bubble on the lock screen: On, with a note to the AI"));
+        check(BubbleLock.row(null, true).equals("Sperrbildschirm: Aus") && BubbleLock.row("note", false).equals("Lock screen: On + note")
+                && BubbleLock.row("note", true).equals("Sperrbildschirm: An + Hinweis") && BubbleLock.row("on", true).equals("Sperrbildschirm: An"));
+        // S9 check 27.11.2026: the row fits the 264 dp panel (its › cut off with the long label) – every row short
+        for (String value : BubbleLock.ORDER) for (boolean german : new boolean[] {true, false}) check(BubbleLock.row(value, german).length() <= 30);
+        check(BubbleLock.brief("note", true).equals("An + Hinweis") && BubbleLock.brief("off", false).equals(BubbleLock.label("off", false)));
         for (String value : BubbleLock.ORDER) check(!BubbleLock.explain(value, true).isEmpty() && !BubbleLock.explain(value, false).isEmpty() && !BubbleLock.explain(value, true).equals(BubbleLock.explain(value, false)));
         check(!BubbleLock.readable(true) && BubbleLock.readable(false)); // a locked phone shows no message words
     }
@@ -516,6 +537,19 @@ public final class TodoTest {
                 && load.contains("BubbleLock.readable(locked())") && load.contains("round != quickRound") && !load.contains("messages.send") && !load.contains("work.execute"));
         String render = button.substring(button.indexOf("private void renderQuick()"), button.indexOf("private TextView quickHeading("));
         check(render.contains("PhoneRoutes.chat(row[0])") && render.contains("openRoute(\"#/tasks\")") && render.contains("this::lockSettings") && render.contains("!quickReadable"));
+        // S9 check 27.11.2026: Tasks and the lock-screen row keep their › – it is its own view, only the words are cut
+        check(render.contains("quickLink(german ? \"Aufgaben\" : \"Tasks\"") && render.contains("quickLink(BubbleLock.row(") && !render.contains("›"));
+        String link = button.substring(button.indexOf("private LinearLayout quickLink("), button.indexOf("private void openRoute("));
+        check(link.contains("new LinearLayout.LayoutParams(0, -2, 1)") && link.contains("quickRow(\"›\"") && link.contains("new LinearLayout.LayoutParams(-2, -2)"));
+        // S9 check 27.11.2026: the panel is opaque – the home screen showed through behind + and the field
+        String panel = button.substring(button.indexOf("private LinearLayout makePanel()"), button.indexOf("private LinearLayout makeAsk()"));
+        check(button.contains("PANEL_BG = Color.rgb(") && button.contains("FIELD_BG = Color.rgb(") && panel.contains("background.setColor(PANEL_BG)")
+                && panel.contains("box.setColor(FIELD_BG)") && !panel.contains("setAlpha(") && !panel.contains("background.setColor(BG)"));
+        // S9 check 27.11.2026: One UI names the App info entry "In-App notification settings" – the question names only the arrow
+        String askText = button.substring(button.indexOf("private LinearLayout makeAsk()"), button.indexOf("private void chooseLock("));
+        check(askText.contains("über den Pfeil oben in der Blase.\"") && askText.contains("with the arrow at the top of the bubble.\"")
+                && !askText.contains("App-Info") && !askText.contains("App info"));
+        check(manifest.contains("android.intent.action.APPLICATION_PREFERENCES")); // the entry itself stays
         check(button.contains("R.drawable.ic_todo_up") && button.contains("this::toggleQuick") && button.contains("putExtra(PhoneRoutes.EXTRA, route)"));
         check(button.substring(button.indexOf("private void lockSettings()"), button.indexOf("private ImageView icon(")).contains("if (locked())"));
         // the settings dialog: the App info entry, nothing changes while locked

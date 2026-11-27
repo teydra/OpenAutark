@@ -42,6 +42,32 @@ public final class DisclosureText {
 
     public static String agree(boolean german) { return german ? "Zustimmen und weiter" : "Agree and continue"; }
 
+    /** The short hint as Android's Accessibility settings open for someone who already agreed (no silent jump there). */
+    public static String turnOn(boolean german) { return turnOn(german, ""); }
+
+    /** The name Android's list shows for the service: its label (res/values use_label, not translated) – not "Autark"
+     *  (S9 27.11.2026: "Installierte Dienste" lists "Use this phone"). */
+    public static final String SERVICE = "Use this phone";
+
+    /** The same hint, through the entry that holds the service where the phone has one (section(); "" keeps the general words). */
+    public static String turnOn(boolean german, String section) {
+        if (section == null || section.isEmpty()) {
+            return german ? "Die Blase braucht die Bedienungshilfe: tippe in der Liste auf „" + SERVICE + "“ und schalte es ein."
+                    : "The bubble needs the accessibility service: tap \"" + SERVICE + "\" in the list and turn it on.";
+        }
+        return german ? "Die Blase braucht die Bedienungshilfe: unten auf „" + section + "“, dann auf „" + SERVICE + "“ tippen und einschalten."
+                : "The bubble needs the accessibility service: tap \"" + section + "\" at the bottom, then \"" + SERVICE + "\", and turn it on.";
+    }
+
+    /** Where the Accessibility settings hold an app's own service, as this phone names it: Samsung's One UI 2 (Android 10,
+     *  S9 27.11.2026) shows the areas first and at the bottom an entry "Installed services" that lists them (Samsung's
+     *  Settings ignore the scroll-to-row keys there); later One UI and other makers name and place it differently, so there
+     *  "" – the hint stays general rather than wrong. */
+    public static String section(boolean german, String maker, int sdk) {
+        if (!"samsung".equalsIgnoreCase(maker) || sdk != 29) return "";
+        return german ? "Installierte Dienste" : "Installed services";
+    }
+
     public static String decline(boolean german) { return german ? "Nicht jetzt" : "Not now"; }
 
     public static boolean isGerman(String language) { return "de".equalsIgnoreCase(language); }

@@ -380,6 +380,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
     private void resumed() {
         current = this;
         paused = false;
+        optional(() -> com.teydralab.autark.android.phoneuse.UseService.appFront(true)); // the resting to-do dot steps aside (DotDodge)
         AppNotices.resumed(true);
         optional(() -> AppNotices.clear(this));
         if (link != null) { link.connection.front(true); link.connection.check(); optional(() -> KeepAlive.start(this)); }
@@ -391,7 +392,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         // Owner 27.11.2026: a newer interface fetched file by file loads now, unless the page's voice is live (PhoneUi).
         optional(() -> { if (pageUp && !setup && !voiceLive && PhoneUi.store(this).reloadDue()) web.reload(); PhoneUi.resumed(this); });
     }
-    @Override protected void onPause() { paused = true; if (link != null) link.connection.front(false); UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
+    @Override protected void onPause() { paused = true; if (link != null) link.connection.front(false); optional(() -> com.teydralab.autark.android.phoneuse.UseService.appFront(false)); UsageCount.paused(); AppNotices.resumed(false); if (web != null) { if (!voiceLive) web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         String place = web == null || setup ? null : PhoneRoutes.place(web.getUrl());

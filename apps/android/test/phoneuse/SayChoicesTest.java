@@ -71,7 +71,8 @@ public final class SayChoicesTest {
         String bubble = source("UseBubble.java");
         check(service.contains("\"done\".equals(op)") && service.indexOf("\"done\".equals(op)") < service.indexOf("state.step(job"), "done is no step: it comes before the step check");
         check(service.contains("bubble.finished(job)"), "done takes the bubble away");
-        check(bubble.contains("if (question != null) return;"), "a waiting question keeps the bubble");
+        check(bubble.contains("EndSignal.on(forJob, job, question != null, view != null)")
+                && EndSignal.on("run_a", "run_a", true, true) == EndSignal.Outcome.IGNORE, "a waiting question keeps the bubble");
         check(bubble.contains("setMaxLines(3)"), "the line grows to three lines");
         check(bubble.contains("HIDE_AFTER_MS = 2 * 60_000"), "without the PC's word the bubble goes within two minutes");
     }
