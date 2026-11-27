@@ -30,6 +30,8 @@
 // is rejected here (it turns 'needs_login') asks the PCs that share it for theirs at once (`want`, at most every ASK_MS
 // per plan, answered at most that often per PC); each sends it when it differs from what that PC last took.
 // 24.11.2026 (ORENDA find): a PC that answers 'forbidden' gets no more logins until something relevant changes (login-refusals.ts).
+// Konrad 26.11.2026 (company move, point 2): an agent of this company that moves to an employee's PC is such a change – that
+// PC gets every plan it shares at once, as at a new connection (loginsTo), before the agent's first turn there.
 // Owns: reading, sending and writing these files. Never: logs, journals or returns their content, shows them to
 // an agent, a tool or the UI, or sends them to a PC that does not share the plan.
 
@@ -100,6 +102,16 @@ const valid = (item: unknown): item is Login => {
     && new Set(login.files.map((file) => file.name)).size === login.files.length;
 };
 
+/** The login sync of each runtime, by its database (loginsTo finds it there). */
+const running = new WeakMap<object, LoginSync>();
+
+/** An agent of this company moved to `peer`, an employee's PC: the plans it shares go there now (a refusal gets one more try). Never throws. */
+export async function loginsTo(s: RuntimeServices, peer: string): Promise<void> {
+  const sync = running.get(s.db);
+  if (!sync || linkOf(new DevicesRepo(s.db).get(peer))?.kind !== 'employee' || !s.devices.online(peer)) return;
+  await sync.catchUp(peer).catch(() => undefined);
+}
+
 export class LoginSync {
   private readonly s: RuntimeServices;
   private readonly deps: LoginDeps;
@@ -126,6 +138,7 @@ export class LoginSync {
     this.s = s;
     this.deps = deps;
     this.refusals = new LoginRefusals(s);
+    running.set(s.db, this);
   }
 
   private get platform(): NodeJS.Platform { return this.deps.platform ?? process.platform; }

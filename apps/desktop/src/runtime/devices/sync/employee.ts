@@ -8,6 +8,9 @@
 // only those rows, checked on its own data like a line from the person's phone (a finished text line of theirs, a
 // chat they are in that is not archived, an edit only of their own text line; the task assigned to the person
 // here and in the row); anything else is left out quietly, so nothing answers it and nothing repeats.
+// Konrad 26.11.2026 (company move, point 2): an agent the company moved to that PC runs there with its setup (SETUP goes
+// along for it alone), and its finished text lines in the company's chats come back like the person's – the CEO's PC takes
+// them only from the PC its row names. A CEO's PC of an older release strips the setup and drops such lines quietly.
 // 21.11.2026 (owner: "natürlich sieht man alle anderen Agenten"): every agent of the company reaches that PC without its
 // setup, and a chat the person starts there with company agents goes to the company once (startedWith), so those agents
 // answer it; then it is the company's like one that came from it.
@@ -43,7 +46,10 @@ const IDS: Readonly<Record<string, readonly string[]>> = {
   agents: ['created_by', 'person_manager_id'], // 21.11.2026: on the person's PC their own personal manager is theirs ('human')
 };
 
-/** 21.11.2026: what an agent runs with – it stays on the company's PCs; the person's PC only names the agent. */
+/**
+ * 21.11.2026: what an agent runs with – it stays on the company's PCs; the person's PC only names the agent. Konrad
+ * 26.11.2026 (company move, point 2): an agent the company moved to that very PC (its row names it) takes it along.
+ */
 const SETUP = ['instructions', 'model_policy', 'permissions', 'budget'];
 
 /** A JSON column with `change` applied; the same text when nothing changed. */
@@ -56,8 +62,8 @@ function mapJson(value: unknown, change: (parsed: unknown) => unknown): unknown 
   } catch { return value; }
 }
 
-/** The unit in the person's terms (`toPerson`, on the way to their PC) or back in this PC's terms. */
-export function asPerson<T extends Unit>(item: T, personId: string, toPerson: boolean): T {
+/** The unit in the person's terms (`toPerson`, on the way to their PC `peer`) or back in this PC's terms. */
+export function asPerson<T extends Unit>(item: T, personId: string, toPerson: boolean, peer?: string): T {
   if (!item.row) return item;
   const map = (id: unknown) => (typeof id !== 'string' ? id : toPerson ? viewId(personId, id) : realId(personId, id));
   const row: Wire = { ...item.row };
@@ -70,7 +76,7 @@ export function asPerson<T extends Unit>(item: T, personId: string, toPerson: bo
       return Array.isArray(pair) ? { ...(settings as object), directPair: pair.map(map) } : settings;
     });
   }
-  if (item.t === 'agents' && toPerson) for (const column of SETUP) delete row[column];
+  if (item.t === 'agents' && toPerson && !(peer && row.device_id === peer)) for (const column of SETUP) delete row[column];
   if (item.t === 'messages') {
     row.mentions = mapJson(row.mentions, (list) => (Array.isArray(list) ? list.map(map) : list));
     row.meta = mapJson(row.meta, (meta) => {
@@ -160,7 +166,12 @@ export function goesBack(item: Unit, peer: string, db: Db, now = Date.now()): bo
   if (!row || item.gone) return false;
   if (item.t === 'messages') {
     const chat = String(row.conversation_id);
-    return row.author_kind === 'human' && row.author_id === HUMAN_ID && cameFrom(db, `conversations/${chat}`) === peer && Boolean(membership(db, HUMAN_ID, chat));
+    if (cameFrom(db, `conversations/${chat}`) !== peer) return false;
+    if (row.author_kind === 'human') return row.author_id === HUMAN_ID && Boolean(membership(db, HUMAN_ID, chat));
+    // Konrad 26.11.2026 (company move, point 2): the finished lines of a company agent the company moved here go back too.
+    const author = String(row.author_id);
+    return row.author_kind === 'agent' && row.kind === 'text' && row.state === 'final' && Boolean(membership(db, author, chat))
+      && fromEmployer(db, author) && Boolean(db.get('SELECT 1 FROM agents WHERE id = ? AND device_id IS NULL AND archived_at IS NULL', [author]));
   }
   if (item.t === 'conversations') {
     // 21.11.2026: a chat the person started here with agents of that company goes there once (its agents answer there);
@@ -261,8 +272,11 @@ export function moveStatus(s: Pick<RuntimeServices, 'tasks' | 'log'>, move: Stat
   }
 }
 
-/** On the CEO's PC: whether a row from the PC of `personId` (already in this PC's ids) is that person's to change. */
-export function takenFrom(item: Unit, personId: string, db: Db): boolean {
+/**
+ * On the CEO's PC: whether a row from the PC of `personId` (`from`; already in this PC's ids) is that person's to change –
+ * or (Konrad 26.11.2026, company move point 2) a finished line of an agent of this company that runs on that very PC.
+ */
+export function takenFrom(item: Unit, personId: string, db: Db, from?: string): boolean {
   const row = item.row;
   if (!row || item.gone) return false;
   if (item.t === 'conversations') {
@@ -272,9 +286,12 @@ export function takenFrom(item: Unit, personId: string, db: Db): boolean {
   if (item.t === 'messages') {
     const chat = String(row.conversation_id);
     const here = db.get<{ author_id: string; conversation_id: string; kind: string }>('SELECT author_id, conversation_id, kind FROM messages WHERE id = ?', [item.id]);
-    return row.author_kind === 'human' && row.author_id === personId && row.kind === 'text' && row.state === 'final'
-      && Boolean(membership(db, personId, chat)) && !db.get('SELECT 1 FROM conversations WHERE id = ? AND archived_at IS NOT NULL', [chat])
-      && (!here || (here.author_id === personId && here.conversation_id === chat && here.kind === 'text'));
+    const author = String(row.author_id);
+    const theirs = row.author_kind === 'human' ? author === personId
+      : row.author_kind === 'agent' && from !== undefined && Boolean(db.get('SELECT 1 FROM agents WHERE id = ? AND device_id = ? AND archived_at IS NULL', [author, from]));
+    return theirs && row.kind === 'text' && row.state === 'final'
+      && Boolean(membership(db, author, chat)) && !db.get('SELECT 1 FROM conversations WHERE id = ? AND archived_at IS NOT NULL', [chat])
+      && (!here || (here.author_id === author && here.conversation_id === chat && here.kind === 'text'));
   }
   // A task stays theirs on both sides; an update never moves its chat, parent or maker (TaskRepo.save). A new one is a
   // to-do of their own, open ("Only me" too, D20) – whoever made it on their PC (mostly an agent there, theirMaker).

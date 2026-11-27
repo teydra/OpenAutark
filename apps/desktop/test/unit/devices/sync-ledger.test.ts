@@ -72,13 +72,13 @@ test('live: a new row and a mark change travel at the next tick; a cut link resu
   assert.deepEqual(record(b).map((item) => item.item_id), ['m1', 'a1', 'r2']);
 });
 
-test('an employee\'s PC gets nothing of a record and its record is refused', async () => {
+test('an employee\'s PC gets nothing of the record of an agent that does not run there, and its record is refused', async () => {
   const net = new Net();
   const a = ledgerPc(net, 'dev_a', 'dev_a');
   const c = ledgerPc(net, 'dev_c', 'dev_a');
   link(a, c, 'per_lena000001');
   row(a, 'message', { ref: 'msg:msg_1' });
-  assert.equal(await a.ledger.catchUp('dev_c'), false);
+  assert.equal(await a.ledger.catchUp('dev_c'), true, 'nothing is owed there (26.11.2026: only an agent moved there has its record go)');
   a.ledger.tick();
   await settle();
   assert.equal(ledgerCalls(net).length, 0, 'nothing went to the employee\'s PC');

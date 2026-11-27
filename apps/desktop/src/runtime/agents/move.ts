@@ -10,7 +10,8 @@
 // - It came here: its native sessions here are stale (the next turn rebuilds them from the record), the record sync
 //   learns that this PC writes it now (becameWriter), and it reads one line – the move line, or, when the PC it came from
 //   is out of reach (a takeover), the takeover line only (review L5). When the PC it came from is one of mine and online,
-//   this PC asks it once for the hand-over (peer method agents.handover, 'ceo' links only): that PC answers when its leave
+//   this PC asks it once for the hand-over (peer method agents.handover, 'ceo' links – and, Konrad 26.11.2026, an employee's
+//   PC the company moved the agent to, which gets its record and the plans it shares that way): that PC answers when its leave
 //   is done – the turn ended, the parts stopped, the record flushed – and hands over the notes that still waited for the
 //   agent there (review L4), so the first turn here starts on the whole record. Meanwhile the agent is `arriving` (the
 //   dispatcher starts nothing for it, its wakes wait); no answer within HANDOVER_MS or a dropped link: it goes on with what
@@ -34,6 +35,7 @@ import type { LinkKind } from '../devices/mesh.ts';
 import { homeElsewhere, isCeoPc, linkOf, liveHomes, selfId } from '../devices/sync/home.ts';
 import { becameWriter, fetchOriginals, flushLedger } from '../devices/sync/ledger.ts';
 import { dropSessions } from '../devices/sync/ledger-branch.ts';
+import { loginsTo } from '../devices/sync/logins.ts';
 import { shareNow } from '../devices/sync/share.ts';
 import { announceWakes, goneLine, Takeover, type TakeoverDeps } from '../devices/sync/takeover.ts';
 import { saveRepairNotes, takeRepairNotes } from './turn-finish.ts';
@@ -157,6 +159,7 @@ export function leaveHere(s: RuntimeServices, agentId: string, to: string): Prom
       stayHome(s, agentId);
       await flushLedger(s, agentId);
       await shareNow(s, agentId);
+      await loginsTo(s, to); // Konrad 26.11.2026: to an employee's PC, the plans it shares go before the agent's first turn there
       s.log.info('agent moved away', { agentId, to, stopped });
     } catch (error) {
       s.log.warn('move away incomplete', { agentId, to, error: String(error) });
@@ -182,19 +185,21 @@ export async function arriveHere(s: RuntimeServices, agentId: string, from: stri
   try {
     dropSessions(s.db, agentId);
     becameWriter(s, agentId);
-    const ceo = isCeoPc(s.db, from);
-    const reachable = ceo && s.devices.online(from);
+    const kind = linkOf(new DevicesRepo(s.db).get(from))?.kind;
+    const ceo = kind === 'ceo';
+    // Konrad 24.11.2026: a company agent may move between the company's PC and an employee's PC. 26.11.2026 (point 2): from the
+    // company's PC its record comes along when that PC answers the hand-over (an older release does not); nothing goes back.
+    const reachable = (ceo || kind === 'employer') && s.devices.online(from);
     const since = `Since ${clockText(s.clock.now(), profileZone(s))} I run on ${pcName(s, selfId(s.db))}, moved from ${pcName(s, from)}`;
-    // Konrad 24.11.2026: a company agent may move between the company's PC and an employee's PC – no record travels on that link.
-    const linked = !ceo && Boolean(linkOf(new DevicesRepo(s.db).get(from)));
-    noteMove(s, agentId, reachable ? `${since}; my record came with me.`
-      : linked ? `${since}; my record did not come with me – what I did on ${pcName(s, from)} stays there.`
-      : goneLine(s, from), 'arrival');
+    const line = (came: boolean) => (came ? `${since}; my record came with me.`
+      : kind && !ceo ? `${since}; my record did not come with me – what I did on ${pcName(s, from)} stays there.` : goneLine(s, from));
+    if (ceo || !reachable) noteMove(s, agentId, line(reachable), 'arrival');
     s.log.info('agent moved here', { agentId, from });
     if (reachable) {
       arriving.add(agentId);
       const answer = await within(s.devices.call(from, HANDOVER_METHOD, { agentId }, undefined, HANDOVER_MS), HANDOVER_MS, undefined);
       if (answer === undefined) s.log.info('hand-over not answered, going on with the record here', { agentId, from });
+      if (!ceo) noteMove(s, agentId, line((answer as { ok?: unknown } | undefined)?.ok === true), 'arrival');
       const notes = notesIn(answer);
       if (notes.length) saveRepairNotes(s, agentId, MAIN_THREAD, notes);
     }
@@ -221,9 +226,11 @@ function rowLeft(s: RuntimeServices, agentId: string, ms: number): Promise<void>
  * agents.handover from the PC the agent went to: answered when this PC's leave of it is done (its row may still be on its
  * way), with the notes that still waited for the agent here – they leave this PC with the answer (review L4).
  */
-export async function serveHandover(s: RuntimeServices, params: unknown): Promise<{ ok: boolean; notes?: string[] }> {
+export async function serveHandover(s: RuntimeServices, params: unknown, from?: string): Promise<{ ok: boolean; notes?: string[] }> {
   const agentId = (params as { agentId?: unknown } | undefined)?.agentId;
   if (typeof agentId !== 'string' || !s.org.get(agentId)) return { ok: false };
+  // Konrad 26.11.2026: an employee's PC asks only for an agent this company moved there
+  if (from && linkOf(new DevicesRepo(s.db).get(from))?.kind === 'employee' && s.org.get(agentId)?.deviceId !== from) return { ok: false };
   if (!homeElsewhere(s, agentId) && !state.get(s)?.leaves.has(agentId)) await rowLeft(s, agentId, HANDOVER_MS);
   await state.get(s)?.leaves.get(agentId);
   if (!homeElsewhere(s, agentId)) return { ok: true }; // it runs here after all: its notes stay
@@ -256,7 +263,7 @@ export function startMoves(s: RuntimeServices, options: { mesh?: { register(meth
     else if (before.here) void leaveHere(s, agent.id, now.device);
     else void arriveHere(s, agent.id, before.device);
   });
-  options.mesh?.register(HANDOVER_METHOD, (params) => serveHandover(s, params), ['ceo']);
+  options.mesh?.register(HANDOVER_METHOD, (params, from) => serveHandover(s, params, from), ['ceo', 'employee']); // 26.11.2026: an employee's PC an agent moved to
   const takeover = new Takeover(s, { note: (id, text) => noteMove(s, id, text, 'back'), leaving: (id) => isLeaving(s, id), ...(options.timers ? { timers: options.timers } : {}) });
   const offTakeover = takeover.attach();
   return () => { off(); offTakeover(); };

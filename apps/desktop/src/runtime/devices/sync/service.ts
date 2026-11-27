@@ -5,7 +5,7 @@
 // sync.tabs (tabs.ts), files.path (paths.ts: a file tab of another PC reads there) and tabs.position (positions.ts) –
 // none of them open methods, so an employee's PC cannot call them –, sync.roster and device.sibling (roster.ts),
 // sync.live and sync.live.cancel (live.ts), sync.ledger (ledger.ts) and sync.share (share.ts), the last three on 'ceo'
-// links only; and the listeners, attached only while a PC is linked (nothing runs without a link). <data>/side-tabs.json
+// links only (sync.ledger also from an employer: the record of an agent it moved here); and the listeners, attached only while a PC is linked (nothing runs without a link). <data>/side-tabs.json
 // gets its owner on the data folder watcher here: every change is told to this PC's window and phones (tabs.changed).
 // State, not messages: what travels is the whole current state of a small unit, and it comes again on its own. A link
 // that comes up (device.upserted 'online') runs its catch-up (linkUps), and while it stays up the same catch-up runs
@@ -196,7 +196,7 @@ export function startSync(input: SyncInput): Sync {
   const { add, revoke, selfInfo } = mesh;
   const roster = add && revoke && selfInfo ? new RosterSync(s, { register: mesh.register.bind(mesh), add: add.bind(mesh), revoke: revoke.bind(mesh), selfInfo: selfInfo.bind(mesh) }) : undefined;
   mesh.register('sync.rows', (params, from) => rows.receive(params, from), EVERY_LINK); // from an employee's PC only its person's own part (employee.ts)
-  mesh.register(LEDGER_METHOD, (params, from) => ledger.receive(params, from), ['ceo']);
+  mesh.register(LEDGER_METHOD, (params, from) => ledger.receive(params, from), ['ceo', 'employer']); // Konrad 26.11.2026: from my employer only its moved agents' records (ledger.ts)
   mesh.register(SHARE_METHOD, (params, from) => share.receive(params, from), ['ceo']);
   mesh.register('sync.secret', (params, from) => secrets.receive(params, from));
   mesh.register('sync.file', (params, from) => files.receive(params, from));

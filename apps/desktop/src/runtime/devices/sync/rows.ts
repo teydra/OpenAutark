@@ -200,7 +200,7 @@ export class RowSync {
       if (record.id === except || ((item.origin || mineOnly) && link.kind !== 'ceo')) continue; // an employer's row (or a read) goes on only to my own PCs
       if (link.kind === 'employer' && !goesBack(item, record.id, this.s.db, this.s.clock.now())) continue; // an employee's PC sends back only its person's own part
       if (link.kind === 'employee' && !(table.employee && (item.gone || table.employee(item.row!, link.personId, this.s.db)))) continue;
-      this.box(record.id).items.set(`${item.t}/${item.id}`, link.kind === 'employee' ? asPerson(item, link.personId, true) : item);
+      this.box(record.id).items.set(`${item.t}/${item.id}`, link.kind === 'employee' ? asPerson(item, link.personId, true, record.id) : item);
     }
     this.later();
   }
@@ -263,7 +263,7 @@ export class RowSync {
         if (row && link.kind === 'employee' && !table.employee!(row, link.personId, this.s.db)) return undefined;
         const item: Item = { t: table.name, id, at: stamp?.at ?? 0, ...(row ? { row } : { gone: true as const }), ...(since === undefined && link.kind !== 'employer' && (stamp?.at ?? 0) <= (record?.pairedAt ?? Infinity) ? { first: true as const } : {}) }; // history: what was there before the link
         if (link.kind === 'employer') return goesBack(item, peer, this.s.db, this.s.clock.now()) ? item : undefined; // the person's own part that waited for the link
-        return link.kind === 'employee' ? asPerson(item, link.personId, true) : withPlanOrigin(this.s.db, item); // 22.11.2026: a company's plan says so on the person's other PCs
+        return link.kind === 'employee' ? asPerson(item, link.personId, true, peer) : withPlanOrigin(this.s.db, item); // 22.11.2026: a company's plan says so on the person's other PCs
       };
       if (link.kind === 'employer') { // only rows changed here since the cursor can be this person's own – and, the first time, their open to-dos
         const changed = this.stamps.since(`${table.name}/`, since ?? -1).map(({ key, stamp }) => take(key.slice(table.name.length + 1), stamp));
@@ -303,7 +303,7 @@ export class RowSync {
     const person = link.kind === 'employee' ? link.personId : undefined; // that PC's person: only their own part (employee.ts)
     let items = (Array.isArray(batch.items) ? batch.items : []).filter(valid).filter((item) => !scoped || Boolean(TABLE.get(item.t)!.employee));
     const moves: StatusMove[] = [];
-    if (person) items = items.map((item) => asPerson(item, person, false)).filter((item) => takenFrom(item, person, this.s.db))
+    if (person) items = items.map((item) => asPerson(item, person, false)).filter((item) => takenFrom(item, person, this.s.db, from))
       .map((item) => heldStatus(this.s.db, theirMaker(this.s.db, item, person), moves, from));
     items.sort(byOrder);
     const self = selfId(this.s.db);
