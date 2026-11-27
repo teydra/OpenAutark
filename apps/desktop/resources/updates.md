@@ -5,6 +5,29 @@ PC, how it shows, how I check for it and how I fix it. With every new version th
 since the version its PC ran before, looks through its company and puts right what it finds. A release adds its section
 here before it ships (the release check looks for it).
 
+## 0.3.22
+
+The Android and iPhone apps now carry their own interface. The page opens from the app's own files, starts without a PC
+and takes only data from the PC. A newer interface arrives as a signed list (ui.json under the active key or its reserve)
+from the versioned release and is fetched file by file. The PC picker and the offline cover are gone; the link retries
+by itself and says "Update Autark on <PC>" when a PC is older than the interface needs (0.3.21 or newer). A PC that is
+off reads "This PC is not online right now" instead of the meeting server's raw codes.
+
+Android: phone use works behind a dark screen (phone.key wakeup turns the screen on, the lock stays; below Android 14
+with a wake lock); phone.swipe takes points for a lock pattern; each phone step answers within its limit. The Bubble
+sends its words without a screenshot on Android 8-10 and says so, the keyboard comes on Android 10, the dot lies at the
+side edge while the Autark app is in front, and a finished run shows a short "fertig mit dem Handy". A long press uses
+Android's own text selection. The website APK asks once for the battery exemption.
+
+Tasks: stuck work is told up the chain (manager after a day, the head above after three), linked checklist items and
+"Waiting on you" cards, the calendar at 360 px, and the phone's Tasks page shows age, checklist and dated waits.
+tasks.list shows a quest's next note. Calls: an AI voice notice, a Supertonic steps setting and the first piece at the
+first comma. media.speak has its own Speech route apart from the Voice setting. Standard prompt texts follow the task
+system's first wave.
+
+Nothing needs repair on an older install. Check that a phone app on 0.3.22 reaches a PC on 0.3.21 or newer; an older
+PC answers "Update Autark".
+
 ## 0.3.21
 
 Tasks show when they were created and when they stopped moving. A task can carry a checklist, and creating a
