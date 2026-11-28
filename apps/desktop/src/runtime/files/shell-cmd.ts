@@ -33,9 +33,21 @@ export function cmdArgs(words: Word[], texts: string[]): CmdArg[] {
   return out;
 }
 
+/** The command a lead word left at the front, read as cmd reads it: `if exist X rd/s/q X` runs `rd /s /q X` too. */
+function splitHead(args: CmdArg[]): CmdArg[] {
+  const head = args[0];
+  const slash = head ? head.text.indexOf('/') : -1;
+  if (!head || slash <= 0 || !CMD_SLASH_NAMES.has(commandName(head.text.slice(0, slash)))) return args;
+  const switches = (head.text.slice(slash).match(/\/[a-z]/gi) ?? []).map((one) => ({ text: one, word: undefined, at: head.at }));
+  return CMD_SWITCHES.test(head.text.slice(slash)) || CMD_SWITCH.test(head.text.slice(slash))
+    ? [{ text: head.text.slice(0, slash), word: head.word, at: head.at }, ...switches, ...args.slice(1)]
+    : args;
+}
+
 /** What leads a command in cmd without being it: `if [/i] [not] exist|defined|errorlevel X`, `if a==b`, `else`, `do`, `call`. */
 export function cmdPeel(args: CmdArg[]): CmdArg[] {
   for (;;) {
+    args = splitHead(args);
     const head = args[0]?.text.replace(/^@/, '').toLowerCase();
     if (head === 'do' || head === 'else' || head === 'call') { args = args.slice(1); continue; }
     if (head !== 'if') return args;

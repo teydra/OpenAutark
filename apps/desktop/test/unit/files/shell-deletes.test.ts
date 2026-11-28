@@ -165,6 +165,10 @@ test('M3: a recursive delete behind if exist / if not exist / if /i / errorlevel
     `cmd /c "for /d %i in (${W_WS}\\*) do (echo %i & rd /s /q "%i")"`,
     `cmd /c "for /r ${W_FIRST} %i in (*) do rd /s /q "%i""`,
     `cmd /c "for %%i in (${W_FIRST}) do rd /s /q %%i"`,
+    `cmd /c "if exist ${W_FIRST} rd/s/q ${W_FIRST}"`, // glued switches behind a lead word (Felix's check before merge)
+    `cmd /c if exist ${W_FIRST} rd/s/q ${W_FIRST}`,
+    `cmd /c "for /d %i in (${W_FIRST}) do rd/s/q %i"`,
+    `cmd /c "if exist ${W_FIRST} (echo a) else rmdir/s/q ${W_FIRST}"`,
   ]) assert.ok(win(line), line);
   for (const line of [
     `cmd /c "if exist ${W_WS}\\dist rd /s /q "${W_WS}\\dist""`,
@@ -174,6 +178,8 @@ test('M3: a recursive delete behind if exist / if not exist / if /i / errorlevel
     `cmd /c "for /d %i in ("${W_WS}\\old wt") do rd /s /q "%i""`,
     `cmd /c "for /f %i in ('dir /b') do rd /s /q %i"`,
     `cmd /c "if exist ${W_WS}\\x (echo yes) else (echo no)"`,
+    `cmd /c "if exist ${W_WS}\\dist rd/s/q ${W_WS}\\dist"`,
+    `cmd /c "if exist ${W_WS}\\dist rd/q ${W_WS}\\dist"`,
   ]) assert.equal(win(line), undefined, line);
 });
 
