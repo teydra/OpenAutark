@@ -67,6 +67,21 @@ export class Redactor {
   private patterns = new Map<string, RegExp>(); // secret id → every spelling of a 2FA key (global)
   private loose = new Map<string, string>(); // a long value without its grouping → secret id
   private short = new Map<string, string>(); // a short value without its grouping → secret id (secret places only)
+  private marks = new Map<string, string>(); // id → its own mark where it is no catalog handle (runtime-values.ts)
+
+  /**
+   * 28.11.2026: a value that is no catalog entry – the runtime's owner token, a wake key – learnt under `id`, replaced by
+   * `mark` (never a `secret://` handle: nothing can resolve it) in every spelling `set` knows (raw, base64, URL, hex, grouped).
+   * A value under MIN_SECRET_CHARS is not learnt (a short string would match running text).
+   */
+  setMarked(id: string, value: string, mark: string): void {
+    this.remove(id);
+    if (value.length < MIN_SECRET_CHARS) return;
+    this.set(id, value);
+    this.marks.set(id, mark); // after set(): set() starts with remove(id), which drops the mark
+  }
+
+  private markOf = (id: string): string => this.marks.get(id) ?? handleFor(id);
 
   set(id: string, value: string | undefined, pattern?: RegExp): void {
     this.remove(id);
@@ -84,6 +99,7 @@ export class Redactor {
 
   remove(id: string): void {
     this.patterns.delete(id);
+    this.marks.delete(id);
     for (const map of [this.loose, this.short]) for (const [key, owner] of map) if (owner === id) map.delete(key);
     let changed = false;
     for (const [variant, owner] of this.byValue) if (owner === id) { this.byValue.delete(variant); changed = true; }
@@ -93,12 +109,12 @@ export class Redactor {
   redact(text: string): string {
     if (!text || (this.ordered.length === 0 && this.patterns.size === 0 && this.short.size === 0)) return text;
     let out = text;
-    for (const [id, pattern] of this.patterns) out = out.replace(pattern, () => handleFor(id));
+    for (const [id, pattern] of this.patterns) out = out.replace(pattern, () => this.markOf(id));
     for (const variant of this.ordered) {
-      if (out.includes(variant)) out = out.split(variant).join(handleFor(this.byValue.get(variant)!));
+      if (out.includes(variant)) out = out.split(variant).join(this.markOf(this.byValue.get(variant)!));
     }
-    out = looseReplace(out, this.loose, handleFor);
-    return maskInPlaces(out, this.short, handleFor);
+    out = looseReplace(out, this.loose, this.markOf);
+    return maskInPlaces(out, this.short, this.markOf);
   }
 
   private reorder(): void {

@@ -25,6 +25,41 @@ by themselves.
   Agents see a secret's ID, never its value; logs and prompts carry no secret values.
 - Every download is listed with its SHA-256 in `SHA256SUMS.txt`, and the updater checks the SHA-512 of each update file
   before it installs it.
+- Autark's own access values are masked like stored secrets (see "Masking what a tool prints" below): the owner token of
+  the running app, the owner tokens in the `runtime.json` of every company on the PC and the wake key in `wake.json`.
+
+## Masking what a tool prints
+
+Everything an agent's tool prints – `shell.exec` (stdout and stderr), `files.read`, every other tool result – passes one
+redactor (`SecretVault.redact`) before it goes to the model provider, the run journal, a chat or the log. The redactor
+knows the stored secrets (shown as `secret://<id>`), the shape of common API keys (`‹secret:stripe-live›` …) and, since
+0.3.23, Autark's own access values:
+
+| Value | Where it comes from | Shown as |
+| --- | --- | --- |
+| Owner token of this app (launch token) | known at start | `‹secret:runtime-token›` |
+| Owner token of every company on this PC | `token` in each `runtime.json` (this company, the first one and every `<first> Companies/<id>`) | `‹secret:runtime-token›` |
+| Wake helper's private key | `key.pkcs8` in each `wake.json` | `‹secret:wake-key›` |
+
+`runtime.json` and `wake.json` themselves are not changed: the `wf` command line, the app and the wake helper read them as
+before; only what leaves through a tool or into a journal row is masked, so a printed `runtime.json` reads
+`{"port":…,"token":"‹secret:runtime-token›","pid":…}`. The marks are no handles – nothing can resolve them. A restarted
+company writes a new token; the files are looked at again at most once a second (a stat per file, a read only when it
+changed), and the last three values per file stay masked, because an old one may still stand in a note.
+
+Known limits – the masking finds a value, not an intention:
+
+- **Split or re-encoded values.** The raw value and its base64, base64url, URL-encoded, hex and spaced/grouped spellings
+  are found. A value cut over lines (more than a few separator characters in a row, or a line break inside), written
+  in another encoding (gzip, XOR, rot13, reversed, one character per output line) or computed from the value is not.
+- **Values shorter than 8 characters** are not masked (they would match ordinary text).
+- **About one second.** A token written less than a second before a tool prints it is not yet known; a company that
+  starts and whose file is printed within the same second can show its new token once.
+- **Other places.** Only Autark's own tool and chat paths are masked. A shell, an editor or a script outside Autark, a
+  command that sends the file somewhere without printing it (`curl --data @runtime.json`), and the person's own tools
+  see the files as before; the file permissions of `runtime.json` (owner only) are the protection there. A token that
+  was printed before this masking existed stays in the transcripts it was printed in; restarting the app issues a new one.
+- **The in-memory person token** (`personToken`, never written to a file) and device keys are not part of this list.
 
 ## Secure mode: known limits
 

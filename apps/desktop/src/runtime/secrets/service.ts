@@ -28,6 +28,7 @@ import type { Host } from '../host.ts';
 import type { SecretGroup, SecretGroupInput, SecretGroupSaved, SecretInfo } from '../../shared/model/security.ts';
 import { WorkforceError } from '../../shared/errors.ts';
 import { Redactor } from './redact.ts';
+import { RuntimeValues, type RuntimeValuesOptions } from './runtime-values.ts';
 import {
   cleanRoute, cleanTags, deleteGroup, fieldRows, generatedLogin, groupList, groupRow, planGroup, redactionOf, SECRET_KINDS,
   storedForm, textHint, toGroup, toInfo, writeGroup, type GroupRow, type SecretRow,
@@ -155,6 +156,7 @@ export type SecretObserver = (id: string) => void;
 export class SecretVault implements SecretService {
   private options: SecretServiceOptions;
   private redactor = new Redactor();
+  private runtimeValues?: RuntimeValues;
   private readonly unreadable = new Set<string>();
   private readonly observers = new Set<SecretObserver>();
   private readonly printKey = randomBytes(32);
@@ -314,7 +316,19 @@ export class SecretVault implements SecretService {
   }
 
   redact(text: string): string {
+    this.runtimeValues?.refresh(); // 28.11.2026: the runtime's own owner tokens and wake keys (runtime-values.ts); a stat per file at most once a second
     return this.redactor.redact(text);
+  }
+
+  /**
+   * 28.11.2026: from now on the owner tokens of this PC's companies (runtime.json), this runtime's launch token and the wake
+   * keys (wake.json) are masked by redact() like a stored value – with their own mark, never a handle. Call once at start.
+   */
+  maskRuntimeValues(options: Omit<RuntimeValuesOptions, 'now'> & { launchToken?: string }): void {
+    const { launchToken, ...rest } = options;
+    this.runtimeValues = new RuntimeValues(this.redactor, { ...rest, now: () => this.options.clock.now() });
+    this.runtimeValues.learnLaunchToken(launchToken);
+    this.runtimeValues.refresh(true);
   }
 
   /** The secrets that hold exactly `value` (see the contract): decrypted here, compared, dropped. */
