@@ -11,8 +11,9 @@
 // a PC too old for this interface, lib/pc-floor.ts; the page says each in its status line, never on a screen of its own
 // – shell/connection-line.ts). The interface is the app's own (owner 27.11.2026): the Android app ("AutarkAndroid/") and
 // the iPhone app ("AutarkIOS/") serve it from their files, so the page and its app are always one version. The feedback video
-// (F15, "so ein Video …, was einem zeigt, wie man da Feedback macht") plays once on a new phone: the Android app shows it
-// before its pairing screens, the iPhone web app on its first start after pairing (firstVideoHere).
+// (F15) has no automatic start on a phone any more (owner 26.11.2026: the feedback bubble is explained in the PC's
+// introduction, not on the phone; 28.11.2026: not over the first screen): neither the web UI nor the Android app plays it
+// on its own; it stays a person's own tap (Settings › Feedback, the palette, the Android pairing screen's link).
 // Owns: those facts. Never: talks to the Android app other than through the port or an autark-app: address the person
 // taps (no JavaScript bridge object).
 
@@ -42,27 +43,6 @@ export function inHostedApp(): boolean {
 /** True inside any phone app (Android, the iPhone app or the iPhone web app). */
 export function isPhoneApp(): boolean {
   return inNativeApp() || inHostedApp();
-}
-
-/** Where the iPhone web app keeps that it played the feedback video (its origin's storage, shared by every company). */
-export const VIDEO_SEEN_KEY = 'autark.feedbackVideoSeen';
-
-type SeenStore = Pick<Storage, 'getItem' | 'setItem'>;
-const pageStorage = (): SeenStore | null => { try { return globalThis.localStorage ?? null; } catch { return null; } };
-
-/**
- * True exactly once on an iPhone web app – its first start after pairing plays the feedback video (the Android app plays
- * it before its own pairing screens); false everywhere else, and when the phone's storage cannot keep that it was shown.
- */
-export function firstVideoHere(hosted: boolean = inHostedApp(), storage: SeenStore | null = pageStorage()): boolean {
-  if (!hosted || !storage) return false;
-  try {
-    if (storage.getItem(VIDEO_SEEN_KEY)) return false;
-    storage.setItem(VIDEO_SEEN_KEY, '1');
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** "Forget this phone": the app asks, then clears its pairing and shows its connect screen. */

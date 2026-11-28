@@ -14,7 +14,7 @@
 // failing optional part (bar colours, the foreground service, the notification question, the update line) never keeps
 // the app from showing its screen. A PC that refused the page's token (the page's 'refused') hands the page to the
 // company's next PC (CompanyLink). The old company's link closes off the main thread. Feedback 16.11.2026 (F15): the
-// feedback video over the pairing screens on the first start and from their "How feedback works" (IntroTour), and on
+// feedback video over the pairing screens from their "How feedback works" only (IntroTour; owner 26.11.2026: no start of its own), and on
 // the page volume up and volume down pressed together as the feedback cell's press (VolumePair → the page's
 // {t:'feedback', down}); one key alone stays the volume. W (19.11.2026): the page's 'wake' goes to CompanyLink.wake.
 // Owner 19.11.2026: with the page's voice live ('voice.live') a pause leaves the WebView running, KeepAlive the microphone.
@@ -120,7 +120,7 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         pendingRoute = state == null ? null : PhoneRoutes.place(state.getString("route"));
         PhoneConnection.Paired paired = companies.current();
         if (paired != null) open(paired); // onResume shows the update line (UpdateCheck)
-        else { showPair(null, false); if (IntroTour.due(this, preferences)) showTour(); } // the first start: the video over the pairing
+        else showPair(null, false); // no video on its own (owner 26.11.2026: the PC introduction explains the feedback bubble); "How feedback works" on the first level plays it
         if (state == null) arrive(getIntent()); // a recreated activity already handled its intent
     }
 
@@ -214,9 +214,9 @@ public final class MainActivity extends Activity implements PhoneNavigation.Host
         PairScreens.show(this, content, remoteId, adding, this::pairOrCancel, adding ? () -> { PhoneConnection.Paired p = companies.current(); if (p != null) open(p); else showPair(null, false); } : null);
     }
 
-    /** The feedback video over the pairing screens (the first start, their "How feedback works"); closing it leaves them as they were. */
+    /** The feedback video over the pairing screens (their "How feedback works" link only); closing it leaves them as they were. */
     private void showTour() {
-        if (tour == null || !tour.shown()) tour = IntroTour.show(this, content, preferences);
+        if (tour == null || !tour.shown()) tour = IntroTour.show(this, content);
     }
 
     private void closeTour() {

@@ -2,7 +2,7 @@
 // first run's choice card opens it too). The player (ui/tour/TourPlayer.tsx) is mounted by the shell while
 // `tourOpen` is true. B-090 (owner 13.11.2026: "wenn man eine neue Company auswählt, dass man dann das Video sieht"):
 // "Set up a new company" opens it already playing (`tourAutoplay`; the click is the user gesture). Feedback 16.11.2026
-// (F15): the iPhone web app's first start after pairing opens it playing too (shell/Shell.tsx, pwa/native.ts).
+// (F15) played it on the iPhone web app's first start too; owner 26.11.2026: the phone explains nothing of the feedback bubble on its own, so no phone opens it by itself (28.11.2026).
 // F15: the variant is the opening's (tourVariant) and stays until the tour closes – a window made narrow or wide while it
 // plays switches the shell's layout and mounts its overlays afresh (shell/Shell.tsx), never the tour's variant.
 // Owns: the open/close signal and the opening's variant. Never: the player or its timeline.

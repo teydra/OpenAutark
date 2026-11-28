@@ -5,11 +5,28 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONNECTION_LINE, heldLine, OWN_SERVER_DOCKER, ownServerCommand, PRIVACY_URL, relayLine } from '../../../src/ui/settings/connect-text.ts';
+import { connectionLine, heldLine, OWN_SERVER_DOCKER, ownServerCommand, PRIVACY_URL, relayLine } from '../../../src/ui/settings/connect-text.ts';
 
-test('the connection line is English and names the meeting server as the meeting point only; privacy links the section', () => {
-  assert.match(CONNECTION_LINE, /^End-to-end encrypted, directly device to device\./);
-  assert.match(CONNECTION_LINE, /only helps your devices find each other/);
+const phone = (via?: 'direct' | 'rtc' | 'relay') => ({ deviceId: 'd', name: 'Phone', ...(via ? { via } : {}), direct: 0, rtc: 0, relay: 0, since: 0 });
+
+// 28.11.2026 (Mac test of 0.3.22): the line said "directly device to device" while remote.relay showed via relay, direct 0, rtc 0.
+test('the connection line names the way the links run now: direct only when a direct way is active', () => {
+  assert.match(connectionLine({ relayed: [], phones: [phone('direct')] }), /^End-to-end encrypted, directly device to device\. The meeting server only helps your devices find each other/);
+  assert.match(connectionLine({ relayed: [], phones: [phone('rtc')] }), /^End-to-end encrypted, directly device to device\./, 'WebRTC is direct too');
+  const relayed = connectionLine({ relayed: [], phones: [phone('relay')] });
+  assert.match(relayed, /through the meeting server/);
+  assert.doesNotMatch(relayed, /directly device to device/);
+  assert.match(connectionLine({ relayed: ['pc_a'], phones: [] }), /through the meeting server/, 'a PC link tunnelled there counts too');
+  assert.match(connectionLine({ relayed: ['pc_a'], phones: [phone('rtc')] }), /directly device to device where the network allows.*partly through the meeting server/);
+});
+
+test('the connection line says "direct or through the meeting server" while no state tells the way', () => {
+  for (const relay of [undefined, { relayed: [] }, { relayed: [], phones: [phone()] }]) {
+    assert.match(connectionLine(relay), /directly device to device or through the meeting server when no direct way works/);
+  }
+});
+
+test('the privacy notice links the meeting server section', () => {
   assert.equal(PRIVACY_URL, 'https://openautark.com/privacy/#meeting-server');
 });
 

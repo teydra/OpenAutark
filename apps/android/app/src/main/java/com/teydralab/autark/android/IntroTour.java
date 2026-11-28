@@ -1,15 +1,14 @@
 // Owns: the feedback video before pairing (owner 15.11.2026, F15: "wenn man das am Start der App, bevor man den QR-Code
 // scannen kann oder Code eingeben kann … so ein Video kriegen würde, was einem zeigt, wie man da Feedback macht"):
 // assets/tour.html – the PC tour's phone variant, built by build.ps1 from apps/desktop (scripts/tour-page.mjs) – in a
-// WebView of its own laid over the pairing screens: once on the app's first start, and again from their "How feedback
-// works". The page plays at once; its Skip and Continue open autark-tour:done, Back skips (MainActivity), and each
+// WebView of its own laid over the pairing screens: only from their "How feedback
+// works" (owner 26.11.2026: it never starts by itself). The page plays at once; its Skip and Continue open autark-tour:done, Back skips (MainActivity), and each
 // closes it, so the pairing screen under it shows as it was. A build without the page (Gradle alone) shows none.
 // Never: the network, the file system, a JavaScript interface, the PC's page or its port.
 package com.teydralab.autark.android;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -24,7 +23,6 @@ final class IntroTour {
     static final String PAGE = "file:///android_asset/" + ASSET;
     /** The address the page opens for Skip and Continue (apps/desktop/src/ui/tour/phone-page.tsx DONE_ADDRESS). */
     static final String DONE = "autark-tour:done";
-    private static final String SEEN = "feedbackVideoSeen";
     private final FrameLayout host;
     private WebView view;
 
@@ -40,15 +38,9 @@ final class IntroTour {
         }
     }
 
-    /** True on the first start: this build carries the page and this phone has not seen it. */
-    static boolean due(Activity activity, SharedPreferences preferences) {
-        return !preferences.getBoolean(SEEN, false) && carried(activity);
-    }
-
-    /** Lays the video over `host` (the activity's content, the pairing screen under it) and marks it seen. */
+    /** Lays the video over `host` (the activity's content, the pairing screen under it). */
     @SuppressLint("SetJavaScriptEnabled")
-    static IntroTour show(Activity activity, FrameLayout host, SharedPreferences preferences) {
-        preferences.edit().putBoolean(SEEN, true).apply(); // once: a closed app does not show it on its own again
+    static IntroTour show(Activity activity, FrameLayout host) {
         IntroTour tour = new IntroTour(host);
         WebView web = new WebView(activity);
         WebSettings settings = web.getSettings();

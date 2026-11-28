@@ -69,15 +69,15 @@ public final class ShellWiringTest {
         check(main.contains("link.connection.front(true)") && main.contains("link.connection.front(false)"), "the link hears whether the app is in front");
         String web = source("PhoneWeb.java");
         check(web.contains("\" AutarkAndroid/\" + UpdateCheck.installedName(activity) + device()") && web.contains("\" (Android \" + release"), "the user agent names Android and the device");
-        // The feedback video before pairing: over the pairing screens once on the first start, again from the link, Back skips.
-        check(main.contains("else { showPair(null, false); if (IntroTour.due(this, preferences)) showTour(); }"), "the first start lays the video over the pairing screens");
+        // The feedback video before pairing: only from the link on the pairing screen (owner 26.11.2026: no start of its own), Back skips.
+        check(main.contains("else showPair(null, false);") && !main.contains("IntroTour.due") && !main.contains("showTour(); }"), "the first start shows the pairing screens only – no video of its own");
         check(main.contains("PairScreens.tour(IntroTour.carried(this) ? this::showTour : null);"), "the pairing screen's link replays it where the build carries it");
         check(main.contains("if (tour != null && tour.shown()) { closeTour(); return; }"), "Back skips the video");
         check(main.indexOf("closeTour();", main.indexOf("private void showPair(")) < main.indexOf("leaveWeb();", main.indexOf("private void showPair(")), "a pair link closes the video first");
         String intro = source("IntroTour.java");
         check(intro.contains("\"file:///android_asset/\" + ASSET") && intro.contains("DONE = \"autark-tour:done\"") && intro.contains("host.post(tour::close)"), "the asset page, its done address, closed outside the WebView's call");
         check(intro.contains("setAllowFileAccess(false)") && intro.contains("setBlockNetworkLoads(true)") && !intro.contains("addJavascriptInterface"), "no file system, no network, no bridge");
-        check(intro.contains("putBoolean(SEEN, true)") && intro.contains("!preferences.getBoolean(SEEN, false) && carried(activity)"), "once, and only where the build carries it");
+        check(!intro.contains("SEEN") && !intro.contains("static boolean due("), "the video keeps no seen mark: it never starts by itself");
         String pair = new String(Files.readAllBytes(Paths.get(System.getProperty("autark.android"), "app/src/main/java/com/teydralab/autark/android/pair/PairScreens.java")), StandardCharsets.UTF_8);
         check(pair.contains("look.quiet(\"How feedback works\", look.link, play)"), "the first level's link");
         String gradle = new String(Files.readAllBytes(Paths.get(System.getProperty("autark.android"), "app/build.gradle")), StandardCharsets.UTF_8);
