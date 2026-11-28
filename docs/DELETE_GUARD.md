@@ -84,9 +84,49 @@ The guard sees only what it recognizes in the command text. It does **not** stop
 - script files (`pwsh -File x.ps1`, `bash x.sh`) and aliases or functions defined along the way;
 - other programs: python `shutil.rmtree`, node `fs.rm`, `robocopy /mir`, `git clean -fdx`, `Start-Process`, `bash -c`
   run from Windows (Git Bash paths);
-- the engines' own shell tools (Claude Code Bash/PowerShell, Codex). They do not pass through shell.exec. In Trust mode
-  Autark does not see their commands before they run. Covering them needs a separate step, for example a Claude Code
-  PreToolUse hook and Codex's approval path calling the same check.
+- the engine tools and engines listed under "The engines' own tools" below.
+
+## The engines' own tools (task_t7wes5sf)
+
+Since 0.3.19, Autark starts Claude Code and Codex **without a native shell**. Every command an agent runs goes through
+shell.exec, so the same check covers them. No hook and no extra adapter is needed:
+
+- **Claude Code** (engines/claude/lean.ts): an agent turn, also a split's fork and a resumed session, starts with
+  `--tools Read,Edit,Write,Glob,Grep,WebSearch` and `--permission-mode bypassPermissions` (Secure mode: `default`). The
+  hub's tools come in through `--mcp-config --strict-mcp-config`. The CLI has no Bash, PowerShell or Agent tool.
+  Helper turns, the call's voice (kept process), rebuilds and the status probe start with `--tools ''`. Every turn has
+  `--settings {"disableAllHooks":true}`, so neither our hooks nor a user's hooks run.
+- **Codex** (engines/codex/helper-thread.ts): agent threads (thread/start, thread/resume, and thread/fork for splits)
+  have `features.shell_tool`, `unified_exec`, `shell_snapshot`, `shell_zsh_fork` and `js_repl` set to false. A config
+  cannot turn them back on. Helper threads (decisions, subconscious, compaction, the call's voice) and image threads
+  also have `environments: []`, so they have neither a shell nor a patch tool. Which Codex versions are checked against
+  this list is in engines/managed-path.ts `CODEX_VERIFIED`.
+- **Tripwire:** test/unit/files/engine-shells.test.ts fails as soon as a native shell comes back on one of these ways.
+  Then `shellDeleteRefusal` has to sit in front of that shell first.
+- **Live proof:** test/live/engine-delete-guard.test.ts starts the installed engines through ClaudeEngine and CodexEngine,
+  the way Autark starts them. The real shell.exec is their command tool. For each engine there are three turns on a small
+  model:
+  1. the incident is refused before it runs and the sentinel stays;
+  2. `Remove-Item -Recurse` of a `node_modules` in the workspace runs without a question;
+  3. `npm run build` runs without a question.
+  The test also asserts that Claude Code's `system/init` tool list holds no Bash or PowerShell, that Codex's
+  `thread/start` turns the shell features off, and that neither engine reports a native command.
+
+Not covered, a known gap:
+
+- **Codex `apply_patch`** stays in agent threads. A `*** Delete File:` hunk deletes one file at a time without
+  shell.exec, so it never reaches this check. It does not delete folders recursively, but it could delete a single file
+  in a kept folder.
+- **Codex code mode** (`exec`/`wait`) runs JavaScript in an isolate. Its nested calls are our dynamic tools, so a
+  command passes through shell.exec and its check.
+- **Claude Code `Write`/`Edit`** can overwrite a file but cannot delete one.
+- **ACP engines** (Gemini CLI, Copilot CLI, Kimi Code) keep their own shell (providers.ts). In Trust mode Autark does
+  not see their commands before they run. In Secure mode their permission requests go to the security gate, but not
+  through this check. None of these engines is installed on the PCs we test on, so nothing about them is checked live.
+- **Codex approvals** are not a fence here. Agent turns run with `dangerFullAccess` and `on-request`, and Trust mode
+  accepts their requests for the session. No command runs through them, because the native shell is off.
+- **The person's own sessions** of Claude Code or Codex, outside Autark, are not covered. Neither are other programs
+  on the PC.
 
 The real protection is the path check against the kept folders. The recognition only feeds targets into it, and it
 fails open: a command it cannot read runs as before. Wiping one company's data folder on purpose is admin work and
