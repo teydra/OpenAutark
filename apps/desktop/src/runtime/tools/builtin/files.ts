@@ -288,7 +288,8 @@ export function fileTools(deps: { shell?: ShellSpawn } = {}): ToolDef[] {
     async run(args, ctx) {
       const cwd = commandCwd(ctx, args.cwd);
       // task_7ja3mcr6: a recognizable recursive delete that reaches a kept folder does not start (files/shell-deletes.ts)
-      const refused = shellDeleteRefusal(args.command, { platform: process.platform, cwd, env: { ...process.env, ...args.env }, home: os.homedir() }, zonesFor(ctx));
+      let refused: string | undefined;
+      try { refused = shellDeleteRefusal(args.command, { platform: process.platform, cwd, env: { ...process.env, ...args.env }, home: os.homedir() }, zonesFor(ctx)); } catch { refused = undefined; } // a layer, not a gate: when the zones cannot be known the command runs as before
       if (refused) return failure(refused);
       return runCommand(shell, ctx, { command: args.command, cwd, timeoutSeconds: args.timeoutSeconds, env: args.env });
     },

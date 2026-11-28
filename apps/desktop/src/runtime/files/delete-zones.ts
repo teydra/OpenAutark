@@ -17,12 +17,17 @@ import os from 'node:os';
 import path from 'node:path';
 
 export interface Zone { dir: string; what: string }
-export interface OpenZone extends Zone { /** Its whole contents at once may go (a scratch folder), not only one entry at a time. */ bulk: boolean }
+export interface OpenZone extends Zone {
+  /** Its whole contents at once may go (a scratch folder), not only one entry at a time. */ bulk: boolean;
+  /** A throwaway copy of a company or a browser profile inside it may go with `dataCopy` (a workspace or scratch folder; not the home folder). */ copy: boolean;
+}
 
 export interface DeleteZones {
   platform: NodeJS.Platform;
   kept: Zone[];
   open: OpenZone[];
+  /** Where a throwaway data copy may be deleted: the temp folder and the open folders with `copy`. */
+  copyOk: string[];
   /** Folders a path may reach through a link above them (macOS /var → /private/var above the temp folder, a linked workspace). */
   linkedOk: string[];
 }
@@ -113,7 +118,7 @@ export function deleteZones(input: ZoneInput): DeleteZones {
   const kept: Zone[] = [];
   const open: OpenZone[] = [];
   const keep = (dir: string | undefined, what: string) => { if (dir) kept.push({ dir: m.resolve(dir), what }); };
-  const opening = (dir: string | undefined, what: string, bulk: boolean) => { if (dir) open.push({ dir: m.resolve(dir), what, bulk }); };
+  const opening = (dir: string | undefined, what: string, bulk: boolean, copy = true) => { if (dir) open.push({ dir: m.resolve(dir), what, bulk, copy }); };
   keep(input.data, "this company's data folder");
   if (input.companies) {
     keep(input.companies.first, "the first company's data folder");
@@ -131,9 +136,10 @@ export function deleteZones(input: ZoneInput): DeleteZones {
   opening(input.workspace, "this company's workspace", false);
   opening(input.temp, "this company's scratch folder", true);
   opening(m.join(home, 'Workforce'), "the first company's workspace", false);
-  opening(home, "the person's home folder", false);
+  opening(home, "the person's home folder", false, false);
   const tmp = input.tmp ?? os.tmpdir();
-  return { platform, kept, open, linkedOk: [home, tmp, input.workspace, input.data].filter((dir): dir is string => Boolean(dir)) };
+  const copyOk = [m.resolve(tmp), ...open.filter((zone) => zone.copy).map((zone) => zone.dir)];
+  return { platform, kept, open, copyOk, linkedOk: [home, tmp, input.workspace, input.data].filter((dir): dir is string => Boolean(dir)) };
 }
 
 /**
@@ -184,6 +190,28 @@ export function refusalOf(target: string, zones: DeleteZones, contents = false):
   const why = zoneRefusal(real, zones, contents);
   return why ? `${target} leads through a link to ${real}: ${why}` : undefined;
 }
+
+/**
+ * The folder that makes `target` a throwaway place – the temp folder or a workspace or scratch folder – when `target` lies
+ * inside one, as written and as its real path (macOS /var → /private/var, Windows short names); undefined otherwise. Only
+ * after refusalOf: a kept folder inside such a place stays refused there.
+ */
+export function throwawayPlace(target: string, zones: DeleteZones): string | undefined {
+  const { platform } = zones;
+  const real = zones.platform === process.platform ? realExisting(target) : target;
+  const inside = (dir: string, one: string) => within(platform, dir, one) || (zones.platform === process.platform && within(platform, realExisting(dir), one));
+  return zones.copyOk.find((dir) => inside(dir, target) && inside(dir, real));
+}
+
+/** Windows' `\\?\` and `\\.\` prefixes (and `\\?\UNC\` for `\\`) off a path: they name the same file and are no wildcard. Other platforms: as given. */
+export function stripDevicePrefix(text: string, platform: NodeJS.Platform): string {
+  if (platform !== 'win32') return text;
+  const hit = /^\\\\[?.]\\(UNC\\)?/i.exec(text);
+  return hit ? (hit[1] ? '\\\\' : '') + text.slice(hit[0].length) : text;
+}
+
+/** A wildcard in a PowerShell or cmd path (`*`, `?`, `[`), the `?` of a `\\?\` prefix aside. */
+export const hasWildcard = (text: string): boolean => /[*?[]/.test(text.replace(/^\\\\[?.]\\/, ''));
 
 /** The first link (symlink or junction) on the way to `target` – its parent folders, not `target` itself – that no allowed folder explains. */
 export function linkOnWay(target: string, zones: DeleteZones): string | undefined {

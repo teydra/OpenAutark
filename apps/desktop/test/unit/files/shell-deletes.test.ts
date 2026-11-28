@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { deleteZones } from '../../../src/runtime/files/delete-zones.ts';
+import { deleteZones, stripDevicePrefix } from '../../../src/runtime/files/delete-zones.ts';
 import { recursiveDeletes, shellDeleteRefusal } from '../../../src/runtime/files/shell-deletes.ts';
 import { fileTools, type ShellSpawn } from '../../../src/runtime/tools/builtin/files.ts';
 import type { ToolContext, ToolOutput } from '../../../src/runtime/tools/types.ts';
@@ -102,6 +102,134 @@ test('shell guard: sh forms on macOS and Linux – rm -rf, find -delete, bash -c
   ]) assert.equal(posix(line), undefined, line);
 });
 
+// ---- review of PR #49 (28.11.2026): the findings, one test each
+
+const winWith = (existing: string[]) => (command: string, cwd = W_WS) => shellDeleteRefusal(command, { platform: 'win32', cwd, env: W_ENV, home: W_HOME, exists: (path) => existing.some((one) => one.toLowerCase() === path.toLowerCase()) }, winZones);
+const W_TEMP = `${W_HOME}\\AppData\\Local\\Temp`;
+
+test('M1: a `\\\\?\\` or `\\\\.\\` prefix is no wildcard – its target is checked as the plain path', () => {
+  for (const line of [
+    `Remove-Item -Recurse -Force "\\\\?\\${W_TEMP}\\wf-test 1"`,
+    `Remove-Item -Recurse -Force -LiteralPath '\\\\?\\${W_WS}\\old wt'`,
+    `Remove-Item -Recurse -Force \\\\?\\${W_TEMP}\\wf-test`,
+    `Remove-Item -Recurse -Force -Path "\\\\.\\${W_WS}\\old wt"`,
+    `cmd /c rd /s /q "\\\\?\\${W_WS}\\old wt"`,
+    `cmd /c rd /s /q \\\\?\\${W_TEMP}\\wf-test`,
+    `cmd /c del /s /q "\\\\?\\${W_WS}\\old wt\\*"`,
+  ]) assert.equal(win(line), undefined, line);
+  for (const line of [ // the prefix does not hide a kept folder, nor does a wildcard behind it
+    `Remove-Item -Recurse -Force '\\\\?\\${W_FIRST}'`,
+    `Remove-Item -Recurse -Force "\\\\?\\${W_WS}\\*"`,
+    `cmd /c rd /s /q "\\\\?\\${W_DATA}"`,
+    `cmd /c rd /s /q \\\\?\\${W_FIRST}`,
+    `cmd /c rd /s /q \\\\.\\${W_FIRST}`,
+  ]) assert.ok(win(line), line);
+  assert.equal(stripDevicePrefix('\\\\?\\C:\\a b', 'win32'), 'C:\\a b');
+  assert.equal(stripDevicePrefix('\\\\?\\UNC\\srv\\share\\x', 'win32'), '\\\\srv\\share\\x');
+  assert.equal(stripDevicePrefix('\\\\.\\C:\\a', 'win32'), 'C:\\a');
+  assert.equal(stripDevicePrefix('\\\\?\\a', 'linux'), '\\\\?\\a', 'only Windows reads it');
+});
+
+test('M2: `rd /s/q X`, `rd/s/q X` and `rmdir/S/Q X` are the same delete as `rd /s /q X`', () => {
+  for (const line of [
+    `cmd /c "rd /s/q ${W_FIRST}"`,
+    `cmd /c "rd/s/q ${W_FIRST}"`,
+    `cmd /c "RMDIR/S/Q ${W_DATA}"`,
+    `cmd /c "rd /q/s ${W_FIRST}"`,
+    `cmd /c "del/s/q ${W_FIRST}\\*"`,
+    `cmd /c "cmd/c rd/s/q ${W_FIRST}"`,
+    `cmd /c "cd /d ${W_WS}&&rd/s/q ..\\..\\company-2"`,
+  ]) assert.ok(win(line), line);
+  assert.equal(win(`cmd /c rd /s/q "${W_WS}\\old wt"`), undefined);
+  assert.equal(win(`cmd /c rd/s/q "${W_WS}\\dist"`), undefined, 'the quoted target of the glued form passes');
+  assert.ok(win(`cmd /c rd/s/q "${W_FIRST}"`), 'and a quoted kept folder does not');
+  assert.equal(win(`cmd /c "rd/q ${W_FIRST}"`), undefined, 'no /s: not recursive');
+});
+
+test('M3: a recursive delete behind if exist / if not exist / if /i / errorlevel / defined / else / for … do is read', () => {
+  for (const line of [
+    `cmd /c "if exist ${W_FIRST} rd /s /q ${W_FIRST}"`,
+    `cmd /c "if not exist ${W_WS}\\x echo no & if exist ${W_FIRST} rd /s /q ${W_FIRST}"`,
+    `cmd /c "if not exist ${W_FIRST}\\x rd /s /q ${W_FIRST}"`,
+    `cmd /c "if /i exist ${W_FIRST} rd /s /q ${W_FIRST}"`,
+    `cmd /c "if errorlevel 1 rd /s /q ${W_FIRST}"`,
+    `cmd /c "if defined FOO rd /s /q ${W_FIRST}"`,
+    `cmd /c "if /i "%A%"=="b" rd /s /q ${W_FIRST}"`,
+    `cmd /c "if 1 EQU 1 rd /s /q ${W_FIRST}"`,
+    `cmd /c "if exist ${W_WS}\\x (echo a) else (rd /s /q ${W_FIRST})"`,
+    `cmd /c "if exist ${W_WS}\\x (rd /s /q ${W_FIRST})"`,
+    `cmd /c "@rd /s /q ${W_FIRST}"`,
+    `cmd /c "call rd /s /q ${W_FIRST}"`,
+    `cmd /c "for /d %i in (${W_FIRST}\\*) do rd /s /q "%i""`,
+    `cmd /c "for /d %i in (${W_FIRST}) do rd /s /q %i"`,
+    `cmd /c "for /d %i in (${W_WS}\\*) do (echo %i & rd /s /q "%i")"`,
+    `cmd /c "for /r ${W_FIRST} %i in (*) do rd /s /q "%i""`,
+    `cmd /c "for %%i in (${W_FIRST}) do rd /s /q %%i"`,
+  ]) assert.ok(win(line), line);
+  for (const line of [
+    `cmd /c "if exist ${W_WS}\\dist rd /s /q "${W_WS}\\dist""`,
+    `cmd /c "if not exist ${W_WS}\\x echo none"`,
+    `cmd /c "if errorlevel 1 echo failed"`,
+    `cmd /c "for /d %i in ("${W_WS}\\old\\*") do rd /s /q "%i""`,
+    `cmd /c "for /d %i in ("${W_WS}\\old wt") do rd /s /q "%i""`,
+    `cmd /c "for /f %i in ('dir /b') do rd /s /q %i"`,
+    `cmd /c "if exist ${W_WS}\\x (echo yes) else (echo no)"`,
+  ]) assert.equal(win(line), undefined, line);
+});
+
+test('M4: an unquoted path with spaces in rd/rmdir/del /s is blocked when cmd would split it into wrong targets', () => {
+  const real = `${W_HOME}\\Projekte\\Proactive Agent Workforce\\dist`;
+  const check = winWith([real, `${W_HOME}\\Projekte\\Proactive Agent Workforce`]);
+  const refused = check(`cmd /c "rd /s /q ${real}"`);
+  assert.match(refused ?? '', /^BLOCKED – not executed\./);
+  assert.match(refused ?? '', /3 targets/);
+  assert.match(refused ?? '', /Write the path in quotes: rd \/s \/q "C:\\Users\\H\\Projekte\\Proactive Agent Workforce\\dist"/);
+  assert.match(check(`cmd /c "rmdir /s /q ${W_HOME}\\Projekte\\Proactive Agent Workforce\\build"`) ?? '', /folder .* exists/, 'the folder of a target that is not there yet exists');
+  assert.match(check(`cmd /c "del /s /q ${real}\\*.tmp"`) ?? '', /BLOCKED/);
+  assert.match(check(`cmd /c "rd /s /q ${W_HOME}\\Projekte\\old wt"`) ?? '', /a relative word follows an absolute path/, 'nothing of it exists: a relative word after an absolute one');
+  assert.match(check(`cmd /c "rd /s /q Proactive Agent Workforce\\dist"`, `${W_HOME}\\Projekte`) ?? '', /exists as one path/, 'relative from the current folder');
+  for (const line of [ // separate targets and quoted paths pass
+    `cmd /c rd /s /q "${real}"`,
+    `cmd /c rd /s /q "${real}" "${W_WS}\\x y"`,
+    `cmd /c "rd /s /q ${W_HOME}\\Projekte\\a ${W_HOME}\\Projekte\\b"`,
+    `cmd /c "rd /s /q dist build"`,
+    `cmd /c "rd /s /q out\\a out\\b"`,
+    `cmd /c "rd /s /q "${W_HOME}\\Projekte\\a b" dist"`,
+  ]) assert.equal(check(line, W_WS), undefined, line);
+});
+
+test('L2: -Path:\'x\' and -LiteralPath:"x" are the path x, not a relative `-Path:x`', () => {
+  for (const line of [
+    `Remove-Item -Recurse -Path:'${W_FIRST}'`,
+    `Remove-Item -Recurse -LiteralPath:"${W_FIRST}"`,
+    `Remove-Item -Recurse -Force -LiteralPath:'${W_DATA}'`,
+    `Remove-Item -Path:"${W_FIRST}" -Recurse`,
+    `ri -r -lp:'${W_FIRST}'`,
+  ]) assert.ok(win(line), line);
+  assert.equal(win(`Remove-Item -Recurse -LiteralPath:'${W_WS}\\a b\\dist' -Force`), undefined);
+  assert.equal(win(`Remove-Item -Recurse -Path:"${W_WS}\\old\\*"`), undefined);
+  assert.equal(win(`Remove-Item -Recurse -Force:$true -LiteralPath:'${W_WS}\\old'`), undefined);
+});
+
+test('L1: Where-Object / Select-Object between Get-ChildItem and Remove-Item keep the pipeline', () => {
+  for (const line of [
+    `Get-ChildItem ${W_FIRST} | Where-Object { $_.Name -like 'a*' } | Remove-Item -Recurse -Force`,
+    `gci "${W_FIRST}" | ? { $_.Length -gt 5 } | ri -r -fo`,
+    `Get-ChildItem "${W_FIRST}" | Sort-Object Name | Select-Object -First 3 | Remove-Item -Recurse`,
+    `Get-ChildItem "${W_WS}\\*" | where { $_.PSIsContainer } | Remove-Item -Recurse -Force`,
+  ]) assert.ok(win(line), line);
+  assert.equal(win(`Get-ChildItem "${W_WS}\\old" | Where-Object { $_.Length -gt 5 } | Remove-Item -Recurse -Force`), undefined);
+  assert.equal(win(`Get-ChildItem "${W_WS}\\old" -Filter *.log | Where-Object { $_.LastWriteTime -lt (Get-Date) } | Remove-Item`), undefined, 'not recursive');
+});
+
+test('L7: thousands of targets are not all followed through links; a kept one among them is still refused as written', () => {
+  const many = Array.from({ length: 3800 }, (_x, i) => `"${W_TEMP}\\wf ${i}"`).join(' ');
+  const started = Date.now();
+  assert.equal(win(`Remove-Item -Recurse ${many}`), undefined);
+  assert.match(win(`Remove-Item -Recurse ${many} "${W_FIRST}"`) ?? '', /first company's data folder/, 'the last one is checked as written');
+  assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+});
+
 // ---- shell.exec itself: the guard runs before the shell starts
 
 function world(t: { after(fn: () => void): void }) {
@@ -142,6 +270,22 @@ test('shell.exec: the incident line never reaches the shell; an allowed rd/Remov
   const passed = await exec.run({ command: allowed }, w.ctx);
   assert.notEqual(passed.isError, true, textOf(passed));
   assert.deepEqual(ran, [allowed]);
+});
+
+test('L6: when the zones cannot be known, shell.exec runs the command as before (fail open) instead of failing', async (t) => {
+  const w = world(t);
+  const ran: string[] = [];
+  const shell: ShellSpawn = (command) => {
+    ran.push(command);
+    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: null, kill: () => true });
+    setImmediate(() => child.emit('close', 0));
+    return child as unknown as ReturnType<ShellSpawn>;
+  };
+  const exec = fileTools({ shell }).find((tool) => tool.name === 'shell.exec')!;
+  const broken = { ...w.ctx, services: { ...w.ctx.services, paths: { ...w.ctx.services.paths, accounts: 5 } } } as unknown as ToolContext; // path.resolve(5) throws inside deleteZones
+  const out = await exec.run({ command: 'echo hello' }, broken);
+  assert.notEqual(out.isError, true, textOf(out));
+  assert.deepEqual(ran, ['echo hello']);
 });
 
 test('shell.exec on Windows, real shell: the quoted rd deletes the worktree; the incident line leaves the bait whole', { skip: process.platform !== 'win32' }, async (t) => {

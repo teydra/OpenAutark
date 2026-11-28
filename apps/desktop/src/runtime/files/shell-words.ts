@@ -7,6 +7,8 @@
 // This is a reading for a guard, not a shell: a construct it does not know becomes an unknown part, never an error.
 // Owns: the three splitters. Never: runs anything or decides about a delete.
 
+import { hasWildcard } from './delete-zones.ts';
+
 /** One part of a word: literal text, or text whose `$…` expands (PowerShell double quotes and bare words; sh likewise). */
 export interface Part { text: string; expand: boolean }
 export interface Word { parts: Part[]; /** Something the reader cannot know ($(…), backticks in sh). */ opaque: boolean; /** A wildcard outside quotes. */ glob: boolean; quoted: boolean; raw: string }
@@ -23,6 +25,21 @@ function skipParens(src: string, at: number): number {
   }
   return src.length;
 }
+
+/** Skips a `{ … }` from its open brace (quoted text inside is skipped whole); returns the index after its close. */
+function skipBraces(src: string, at: number): number {
+  let depth = 0;
+  for (let i = at; i < src.length; i++) {
+    const c = src[i];
+    if (c === "'" || c === '"') { const close = src.indexOf(c, i + 1); i = close < 0 ? src.length : close; continue; }
+    if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return i + 1;
+  }
+  return src.length;
+}
+
+/** PowerShell's filtering stages of a pipeline: their `{ … }` block only selects, the pipeline goes on through them. */
+export const FILTER_STAGES = new Set(['where-object', 'where', '?', 'select-object', 'select', 'sort-object', 'sort', 'group-object', 'group', 'measure-object', 'tee-object']);
 
 /** Statements from a list of words and operators. */
 function statements(items: Array<Word | ';' | '|'>): Statement[] {
@@ -47,6 +64,12 @@ export function powershellStatements(src: string): Statement[] {
     const c = src[i];
     if (c === ' ' || c === '\t' || c === '\r' || c === ',') { i++; continue; }
     if (c === '`' && (src[i + 1] === '\n' || src[i + 1] === '\r')) { i += 2; continue; }
+    if (c === '{') { // `… | Where-Object { … } | Remove-Item`: the block belongs to its stage, the pipeline is not cut
+      let stage = items.length;
+      while (stage > 0 && items[stage - 1] !== ';' && items[stage - 1] !== '|') stage--;
+      const head = items[stage];
+      if (typeof head === 'object' && !head.quoted && FILTER_STAGES.has(head.raw.toLowerCase())) { i = skipBraces(src, i); continue; }
+    }
     if (c === '\n' || c === ';' || c === '(' || c === ')' || c === '{' || c === '}') { items.push(';'); i++; continue; }
     if (c === '<' && src[i + 1] === '#') { const close = src.indexOf('#>', i + 2); i = close < 0 ? src.length : close + 2; continue; }
     if (c === '#') { while (i < src.length && src[i] !== '\n') i++; continue; }
@@ -82,7 +105,7 @@ export function powershellStatements(src: string): Statement[] {
       }
       let bare = '';
       while (i < src.length && !' \t\r\n;|&(){},`\'"'.includes(src[i]) && !(src[i] === '$' && src[i + 1] === '(')) bare += src[i++];
-      if (/[*?[]/.test(bare)) w.glob = true;
+      if (hasWildcard(bare)) w.glob = true;
       w.parts.push({ text: bare, expand: true });
     }
     w.raw = src.slice(w.start, i);
@@ -111,7 +134,7 @@ export function cmdStatements(line: string, env: NodeJS.ProcessEnv): Statement[]
       if (!quoted && (' \t\r\n,;=&|()'.includes(d))) break;
       if (d === '"') { quoted = !quoted; w.quoted = true; i++; continue; }
       if (d === '^' && !quoted) { text += src[i + 1] ?? ''; i += 2; continue; }
-      if (!quoted && (d === '*' || d === '?')) w.glob = true;
+      if (!quoted && (d === '*' || (d === '?' && !(text === '\\\\' && src[i + 1] === '\\')))) w.glob = true; // the `?` of `\\?\C:\x` is no wildcard
       text += d; i++;
     }
     w.parts.push({ text, expand: false });

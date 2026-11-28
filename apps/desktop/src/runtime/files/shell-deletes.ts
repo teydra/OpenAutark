@@ -12,13 +12,24 @@
 // the command run as before).
 
 import { Buffer } from 'node:buffer';
-import { cmdStatements, powershellStatements, shStatements, type Part, type Statement, type Word } from './shell-words.ts';
-import { pathOf, refusalOf, type DeleteZones } from './delete-zones.ts';
+import { cmdStatements, FILTER_STAGES, powershellStatements, shStatements, type Part, type Statement, type Word } from './shell-words.ts';
+import { hasWildcard, pathOf, refusalOf, stripDevicePrefix, zoneRefusal, type DeleteZones } from './delete-zones.ts';
+import { lstatSync } from 'node:fs';
 
-export interface ShellDelete { target: string; /** What lies inside `target` goes (a wildcard, del /s, find -delete), not `target` itself. */ contents: boolean; command: string; /** One statement deleted several targets (an unquoted path split at its spaces). */ several: boolean }
-export interface ShellScope { platform: NodeJS.Platform; cwd: string; env: NodeJS.ProcessEnv; home: string }
+export interface ShellDelete {
+  target: string;
+  /** What lies inside `target` goes (a wildcard, del /s, find -delete), not `target` itself. */ contents: boolean;
+  command: string;
+  /** One statement deleted several targets (an unquoted path split at its spaces). */ several: boolean;
+  /** Set on a statement's first target: its operands look like one unquoted path with spaces that cmd splits (blocked whatever they reach). */ split?: string;
+}
+/** `exists` is for tests with foreign paths; by default the file system of this PC. */
+export interface ShellScope { platform: NodeJS.Platform; cwd: string; env: NodeJS.ProcessEnv; home: string; exists?: (path: string) => boolean }
 
 interface State { cwd: string | undefined; vars: Map<string, string>; depth: number }
+
+/** Targets whose links are resolved (realpath) in one check; later ones are compared as written only – a command with thousands of them costs seconds otherwise. */
+const MAX_RESOLVED = 64;
 
 const REMOVE_ITEM = new Set(['remove-item', 'rm', 'ri', 'rmdir', 'rd', 'del', 'erase']);
 const LIST_CHILDREN = new Set(['get-childitem', 'gci', 'ls', 'dir']);
@@ -80,7 +91,7 @@ function expandPart(part: Part, index: number, scope: ShellScope, state: State, 
 /** A path as the shell resolves it from `cwd`; undefined when it cannot be known. */
 function absolute(scope: ShellScope, cwd: string | undefined, given: string): string | undefined {
   const m = pathOf(scope.platform);
-  let text = given.replace(/^(?:Microsoft\.PowerShell\.Core\\)?FileSystem::/i, '').replace(/^\\\\\?\\/, '');
+  let text = stripDevicePrefix(given.replace(/^(?:Microsoft\.PowerShell\.Core\\)?FileSystem::/i, ''), scope.platform);
   if (!text) return undefined;
   if (text === '~' || /^~[\\/]/.test(text)) text = scope.home + text.slice(1);
   if (m.isAbsolute(text)) return m.resolve(cwd ?? scope.cwd, text);
@@ -88,7 +99,8 @@ function absolute(scope: ShellScope, cwd: string | undefined, given: string): st
 }
 
 /** A wildcard path: the folder before its first wildcard part, whose contents it reaches. */
-function globBase(text: string, platform: NodeJS.Platform): string {
+function globBase(given: string, platform: NodeJS.Platform): string {
+  const text = stripDevicePrefix(given, platform); // `\\?\C:\x\*`: the prefix's `?` is no wildcard part
   const parts = text.split(platform === 'win32' ? /[\\/]/ : /\//);
   const first = parts.findIndex((part) => /[*?[]/.test(part));
   const base = parts.slice(0, Math.max(first, 0)).join(platform === 'win32' ? '\\' : '/');
@@ -139,19 +151,21 @@ function psArgs(words: Word[], scope: ShellScope, state: State): PsArgs {
   const out: PsArgs = { recurse: false, whatIf: false, filtered: false, paths: [], slashS: false };
   for (let i = 1; i < words.length; i++) {
     const w = words[i];
-    const param = w.quoted ? undefined : psParam(w.raw);
+    // `-Path:'x'` is one word whose first part is the bare `-Path:`: a quote inside the word does not make it a value
+    const param = w.quoted && !/^-[A-Za-z]+:/.test(w.raw) ? undefined : psParam(w.raw);
     if (!param) {
       if (/^\/[sq]$/i.test(w.raw)) { out.slashS ||= /^\/s$/i.test(w.raw); continue; } // cmd habits in PowerShell's rd: /s /q
       const text = textOf(w, scope, state, 'ps');
-      out.paths.push({ text, glob: /[*?[]/.test(text ?? '') }); // -Path (and a positional path) takes wildcards, quoted or not
+      out.paths.push({ text, glob: hasWildcard(text ?? '') }); // -Path (and a positional path) takes wildcards, quoted or not
       continue;
     }
     if (param.kind === 'recurse') out.recurse = param.inline === undefined || !/^\$false$/i.test(param.inline);
     else if (param.kind === 'whatif') out.whatIf = param.inline === undefined || !/^\$false$/i.test(param.inline);
     else if (param.kind === 'path' || param.kind === 'literal') {
       const next = param.inline !== undefined ? undefined : words[++i];
-      const text = param.inline ?? (next ? textOf(next, scope, state, 'ps') : undefined);
-      out.paths.push({ text, glob: param.kind === 'path' && /[*?[]/.test(text ?? '') });
+      const inline = param.inline !== undefined ? textOf(w, scope, state, 'ps')?.replace(/^-[A-Za-z]+:/, '') : undefined; // the value with its quotes taken off
+      const text = param.inline !== undefined ? inline : next ? textOf(next, scope, state, 'ps') : undefined;
+      out.paths.push({ text, glob: param.kind === 'path' && hasWildcard(text ?? '') });
     } else if (param.kind === 'filter') { out.filtered = true; if (param.inline === undefined) i++; }
     else if (param.kind === 'value' && param.inline === undefined) i++;
   }
@@ -192,7 +206,8 @@ function powershellStatement(statement: Statement, scope: ShellScope, state: Sta
       if (!recursive) return [];
       return args.paths.flatMap((one) => (one.text === undefined ? [] : [target(scope, state, one.text, one.glob, args.filtered, name)].filter((hit): hit is ShellDelete => Boolean(hit))));
     }
-    const source = statement.piped;
+    let source = statement.piped;
+    while (source && FILTER_STAGES.has(commandName(textOf(source.words[0], scope, state, 'ps') ?? ''))) source = source.piped; // `gci x | Where-Object {…} | Remove-Item`: the filter only selects among what gci lists
     const sourceName = source ? commandName(textOf(source.words[0], scope, state, 'ps') ?? '') : '';
     if (!source || !(LIST_CHILDREN.has(sourceName) || GET_ITEM.has(sourceName))) return [];
     const listed = psArgs(source.words, scope, state);
@@ -222,39 +237,139 @@ function cmdLine(args: Word[], scope: ShellScope, state: State): string | undefi
   return line;
 }
 
+const CMD_SWITCH = /^\/[a-z](?::.*)?$/i;
+/** `/s/q`: cmd takes switches glued together. */
+const CMD_SWITCHES = /^(?:\/[a-z]){2,}$/i;
+/** Commands whose name cmd ends at a slash (`rd/s/q X`, `cmd/c …`). */
+const CMD_SLASH_NAMES = new Set(['rd', 'rmdir', 'del', 'erase', 'cmd', 'cd', 'chdir', 'pushd', 'pwsh', 'powershell', 'if', 'for']);
+
+/** A word of a cmd statement as cmd reads it: `at` is the index of the word it comes from, `word` is missing for a switch cut out of a glued one. */
+interface CmdArg { text: string; word: Word | undefined; at: number }
+
+function cmdArgs(words: Word[], scope: ShellScope, state: State): CmdArg[] {
+  const out: CmdArg[] = [];
+  const push = (text: string, word: Word | undefined, at: number) => {
+    if (CMD_SWITCHES.test(text)) for (const one of text.match(/\/[a-z]/gi) ?? []) out.push({ text: one, word: undefined, at });
+    else out.push({ text, word, at });
+  };
+  words.forEach((w, at) => {
+    const text = textOf(w, scope, state, 'cmd') ?? '';
+    const slash = at === 0 ? text.indexOf('/') : -1;
+    if (slash > 0 && CMD_SLASH_NAMES.has(commandName(text.slice(0, slash)))) { out.push({ text: text.slice(0, slash), word: w, at }); push(text.slice(slash), undefined, at); } // rd/s/q
+    else push(text, w, at);
+  });
+  return out;
+}
+
+/** What leads a command in cmd without being it: `if [/i] [not] exist|defined|errorlevel X`, `if a==b`, `else`, `do`, `call`. */
+function cmdPeel(args: CmdArg[]): CmdArg[] {
+  for (;;) {
+    const head = args[0]?.text.replace(/^@/, '').toLowerCase();
+    if (head === 'do' || head === 'else' || head === 'call') { args = args.slice(1); continue; }
+    if (head !== 'if') return args;
+    let n = 1;
+    if (args[n]?.text.toLowerCase() === '/i') n++;
+    if (args[n]?.text.toLowerCase() === 'not') n++;
+    const kind = args[n]?.text.toLowerCase();
+    if (kind === 'exist' || kind === 'defined' || kind === 'errorlevel' || kind === 'cmdextversion') n += 2;
+    else n += /^(?:equ|neq|lss|leq|gtr|geq)$/i.test(args[n + 1]?.text ?? '') ? 3 : 2; // `a==b`: cmdStatements reads `=` as a space, so two words
+    args = args.slice(n);
+  }
+}
+
+/** `for [/d | /r [dir] | /l | /f …] %v in (items) do …`: what the loop variable stands for in the `do` part. */
+interface CmdLoop { variable: string; mode: string | undefined; dir: string | undefined; items: string[]; collecting: boolean; /** The items cannot be known (/f, /l). */ unknown: boolean }
+
+function cmdLoop(args: CmdArg[]): CmdLoop {
+  const modeAt = args.findIndex((a, i) => i > 0 && /^\/[drlf]$/i.test(a.text));
+  const varAt = args.findIndex((a, i) => i > 0 && a.text.startsWith('%'));
+  const mode = modeAt > 0 ? args[modeAt].text.toLowerCase() : undefined;
+  const dir = mode === '/r' && varAt > modeAt + 1 ? args[modeAt + 1].text : undefined;
+  return { variable: varAt > 0 ? args[varAt].text.slice(-1) : '', mode, dir, items: [], collecting: true, unknown: varAt < 0 || mode === '/f' || mode === '/l' };
+}
+
+const isLoopVariable = (loop: CmdLoop | undefined, text: string): loop is CmdLoop =>
+  loop !== undefined && !loop.collecting && loop.variable !== '' && new RegExp(`^%%?(?:~[a-z]*)?${loop.variable.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`).test(text);
+
+/**
+ * Operands that cmd got from one unquoted path with spaces: `rd /s /q C:\a b\c` deletes C:\a, b and c. Suspect when the
+ * words joined with spaces name an existing path (or its folder exists), or an absolute operand is followed by a relative
+ * one. Quoted operands are one path each. Returns the line for the refusal; undefined when the operands look separate.
+ */
+function splitOperands(operands: CmdArg[], scope: ShellScope, state: State, name: string): string | undefined {
+  const m = pathOf(scope.platform);
+  const exists = scope.exists ?? ((path: string) => { try { lstatSync(path); return true; } catch { return false; } });
+  const plain = (a: CmdArg) => a.word !== undefined && !a.word.quoted;
+  for (let from = 0; from < operands.length - 1; from++) {
+    if (!plain(operands[from])) continue;
+    let end = from;
+    while (end + 1 < operands.length && plain(operands[end + 1])) end++;
+    for (let to = end; to > from; to--) { // the longest run first: it is the whole path
+      const run = operands.slice(from, to + 1).map((a) => a.text);
+      const joined = run.join(' ');
+      const full = absolute(scope, state.cwd, joined);
+      const parent = joined.includes('\\') || joined.includes('/') ? absolute(scope, state.cwd, m.dirname(joined)) : undefined;
+      const relativeLast = !m.isAbsolute(run[run.length - 1]);
+      const why = full && exists(full) ? `\`${joined}\` exists as one path`
+        : parent && m.dirname(joined) !== '.' && relativeLast && exists(parent) ? `the folder \`${m.dirname(joined)}\` exists`
+          : m.isAbsolute(run[0]) && relativeLast ? 'a relative word follows an absolute path' : undefined;
+      if (why) return `cmd reads \`${name} /s … ${joined}\` as ${run.length} targets (${run.join(' | ')}): ${why}, so it is one path with spaces that was not put in quotes. Write the path in quotes: ${name} /s /q "${joined}"`;
+    }
+  }
+  return undefined;
+}
+
 function cmdDeletes(line: string | undefined, scope: ShellScope, state: State): ShellDelete[] {
   if (line === undefined || state.depth >= MAX_DEPTH) return [];
   const hits: ShellDelete[] = [];
   const inner: State = { ...state, depth: state.depth + 1 };
+  let loop: CmdLoop | undefined;
   for (const statement of cmdStatements(line, scope.env)) {
-    const texts = statement.words.map((w) => textOf(w, scope, inner, 'cmd') ?? '');
-    const name = commandName(texts[0]);
-    const switches = texts.slice(1).filter((text) => /^\/[a-z](?::.*)?$/i.test(text)).map((text) => text.toLowerCase());
-    const operands = statement.words.slice(1).filter((_w, i) => !/^\/[a-z](?::.*)?$/i.test(texts[i + 1]));
+    let args = cmdArgs(statement.words, scope, inner);
+    if (loop?.collecting) { // the items of a `for … in (…)` come as statements of their own, up to `do`
+      if (args[0]?.text.toLowerCase() !== 'do') { loop.items.push(...args.map((a) => a.text)); continue; }
+      loop.collecting = false;
+    }
+    args = cmdPeel(args);
+    const name = commandName(args[0]?.text ?? '');
+    if (name === 'for') { loop = cmdLoop(args); continue; }
+    const rest = args.slice(1);
+    const switches = rest.filter((a) => CMD_SWITCH.test(a.text)).map((a) => a.text.toLowerCase());
+    const operands = rest.filter((a) => !CMD_SWITCH.test(a.text));
     if (name === 'cd' || name === 'chdir' || name === 'pushd') {
-      const rest = operands.map((w) => textOf(w, scope, inner, 'cmd')).join(' ');
-      if (rest) inner.cwd = absolute(scope, inner.cwd, rest);
+      const to = operands.map((a) => a.text).join(' ');
+      if (to) inner.cwd = absolute(scope, inner.cwd, to);
       continue;
     }
-    if (name === 'cmd') { hits.push(...cmdDeletes(cmdLineOf(statement.words.slice(1)), scope, inner)); continue; }
-    if (POWERSHELL.has(name)) { hits.push(...nestedPowershell(texts.slice(1), scope, inner)); continue; }
+    if (name === 'cmd') { // cmd /c … inside cmd: the words after /c as one line
+      const switchAt = rest.find((a) => /^\/[ck]$/i.test(a.text));
+      if (switchAt) hits.push(...cmdDeletes(statement.words.slice(switchAt.at + 1).map((w) => w.raw).join(' '), scope, inner));
+      continue;
+    }
+    if (POWERSHELL.has(name)) { hits.push(...nestedPowershell(rest.map((a) => a.text), scope, inner)); continue; }
     const rd = (name === 'rd' || name === 'rmdir') && switches.includes('/s');
     const del = (name === 'del' || name === 'erase') && switches.includes('/s');
     if (!rd && !del) continue;
-    const found = operands.flatMap((w) => {
-      const text = textOf(w, scope, inner, 'cmd') ?? '';
-      const at = absolute(scope, inner.cwd, w.glob ? globBase(text, scope.platform) : text);
-      return at ? [{ target: at, contents: del, command: name, several: operands.length > 1 }] : [];
-    });
+    const several = operands.length > 1;
+    const found: ShellDelete[] = [];
+    const add = (text: string, glob: boolean, contents: boolean) => {
+      const at = absolute(scope, inner.cwd, glob ? globBase(text, scope.platform) : text);
+      if (at) found.push({ target: at, contents, command: name, several });
+    };
+    for (const operand of operands) {
+      if (isLoopVariable(loop, operand.text)) { // the loop's items stand in for %i
+        if (loop.unknown) continue;
+        if (loop.mode === '/r') add(loop.dir ?? '.', false, true); // every file or folder below the start folder
+        else for (const item of loop.items) { const glob = hasWildcard(item); add(item, glob, glob); }
+        continue;
+      }
+      add(operand.text, operand.word?.glob === true || (operand.word === undefined && hasWildcard(operand.text)), del);
+    }
+    const split = several && !(loop && operands.some((o) => isLoopVariable(loop, o.text))) ? splitOperands(operands, scope, inner, name) : undefined;
+    if (split && found.length) found[0] = { ...found[0], split };
     hits.push(...found);
   }
   return hits;
-}
-
-/** cmd /c inside cmd: the words after /c as one line. */
-function cmdLineOf(words: Word[]): string | undefined {
-  const at = words.findIndex((w) => /^\/[ck]$/i.test(w.raw));
-  return at < 0 ? undefined : words.slice(at + 1).map((w) => w.raw).join(' ');
 }
 
 /** pwsh / powershell -Command … or -EncodedCommand …: the inner command, read the same way. */
@@ -320,11 +435,17 @@ function shDeletes(src: string, scope: ShellScope, state: State): ShellDelete[] 
 export function shellDeleteRefusal(command: string, scope: ShellScope, zones: DeleteZones): string | undefined {
   let hits: ShellDelete[];
   try { hits = recursiveDeletes(command, scope); } catch { return undefined; }
-  for (const hit of hits) {
-    const why = refusalOf(hit.target, zones, hit.contents);
+  // Only the first MAX_RESOLVED targets are followed through links (realpath per target: a command with ~3800 of them took
+  // 1.7 s); the rest are compared as written – a link above one of them goes unseen, which is the fail-open of this layer.
+  const reason = (hit: ShellDelete, index: number) => (index < MAX_RESOLVED ? refusalOf : zoneRefusal)(hit.target, zones, hit.contents);
+  for (const [index, hit] of hits.entries()) {
+    const why = reason(hit, index);
     if (!why) continue;
     const split = hit.several ? ` One of several targets of \`${hit.command}\`: an unquoted path splits at its spaces, so \`rd /s /q C:\\a b\` deletes C:\\a and b.` : '';
     return `BLOCKED – not executed. This command deletes recursively (\`${hit.command}\`), and as the shell reads it, it reaches ${hit.target}${hit.contents ? ' (what lies inside)' : ''}: ${why}.${split} Nothing ran. To delete a file or folder I use files.delete with its exact path – dryRun shows first what would go; it keeps company data, browser profiles and the app safe and removes links without entering them.`;
   }
+  // an unquoted path with spaces: cmd deletes the wrong things whatever they are (a folder of the same name, a sibling)
+  const unquoted = hits.find((hit) => hit.split);
+  if (unquoted) return `BLOCKED – not executed. ${unquoted.split}. Nothing ran. To delete a folder I can also use files.delete with its exact path – dryRun shows first what would go.`;
   return undefined;
 }
