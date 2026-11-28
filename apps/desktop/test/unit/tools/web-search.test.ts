@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bingTarget, parseBing, searchPage, webSearchTool, type SearchFetch } from '../../../src/runtime/tools/builtin/web-search.ts';
+import { bingTarget, configuredProvider, parseBing, searchPage, webSearchTool, type SearchFetch } from '../../../src/runtime/tools/builtin/web-search.ts';
 import type { ToolContext, ToolOutput } from '../../../src/runtime/tools/types.ts';
 
 const b64 = (url: string) => `a1${Buffer.from(url).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
@@ -64,4 +64,53 @@ test('DuckDuckGo with results is used as before (one request)', async () => {
   const out = await webSearchTool({ fetch }).run({ query: 'example' }, ctx);
   assert.match(text(out), /via DuckDuckGo\]\n1\. Example A\n {3}https:\/\/example\.com\/a\n {3}Snippet A/);
   assert.equal(urls.length, 1);
+});
+
+// A stored Keenable key (opt-in: nothing is sent to Keenable without one) – the keyed endpoint only, key in x-api-key.
+const keyCtx = (labels: Array<{ label: string; source?: string }>, used: string[] = []) => ({
+  agent: { id: 'ag_1' }, signal: new AbortController().signal,
+  services: { secrets: {
+    list: () => labels.map((s, i) => ({ id: `s${i}`, label: s.label, source: s.source, kind: 'api_key', createdAt: 0 })),
+    use: async (id: string) => { used.push(id); return 'KEENABLE-SECRET'; },
+  } },
+}) as unknown as ToolContext;
+
+test('without a stored Keenable key nothing goes to Keenable (keyless pages only)', async () => {
+  const { fetch, urls } = fetcher({ 'html.duckduckgo.com': { status: 200, body: '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa">A</a>' } });
+  await webSearchTool({ fetch }).run({ query: 'example' }, ctx);
+  assert.equal(configuredProvider([], 'ag_1'), undefined);
+  assert.ok(urls.every((u) => !u.includes('keenable')), urls.join());
+});
+
+test('a Keenable key (by name or by where it was saved from) searches api.keenable.ai/v1/search with x-api-key', async () => {
+  assert.equal(configuredProvider([{ id: 'a', label: 'Keenable search', kind: 'api_key', createdAt: 0 }], 'ag_1')?.kind, 'keenable');
+  assert.equal(configuredProvider([{ id: 'a', label: 'My key', source: 'api.keenable.ai', kind: 'api_key', createdAt: 0 }], 'ag_1')?.kind, 'keenable');
+  const calls: Array<{ url: string; init: Parameters<SearchFetch>[1] }> = [];
+  const fetch: SearchFetch = async (url, init) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify({ results: [
+      { title: 'Tre <b>Cime</b>', url: 'https://example.com/a', snippet: 'Three peaks', description: '' },
+      { title: 'Not http', url: 'javascript:alert(1)', snippet: 'x' },
+    ] }), { status: 200 });
+  };
+  const out = await webSearchTool({ fetch }).run({ query: 'tre cime', limit: 4 }, keyCtx([{ label: 'Keenable search' }]));
+  assert.equal(out.isError, undefined);
+  assert.match(text(out), /via Keenable\]\n1\. Tre Cime\n {3}https:\/\/example\.com\/a\n {3}Three peaks/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.keenable.ai/v1/search');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.headers['x-api-key'], 'KEENABLE-SECRET');
+  assert.deepEqual(JSON.parse(calls[0].init.body ?? ''), { query: 'tre cime', max_results: 4, snippet_max_length: 300 });
+  assert.ok(!text(out).includes('KEENABLE-SECRET'));
+});
+
+test('Brave and Tavily keys keep priority over Keenable; a failing Keenable falls back to the keyless pages, said in the output', async () => {
+  const both = [{ id: 'k', label: 'Keenable', kind: 'api_key', createdAt: 0 }, { id: 't', label: 'Tavily', kind: 'api_key', createdAt: 0 }] as const;
+  assert.equal(configuredProvider(both, 'ag_1')?.kind, 'tavily');
+  const ddg = '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fb">B</a>';
+  const fetch: SearchFetch = async (url) => (new URL(url).hostname === 'api.keenable.ai'
+    ? new Response('{}', { status: 402 })
+    : new Response(ddg, { status: 200 }));
+  const out = await webSearchTool({ fetch }).run({ query: 'example' }, keyCtx([{ label: 'Keenable' }]));
+  assert.match(text(out), /via DuckDuckGo; Keenable failed \(HTTP 402\)/);
 });

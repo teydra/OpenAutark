@@ -207,7 +207,7 @@ pages.
 | Service | What for |
 |---|---|
 | AI providers and their command-line tools (Anthropic, OpenAI, Google, xAI, DeepSeek, Groq, Mistral, Moonshot, Alibaba DashScope, DeepInfra, OpenRouter, or your own address) | Every agent turn goes to the provider you connected, with the chat, files and tool results that turn needs. Claude Code and Codex are separate programs with their own connections |
-| Web search (DuckDuckGo and Bing pages without a key; Brave, Tavily or SearXNG with yours) | When an agent searches the web |
+| Web search (DuckDuckGo and Bing pages without a key; Brave, Tavily, Keenable or SearXNG with yours; Keenable logs queries, see [its data and privacy page](https://docs.keenable.ai/data-privacy)) | When an agent searches the web |
 | iPhone web app (`autark-theta.vercel.app/app`, ours) | Safari on your iPhone loads the app's start page from there; the screens then come from your PC through the meeting server |
 | Speech, images, video, music (OpenAI, Google, ElevenLabs, fal, ChatGPT plan transcription) | Only with a key or plan you connected |
 | Mail (`autoconfig.thunderbird.net`, then your mail server) | Finds the server settings for your address, then IMAP and SMTP with your mailbox |
