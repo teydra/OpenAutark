@@ -95,6 +95,7 @@ final class AutarkE2EUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 4)
         app.terminate()
         try? FileManager.default.removeItem(atPath: statusFile)
+        let launchedAt = Date()
         app.launch()
         guard require(wait(60) {
             guard let state = self.status() else { return false }
@@ -105,9 +106,13 @@ final class AutarkE2EUITests: XCTestCase {
         XCTAssertGreaterThan(status()?["textLength"] as? Int ?? 0, 0, "the page is empty: \(statusText())")
         XCTAssertFalse(app.staticTexts["Can't reach"].exists, "a native offline screen covers the page")
         XCTAssertFalse(app.buttons["Try again"].exists, "a native Try-again button covers the page")
-        Thread.sleep(forTimeInterval: 3)
+        // The page must say on its own that the PC is not reachable (seen about 2 s after the start since d1dd1c79); the screenshot
+        // is taken no earlier than 6 s after the cold start, so the connection line and the lists have settled.
+        guard require(wait(15) { self.status()?["notReachable"] as? Bool == true }, "the page does not say 'not reachable' after a cold start without a PC: \(statusText())") else { return }
+        let sinceLaunch = Date().timeIntervalSince(launchedAt)
+        if sinceLaunch < 6 { Thread.sleep(forTimeInterval: 6 - sinceLaunch) }
         shot("05-pc-weg-eigene-oberflaeche.png")
-        print("AUTARK-E2E own interface after the PC was gone and a cold start: \(statusText())")
+        print("AUTARK-E2E own interface after the PC was gone and a cold start (screenshot \(Int(Date().timeIntervalSince(launchedAt))) s after launch): \(statusText())")
     }
 
     // MARK: helpers

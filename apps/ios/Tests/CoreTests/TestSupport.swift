@@ -185,6 +185,8 @@ final class FakePcStreams {
     private(set) var bytesUploaded = 0
     private(set) var requestHeads = [String]()
     private(set) var requestTimes = [Date]()
+    /// Streams of held paths (answered by finishHeld).
+    private var held = [Int]()
     /// Streams the PC left unanswered on purpose (a hanging request).
     var holdPaths = Set<String>()
     /// What GET / answers (the PC's phone UI in the tests).
@@ -215,6 +217,15 @@ final class FakePcStreams {
         }
     }
 
+    /// Answers every held request now (a slow answer finally comes) – 4 bytes "done" – and ends its stream.
+    func finishHeld() {
+        lock.lock(); let all = held; held.removeAll(); lock.unlock()
+        for s in all {
+            peer.send(["t": "d", "s": s, "b": Crypto.b64Std(Crypto.utf8("HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndone"))] as JSONObject)
+            peer.send(["t": "e", "s": s] as JSONObject)
+        }
+    }
+
     private func respondIfComplete(_ s: Int, _ whole: Bytes) {
         let text = String(decoding: whole, as: UTF8.self)
         guard let split = text.range(of: "\r\n\r\n") else { return }
@@ -233,7 +244,7 @@ final class FakePcStreams {
         lock.unlock()
         let line = head.components(separatedBy: "\r\n")[0]
         let path = line.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-        if holdPaths.contains(path) { return }
+        if holdPaths.contains(path) { lock.lock(); held.append(s); lock.unlock(); return }
         var status = "200 OK"
         var contentType = "text/plain; charset=utf-8"
         var body = Bytes()
@@ -388,6 +399,11 @@ final class FakeRelay: WebSocketConnector {
     var streamVersion = "0.9.9"
     /// What every new tunnel's PC answers to phone.pcs (nil: no such method).
     var phonePcs: [JSONObject]?
+    /// PCs (fingerprints) whose tunnel the meeting server refuses to open while they stay online; how often each was asked.
+    var failOpenTo: Set<String> { get { lock.lock(); defer { lock.unlock() }; return failing } set { lock.lock(); failing = newValue; lock.unlock() } }
+    private var failing = Set<String>()
+    private var attemptsByPc = [String: Int]()
+    func openAttempts(to fp: String) -> Int { lock.lock(); defer { lock.unlock() }; return attemptsByPc[fp] ?? 0 }
 
     func addPc(_ pc: Pc, findable: Bool = true) {
         lock.lock(); defer { lock.unlock() }
@@ -477,6 +493,10 @@ final class FakeRelay: WebSocketConnector {
                 socket.deliver(["t": "pairReply", "ref": ref ?? NSNull(), "c": Crypto.b64url(out)] as JSONObject)
             }
         case "open":
+            if let to = Json.str(frame, "to") {
+                lock.lock(); attemptsByPc[to, default: 0] += 1; let refuse = failOpenTo.contains(to); lock.unlock()
+                if refuse { return error("unavailable") } // a PC that is online but does not take the tunnel
+            }
             guard let to = Json.str(frame, "to"), let pc = pcs[to], let device = socket.device, pc.peers.contains(device.fp), device.peers.contains(to), devices[to] != nil,
                   let e = Json.str(frame, "e"), let es = Json.str(frame, "es"), let eRaw = Crypto.fromB64url(e),
                   Crypto.verify(publicKey: device.pub, message: Crypto.utf8("wf-relay-v1|tunnel|\(e)|\(pc.boxPub)"), signature: Crypto.fromB64url(es)) else { return error("unavailable") }
@@ -620,8 +640,12 @@ final class FakeSocket: WebSocketLink {
 final class FixedChannels: Channels {
     var channel: PeerChannel?
     var probes = 0
-    func waitChannel(timeoutMs: Int) -> PeerChannel? { channel }
-    func usedChannel() -> PeerChannel? { channel }
+    /// A test's race: runs while a new stream waits for its channel (the page moves to another PC meanwhile).
+    var onWait: (() -> Void)?
+    /// The page's own channel when it is not the one waiting streams got (a better way to the same PC, or another PC).
+    var pageChannel: PeerChannel?
+    func waitChannel(timeoutMs: Int) -> PeerChannel? { onWait?(); return channel }
+    func usedChannel() -> PeerChannel? { pageChannel ?? channel }
     func probe() { probes += 1 }
 }
 

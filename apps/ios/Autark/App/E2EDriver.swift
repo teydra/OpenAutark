@@ -123,6 +123,9 @@ final class E2EDriver {
           const texts = atChat ? Array.from(document.querySelectorAll('.message-body')).filter(visible).map(el => el.innerText.trim()) : [];
           return JSON.stringify({
             phase: 'page', blankShell, rendered: !!root && root.children.length > 0, poisoned: (document.documentElement.outerHTML || '').includes('POISONED-PC-UI'), textLength: (document.body?.innerText || '').length, assetErrors: window.__autarkE2EAssetErrors || 0,
+            notReachable: (document.body?.innerText || '').toLowerCase().includes('not reachable'),
+            waitingFor: (document.body?.innerText || '').includes('Waiting for'),
+            nothingHere: (document.body?.innerText || '').includes('Nothing for you here'),
             tokenPending: location.hash.startsWith('#token='),
             atChat, composer: canType, connectCard, sendReady, sent: s.sent,
             halloVisible: texts.includes('Hallo'),

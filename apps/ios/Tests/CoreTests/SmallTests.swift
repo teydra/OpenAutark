@@ -1,5 +1,5 @@
 // Owns: the smaller pieces – person-code chains (CodeChain, vector W4 from the Android test), the JSON subset, which PC the
-// page uses (PcLinks), version order (PcVersion), what the connect screen accepts (ConnectionAddress), the company list with
+// page uses (PcLinks: the first channel up, short tries in front), what the connect screen accepts (ConnectionAddress), the company list with
 // its fixed ports (Companies) and the bar colours (CssColor). Never: a network test.
 import XCTest
 @testable import AutarkCore
@@ -95,44 +95,76 @@ final class PcLinksTests: XCTestCase {
     final class Chan { var closed = false; let name: String; init(_ n: String) { name = n } }
     private func links() -> PcLinks<Chan> { PcLinks<Chan>(closed: { $0.closed }) }
 
-    func testNewestVersionServesAndThePageStaysPut() {
+    func testTheFirstChannelUpTakesThePageAndNoLaterPcTakesItOff() {
         let l = links()
         let a = Chan("a"), b = Chan("b")
-        l.put("A", a, version: "0.3.9")
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: nil) === a)
-        l.put("B", b, version: "0.3.10")
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: nil) === b, "a newer PC takes the page")
-        l.put("A", Chan("a2"), version: "0.3.9")
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: nil) === b, "an older one does not")
+        l.put("B", b)
+        XCTAssertTrue(l.pick(order: ["A", "B"]) === b, "the first channel up takes the page, whatever the pin order")
         XCTAssertEqual(l.usedPc(), "B")
-        XCTAssertEqual(l.usedVersion(), "0.3.10")
+        l.put("A", a)
+        XCTAssertTrue(l.pick(order: ["A", "B"]) === b, "a PC linked later, first in the order or not, never takes the page off an open channel")
+        XCTAssertTrue(l.pick(order: ["B", "A"]) === b && l.pick(order: ["A", "B"]) === b, "a new pin order alone does not move the page")
         XCTAssertEqual(l.live(), 2)
     }
 
-    func testPreferredPcWinsWhileItsChannelIsUp() {
+    func testTwoChannelsUpAtOnceTheFirstInThePhonesOrderServes() {
         let l = links()
         let a = Chan("a"), b = Chan("b")
-        l.put("A", a, version: "0.3.9")
-        l.put("B", b, version: "0.3.10")
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: "A") === a)
+        l.put("B", b)
+        l.put("A", a)
+        XCTAssertTrue(l.pick(order: ["A", "B"]) === a, "no version and no link order ranks: the phone's order")
+        XCTAssertEqual(l.usedPc(), "A")
+    }
+
+    func testThePageMovesAtOnceWhenItsPcDropsAndDoesNotGoBack() {
+        let l = links()
+        let a = Chan("a"), b = Chan("b")
+        l.put("A", a)
+        l.put("B", b)
+        XCTAssertTrue(l.pick(order: ["A", "B"]) === a)
         a.closed = true
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: "A") === b, "its channel dropped: the page moves at once")
+        XCTAssertNil(l.usedChannel(), "a closed channel is no longer the page's")
+        XCTAssertTrue(l.pick(order: ["A", "B"]) === b, "its channel dropped: the page moves at once")
         XCTAssertTrue(l.usedChannel() === b)
+        let again = Chan("a again")
+        l.put("A", again)
+        XCTAssertTrue(l.pick(order: ["A", "B"]) === b, "the PC back online does not take the page back: the page stays where it works")
+        XCTAssertEqual(l.prune(pinned: ["A"]).map { $0.name }, ["b"], "a PC no longer pinned is handed back to be closed")
+        XCTAssertTrue(l.pick(order: ["A"]) === again, "its PC unpinned, the page goes to the one left")
+        again.closed = true
+        XCTAssertNil(l.pick(order: ["A"]))
+        XCTAssertNil(l.usedPc(), "no channel left: no page PC")
+    }
+
+    func testABetterWayToTheSamePcKeepsThePageOnThatPc() {
+        let l = links()
+        let tunnel = Chan("tunnel"), direct = Chan("direct")
+        l.put("A", tunnel)
+        XCTAssertTrue(l.pick(order: ["A"]) === tunnel)
+        l.put("A", direct) // the direct socket replaces that PC's tunnel
+        XCTAssertTrue(l.usedChannel() === direct, "new streams take the new way at once")
+        XCTAssertTrue(l.pick(order: ["A"]) === direct)
+        XCTAssertEqual(l.usedPc(), "A")
+        XCTAssertEqual(l.live(), 1)
     }
 
     func testRefusalMovesThePageOnceAndNeverCircles() {
         let l = links()
         let a = Chan("a"), b = Chan("b")
-        l.put("A", a, version: "1.0.0")
-        l.put("B", b, version: "0.9.0")
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: nil) === a)
+        l.put("A", a)
+        XCTAssertTrue(l.pick(order: ["A", "B", "C"]) === a, "the PC up first has the page")
+        l.put("B", b)
         XCTAssertTrue(l.refuse("A"))
         XCTAssertFalse(l.refuse("A"), "news only once")
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: nil) === b)
+        XCTAssertTrue(l.pick(order: ["A", "B", "C"]) === b, "after the refusal the page moves to the PC that has not refused")
+        XCTAssertTrue(l.pick(order: ["A", "B", "C"]) === b, "and stays there: the refused PC does not take it back")
         XCTAssertTrue(l.refuse("B"))
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: nil) === b, "every linked PC refused: the page stays")
-        XCTAssertTrue(l.forgive("A"))
-        XCTAssertTrue(l.pick(order: ["A", "B"], preferred: "A") === a, "the person's pick forgives")
+        XCTAssertTrue(l.pick(order: ["A", "B", "C"]) === b, "every linked PC refused: the page stays")
+        let c = Chan("c")
+        l.put("C", c)
+        XCTAssertTrue(l.pick(order: ["A", "B", "C"]) === c, "a PC linked later that has not refused takes the page")
+        XCTAssertTrue(l.refuse("C"))
+        XCTAssertTrue(l.pick(order: ["A", "B", "C"]) === c, "each PC refuses at most once: no circling, the page stays")
         XCTAssertFalse(l.refuse(nil))
     }
 
@@ -142,86 +174,43 @@ final class PcLinksTests: XCTestCase {
         let open = l.toOpen(order: order, online: { _ in true }, now: 0)
         XCTAssertEqual(open.count, PcLinks<Chan>.cap)
         XCTAssertEqual(l.toOpen(order: ["x"], online: { _ in false }, now: 0), [])
-        l.failed("x", now: 1_000)
+        l.failed("x", now: 1_000, front: true)
         XCTAssertEqual(l.toOpen(order: ["x"], online: { _ in true }, now: 1_100), [], "waits its backoff (0.5 s)")
         XCTAssertEqual(l.toOpen(order: ["x"], online: { _ in true }, now: 1_600), ["x"])
         XCTAssertEqual(l.nextRetry(now: 1_100), 400)
         l.retryNow()
-        XCTAssertEqual(l.toOpen(order: ["x"], online: { _ in true }, now: 1_100), ["x"], "check() makes every failed PC due")
-        l.put("x", Chan("x"), version: nil)
+        XCTAssertEqual(l.toOpen(order: ["x"], online: { _ in true }, now: 1_100), ["x"], "check() or a PC coming online makes every failed PC due")
+        l.put("x", Chan("x"))
         XCTAssertEqual(l.toOpen(order: ["x"], online: { _ in true }, now: 9_000), [], "already linked")
     }
 
-    func testBackoffStepsAndTheSpareMinute() {
-        XCTAssertEqual((0..<7).map { PhoneConnection.backoff($0) }, [500, 1_000, 2_000, 5_000, 10_000, 10_000, 10_000])
+    func testBackoffStepsShortInFrontAndTheSpareMinute() {
+        XCTAssertEqual((0..<7).map { PhoneConnection.backoff($0, front: false) }, [500, 1_000, 2_000, 5_000, 10_000, 10_000, 10_000])
+        XCTAssertEqual((0..<7).map { PhoneConnection.backoff($0, front: true) }, [500, 1_000, 2_000, 2_000, 2_000, 2_000, 2_000], "in front the steps stop at 2 s")
         let l = links()
-        l.put("up", Chan("up"), version: "1")
-        for _ in 0..<5 { l.failed("down", now: 0) }
-        XCTAssertEqual(l.nextRetry(now: 0), 10_000)
-        l.failed("down", now: 0) // the sixth: another channel is up, so a minute
-        XCTAssertEqual(l.nextRetry(now: 0), PcLinks<Chan>.spareMs)
+        for _ in 0..<6 { l.failed("a", now: 0, front: true) }
+        XCTAssertEqual(l.nextRetry(now: 0), PhoneConnection.frontMs, "in front a failing PC with no channel up is tried every 2 s")
+        l.retryNow()
+        for _ in 0..<6 { l.failed("a", now: 0, front: false) }
+        XCTAssertEqual(l.nextRetry(now: 0), 10_000, "behind, a failing PC with no channel up keeps the 10 s step")
+        l.put("up", Chan("up"))
+        l.failed("a", now: 0, front: true) // the seventh: another channel is up, so a minute
+        XCTAssertEqual(l.nextRetry(now: 0), PcLinks<Chan>.spareMs, "while the page has a PC, one that keeps failing waits a minute")
+        l.retryNow()
+        l.failed("a", now: 0, front: true)
+        XCTAssertEqual(l.nextRetry(now: 0), 500, "after check() or a PC coming online the backoff starts over at 0.5 s")
     }
 
     func testPruneEndsChannelsOfUnpinnedPcs() {
         let l = links()
         let a = Chan("a"), b = Chan("b"), c = Chan("c")
-        l.put("A", a, version: nil); l.put("B", b, version: nil); l.put("C", c, version: nil)
+        l.put("A", a); l.put("B", b); l.put("C", c)
         c.closed = true
         let gone = l.prune(pinned: ["A"])
         XCTAssertEqual(gone.map { $0.name }, ["b"])
         XCTAssertEqual(l.all().map { $0.name }, ["a"])
     }
 }
-
-final class PcVersionTests: XCTestCase {
-    func testOrder() {
-        XCTAssertGreaterThan(PcVersion.compare("0.3.10", "0.3.9"), 0)
-        XCTAssertGreaterThan(PcVersion.compare("0.3.9", "0.3.9-local.2"), 0)
-        XCTAssertGreaterThan(PcVersion.compare("0.3.9-local.2", "0.3.9-local.1"), 0)
-        XCTAssertLessThan(PcVersion.compare("0.3.9-local.1", "0.3.9"), 0)
-        XCTAssertEqual(PcVersion.compare("1.0.0+build5", "1.0.0"), 0)
-        XCTAssertGreaterThan(PcVersion.compare("1.0.0", nil), 0, "an unknown version is the oldest")
-        XCTAssertLessThan(PcVersion.compare(nil, "0.0.1"), 0)
-        XCTAssertEqual(PcVersion.compare(nil, nil), 0)
-        XCTAssertGreaterThan(PcVersion.compare("0.4", "0.3.99"), 0)
-    }
-
-    func testVersionOfAnswer() {
-        let ok = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"id\":1,\"result\":{\"version\":\"0.3.20-local.4\"}}"
-        XCTAssertEqual(PcVersion.versionOf(ok), "0.3.20-local.4")
-        XCTAssertNil(PcVersion.versionOf("HTTP/1.1 401 Unauthorized\r\n\r\n{}"))
-        XCTAssertNil(PcVersion.versionOf("HTTP/1.1 200 OK\r\n\r\n{\"result\":{\"version\":\"bad version!\"}}"))
-        XCTAssertNil(PcVersion.versionOf("HTTP/1.1 200 OK\r\n\r\nnot json"))
-        XCTAssertNil(PcVersion.versionOf("garbage"))
-    }
-
-    func testFetchAsksStreamZeroWithTheToken() {
-        let sent = Locked([JSONObject]())
-        let question = PcVersion(send: { m in sent.with { $0.append(m) } })
-        let answer = "HTTP/1.1 200 OK\r\n\r\n{\"result\":{\"version\":\"2.0.1\"}}"
-        spawn("answer") {
-            Thread.sleep(forTimeInterval: 0.2)
-            question.deliver(["t": "d", "s": 0, "b": Crypto.b64Std(Crypto.utf8(answer))] as JSONObject)
-            question.deliver(["t": "e", "s": 0] as JSONObject)
-        }
-        XCTAssertEqual(question.fetch(token: "tok_abc", timeoutMs: 3_000), "2.0.1")
-        XCTAssertEqual(sent.value.map { Json.str($0, "t") }, ["o", "d"])
-        let request = Crypto.string(Crypto.fromB64Std(Json.str(sent.value[1], "b")!)!)
-        XCTAssertTrue(request.hasPrefix("POST /rpc HTTP/1.1\r\n"))
-        XCTAssertTrue(request.contains("Authorization: Bearer tok_abc\r\n"))
-        XCTAssertTrue(request.hasSuffix("{\"id\":1,\"method\":\"system.info\"}"))
-        XCTAssertTrue(PcVersion.mine(["s": 0]))
-        XCTAssertFalse(PcVersion.mine(["s": 1]))
-    }
-
-    func testNoAnswerEndsTheStreamAndGivesNoVersion() {
-        let sent = Locked([JSONObject]())
-        let question = PcVersion(send: { m in sent.with { $0.append(m) } })
-        XCTAssertNil(question.fetch(token: "t", timeoutMs: 200))
-        XCTAssertEqual(sent.value.last.flatMap { Json.str($0, "t") }, "e")
-    }
-}
-
 final class ConnectionAddressTests: XCTestCase {
     func testRemoteIdFromTextAndLinks() throws {
         XCTAssertEqual(try ConnectionAddress.remoteId("482 913 071"), "482913071")

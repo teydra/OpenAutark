@@ -232,7 +232,6 @@ final class DirectConnectionTests: XCTestCase {
         defer { connection.stop() }
         eventually(10, "connected directly") { statuses.value.contains("+Connected to Studio PC directly.") }
         XCTAssertEqual(r.relay.peers.count, 0, "no tunnel was opened for the PC")
-        XCTAssertEqual(connection.version, "0.9.9", "the version request ran over the direct channel")
         XCTAssertEqual(connection.pc, r.pc.fingerprint)
         let page = get(origin)
         XCTAssertTrue(page?.contains("Autark phone UI") == true, page ?? "nil")
@@ -269,15 +268,48 @@ final class DirectConnectionTests: XCTestCase {
         let linked = Locked(0)
         connection.onLinked { linked.with { $0 += 1 } }
         eventually(10, "connected through the tunnel") { statuses.value.contains("+Connected to Studio PC.") }
+        Thread.sleep(forTimeInterval: 0.4)
         let before = linked.value
         r.direct.host(hosted, pc: r.pc) // home Wi-Fi came back
         connection.check() // the app came forward
         eventually(10, "moved to the direct channel") { statuses.value.contains("+Connected to Studio PC directly.") }
-        eventually(5, "the page heard of the new channel") { linked.value > before }
-        eventually(5, "the old tunnel ended") { r.relay.peers[0].pipe.isClosed }
+        eventually(5, "the old tunnel ended (no stream was open on it)") { r.relay.peers[0].pipe.isClosed }
+        Thread.sleep(forTimeInterval: 0.3)
+        XCTAssertEqual(linked.value, before, "a better way to the same PC is no move: the page hears no resume")
         XCTAssertEqual(connection.linkedCount, 1, "one pipe per PC: the direct socket replaced the tunnel")
         eventually(10, "the page is served over the direct channel") { self.get(origin)?.contains("Autark phone UI") == true }
         XCTAssertGreaterThanOrEqual(r.direct.streams[0].requestHeads.count, 1)
+    }
+
+    /// A request open on the tunnel when the direct channel takes over runs to its end there; new requests take the direct channel.
+    func testAnOpenStreamOnTheTunnelRunsToItsEndWhenTheDirectChannelTakesOver() throws {
+        let r = rig(addresses: [address])
+        let (connection, statuses, origin) = try start(r)
+        defer { connection.stop() }
+        eventually(10, "connected through the tunnel") { statuses.value.contains("+Connected to Studio PC.") }
+        r.relay.streams[0].holdPaths = ["/slow"]
+        let port = Int(origin.split(separator: ":").last!)!
+        let client = try XCTUnwrap(TcpConnection.connect(port: port))
+        client.write(Crypto.utf8("GET /slow HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: autark_gate=gate-secret\r\nConnection: close\r\n\r\n"))
+        eventually(5, "the request is at the PC, through the tunnel") { r.relay.streams[0].requestHeads.contains { $0.hasPrefix("GET /slow") } }
+        let linked = Locked(0)
+        connection.onLinked { linked.with { $0 += 1 } }
+        r.direct.host(hosted, pc: r.pc)
+        connection.check()
+        eventually(10, "moved to the direct channel") { statuses.value.contains("+Connected to Studio PC directly.") }
+        Thread.sleep(forTimeInterval: 0.6)
+        XCTAssertFalse(r.relay.peers[0].pipe.isClosed, "the tunnel stays open while a stream runs on it")
+        XCTAssertEqual(connection.openStreams, 1)
+        XCTAssertEqual(linked.value, 0, "no resume: the page's open stream is not cut")
+        XCTAssertTrue(get(origin)?.contains("Autark phone UI") == true, "a new request is served")
+        XCTAssertFalse(r.relay.streams[0].requestHeads.contains { $0.hasPrefix("GET / ") }, "... over the direct channel, not the draining tunnel")
+        XCTAssertGreaterThanOrEqual(r.direct.streams[0].requestHeads.count, 1)
+        r.relay.streams[0].finishHeld() // the slow answer finally comes, on the old way
+        var all = Bytes()
+        while let part = client.read(max: 4096, timeoutSeconds: 5) { all.append(contentsOf: part) }
+        XCTAssertTrue(String(decoding: all, as: UTF8.self).hasSuffix("done"), String(decoding: all, as: UTF8.self))
+        eventually(5, "the tunnel closed after its last stream") { r.relay.peers[0].pipe.isClosed }
+        XCTAssertEqual(connection.linkedCount, 1)
     }
 
     func testThePcListGivesTheAddressesAndTheConnectionGoesDirectByItself() throws {

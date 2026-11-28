@@ -1,16 +1,20 @@
 // Owns: keeping an encrypted channel to EVERY PC of the company that is online (at most PcLinks.cap), each a tunnel through
-// the one meeting-server connection – the phone belongs to the company, not to one PC: it pins every PC it knows, learns
-// each PC's version (PcVersion), reconnects with backoff (0.5 s … 10 s, per PC) after the server or a PC went away, and
-// hands the local entrance (StreamProxy) the channel the page uses (PcLinks: the picked PC, else the newest version; a slow
-// PC never holds a waiting request past its wait); when that PC drops, the page moves to another channel at once and its
-// old streams end. check() (foreground, network change) resets the backoff and probes the link at once; onLinked hears
-// every move of the page to a new channel; prefer() is the picker's choice; refused() (the PC refused the page's token)
-// moves the page to a PC of the company that has not refused while this connection lives.
+// the one meeting-server connection – the phone belongs to the company, not to one PC: it pins every PC it knows, reconnects at
+// once after the server or a PC went away and, when a try fails, with backoff per PC (0.5 s … 2 s while the app is in front,
+// front(); up to 10 s behind; a PC that comes online is tried at once), and hands the local entrance (StreamProxy) the channel the
+// page uses (PcLinks: the first one up – owner 27.11.2026, no PC picker; the page takes it as soon as it is up, not after the
+// round's other PCs, and a slow PC never holds a waiting request past its wait); when that PC drops, the page moves to another
+// channel at once and its old streams end. check() (foreground, network change) resets the backoff and probes the link at once;
+// onLinked hears the page reach another PC, or its PC again after its channel ended (the page then hears 'resume'); refused() (the
+// PC refused the page's token) moves the page to a PC of the company that has not refused while this connection lives.
+// A better way to the same PC never cuts the page (owner 27.11.2026): the streams open on the old way run to their end and only new
+// streams take the new one (StreamProxy.drain).
 // F29 (direct way): a channel goes straight to the PC whenever one of its addresses (from the pairing or the PC's own phone.pcs
 // answer, PcList, kept with the PC) answers – Route races them and falls back to the tunnel, the same pinned handshake either way; the
 // direct socket replaces that PC's tunnel. After check() (foreground, network change) the page's PC, if reached through the tunnel,
-// is tried directly once and a direct channel takes its place (home Wi-Fi while mobile data stays up); the page's PC is asked for
-// its PC list (addresses, new PCs) after every move of the page and every check(), because iOS has no phoneUse.attach.
+// is tried directly once and a direct channel takes its place (home Wi-Fi while mobile data stays up); the tunnel drains and closes. The
+// page's PC is asked for its PC list (addresses, new PCs) after every move of the page and every check(), because iOS has no
+// phoneUse.attach.
 // W: wakePc() sends a closed PC's wake over the same meeting-server link (Wake) – it needs no PC online, only the foreground app.
 // Ported from relay/PhoneConnection.java, without WebRTC (RtcWay/PageRtc: a placeholder in Rtc.swift).
 // Never: stores anything itself (the caller keeps Paired), polls the PC, or talks to a PC it does not pin.
@@ -20,10 +24,15 @@ public typealias StatusHandler = (_ text: String, _ connected: Bool) -> Void
 
 public final class PhoneConnection: Channels, RelayEvents {
     private static let backoffMs: [Int64] = [500, 1_000, 2_000, 5_000, 10_000]
-    private static let versionMs = 4_000
+    private static let listMs = 4_000
+    /// The longest pause between tries while the app is in front.
+    public static let frontMs: Int64 = 2_000
 
-    /// The pause after `attempt` failed tries in a row.
-    public static func backoff(_ attempt: Int) -> Int64 { backoffMs[max(0, min(attempt, backoffMs.count - 1))] }
+    /// The pause after `attempt` failed tries in a row (at most `frontMs` while the app is in front).
+    public static func backoff(_ attempt: Int, front: Bool) -> Int64 {
+        let step = backoffMs[max(0, min(attempt, backoffMs.count - 1))]
+        return front ? min(step, frontMs) : step
+    }
 
     private let seed: Bytes
     private let status: StatusHandler
@@ -34,12 +43,15 @@ public final class PhoneConnection: Channels, RelayEvents {
     private var proxy: StreamProxy?
     private var link: RelayLink?
     private let links = PcLinks<PeerChannel>(closed: { $0.isClosed })
+    /// The page's channel and PC the loop announced last (loop thread).
     private var shown: PeerChannel?
+    private var shownPc: String?
+    /// The app is in front: the pauses between tries stay short.
+    private var inFront = true
     private var stopped = false
     private var wake = false
     private var attempt = 0
     private var probeNow = false
-    private var preferred: String?
     private var linkedHandler: (() -> Void)?
     private var lastStatus = ""
     private var started = false
@@ -111,6 +123,11 @@ public final class PhoneConnection: Channels, RelayEvents {
         nudge()
     }
 
+    /// The app came to the front (true) or went behind (false): the pauses between tries stay short in front, up to 10 s behind.
+    public func front(_ isFront: Bool) { state.lock(); inFront = isFront; state.unlock() }
+
+    private var isFront: Bool { state.lock(); defer { state.unlock() }; return inFront }
+
     /// Runs on the connection's thread whenever the page moves to a new channel – another PC, or its PC again after a drop
     /// (the page then hears `resume`).
     public func onLinked(_ listener: @escaping () -> Void) { state.lock(); linkedHandler = listener; state.unlock() }
@@ -128,32 +145,18 @@ public final class PhoneConnection: Channels, RelayEvents {
     public func updatePcs(_ pcs: [Pc]) {
         if pcs.isEmpty { return }
         state.lock()
-        let next = PhonePairing.first(pcs, preferred)
         let before = pairedValue
-        if before.pcsJson == before.withPcs(next).pcsJson { state.unlock(); return }
-        pairedValue = before.withPcs(next)
+        if before.pcsJson == before.withPcs(pcs).pcsJson { state.unlock(); return }
+        pairedValue = before.withPcs(pcs)
         let current = link
         state.unlock()
-        if let current = current, !PhonePairing.samePins(before.pcs, next) { current.close() }
-        nudge()
-    }
-
-    /// The picker's choice: that PC goes first (the caller stores paired()) and the page uses it whenever its channel is up.
-    public func prefer(_ fingerprint: String) {
-        let again = links.forgive(fingerprint) // the person's pick tries a PC that refused once more
-        state.lock()
-        let before = pairedValue
-        if !before.pcs.contains(where: { $0.fingerprint == fingerprint }) { state.unlock(); if again { nudge() }; return } // not one of ours
-        let next = PhonePairing.first(before.pcs, fingerprint)
-        preferred = fingerprint
-        pairedValue = before.withPcs(next)
-        state.unlock()
+        if let current = current, !PhonePairing.samePins(before.pcs, pcs) { current.close() }
         nudge()
     }
 
     public var paired: Paired { state.lock(); defer { state.unlock() }; return pairedValue }
 
-    /// The pinned PCs in the phone's order, for the picker.
+    /// The pinned PCs in the phone's order.
     public var pcs: [Pc] { paired.pcs }
 
     /// W (19.11.2026): wakes a PC of mine whose app is closed (its helper key `wakePub`) through this connection's meeting-server
@@ -179,10 +182,7 @@ public final class PhoneConnection: Channels, RelayEvents {
     /// Open channels to PCs of the company (the page's one included).
     public var linkedCount: Int { links.live() }
 
-    /// The Autark version of the page's PC, or nil.
-    public var version: String? { links.usedVersion() }
-
-    /// The PC the page uses now (for the picker, the status line and tests), or nil.
+    /// The PC the page uses now (for the status line and tests), or nil.
     public var pc: String? { links.usedPc() }
 
     /// This phone's own fingerprint.
@@ -198,7 +198,7 @@ public final class PhoneConnection: Channels, RelayEvents {
         while !isStopped {
             if !isAnnouncing, let used = links.usedChannel() { return used }
             let left = deadline.timeIntervalSinceNow
-            if left <= 0 { return isAnnouncing ? nil : links.pick(order: order(), preferred: currentPreferred()) } // a round still opening a slow PC: a linked one serves now (nil: none)
+            if left <= 0 { return isAnnouncing ? nil : links.pick(order: order()) } // a round still opening a slow PC: a linked one serves now (nil: none)
             wake = true
             condition.broadcast()
             _ = condition.wait(until: Date().addingTimeInterval(min(left, 1)))
@@ -210,11 +210,12 @@ public final class PhoneConnection: Channels, RelayEvents {
 
     public func usedChannel() -> PeerChannel? { isAnnouncing ? nil : links.usedChannel() }
 
-    private func currentPreferred() -> String? { state.lock(); defer { state.unlock() }; return preferred }
-
     // MARK: RelayEvents
 
-    public func presence(online: Bool) { nudge() }
+    public func presence(online: Bool) {
+        if online { links.retryNow() } // a PC came online: tried now, not after its backoff
+        nudge()
+    }
 
     public func down(reason: String) { nudge() }
 
@@ -235,9 +236,11 @@ public final class PhoneConnection: Channels, RelayEvents {
                     if isStopped { break }
                     if links.usedChannel() == nil { say("Connecting to \(nameOf(fp))…", false) }
                     do { try openChannel(fp) } catch {
-                        links.failed(fp, now: Clock.nowMs())
+                        links.failed(fp, now: Clock.nowMs(), front: isFront)
                         failure = (error as? AutarkError)?.message ?? error.localizedDescription
+                        continue
                     }
+                    if links.usedChannel() == nil { settle(wanted, current, nil) } // the first channel up takes the page now, not after the round's other PCs
                 }
                 settle(wanted, current, failure)
                 state.lock(); var askList = listNow; listNow = false; let tryNow = directNow; directNow = false; state.unlock()
@@ -256,7 +259,7 @@ public final class PhoneConnection: Channels, RelayEvents {
             } catch {
                 say((error as? AutarkError)?.message ?? "Connection failed.", false)
                 state.lock(); let n = attempt; attempt += 1; state.unlock()
-                pause(Int(PhoneConnection.backoff(n)))
+                pause(Int(PhoneConnection.backoff(n, front: isFront)))
             }
         }
         let current = currentLink() // stop() may have come while a link or channel was being made: what I made last ends here
@@ -266,19 +269,23 @@ public final class PhoneConnection: Channels, RelayEvents {
 
     private func currentLink() -> RelayLink? { state.lock(); defer { state.unlock() }; return link }
 
-    /// The page's PC after this round: a move ends the streams left on other channels and tells the listener.
+    /// The page's PC after this round. A move to another PC announces it and ends the streams left on the old one; that move, or
+    /// its own PC back after its channel ended, tells the listener. A better way to the same PC moves nothing: new streams take it.
     private func settle(_ wanted: [String], _ current: RelayLink, _ failure: String?) {
         condition.lock()
-        let next = links.pick(order: wanted, preferred: currentPreferred())
-        let moved = next != nil && next !== shown
+        let next = links.pick(order: wanted)
+        let pc = next == nil ? nil : links.usedPc()
+        let otherPc = pc != nil && pc != shownPc
+        let back = next != nil && next !== shown && (shown == nil || shown!.isClosed)
         state.lock()
-        let announce = moved ? pageChannelHandler : nil
+        let announce = otherPc ? pageChannelHandler : nil
         if announce != nil { announcing = true } // set before the lock is released: no stream can take the new channel meanwhile
         state.unlock()
         condition.broadcast()
         condition.unlock()
         shown = next
-        if let announce = announce, let fp = links.usedPc() {
+        if let pc = pc { shownPc = pc }
+        if let announce = announce, let fp = pc {
             announce(fp)
             state.lock(); announcing = false; state.unlock()
             condition.lock(); condition.broadcast(); condition.unlock()
@@ -288,10 +295,10 @@ public final class PhoneConnection: Channels, RelayEvents {
         if let next = next {
             state.lock(); attempt = 0; let entrance = proxy; let listener = linkedHandler; state.unlock()
             let others = links.live() - 1
-            say("Connected to \(nameOf(links.usedPc()))" + (next.direct ? " directly" : "") + (others > 0 ? " (+\(others))" : "") + ".", true)
-            if moved {
+            say("Connected to \(nameOf(pc))" + (next.direct ? " directly" : "") + (others > 0 ? " (+\(others))" : "") + ".", true)
+            if otherPc { entrance?.retire(keep: next) }
+            if otherPc || back {
                 state.lock(); listNow = true; state.unlock()
-                entrance?.retire(keep: next)
                 if let listener = listener, !isStopped { listener() }
             }
             return
@@ -324,23 +331,20 @@ public final class PhoneConnection: Channels, RelayEvents {
         state.lock(); link = next; state.unlock()
     }
 
-    /// The listener of one channel: version answers go to the question, everything else to the local entrance.
+    /// The listener of one channel: the PC list's answer goes to the question, everything else to the local entrance.
     private final class ChannelListener: PeerListener {
         weak var owner: PhoneConnection?
         var channel: PeerChannel?
-        let asking = Locked<PcVersion?>(nil)
         let listing = Locked<PcList?>(nil)
         init(owner: PhoneConnection) { self.owner = owner }
 
         func message(_ message: JSONObject) {
-            if PcVersion.mine(message) { asking.value?.deliver(message); return }
             if PcList.mine(message) { listing.value?.deliver(message); return }
             if let channel = channel { owner?.proxyValue()?.deliver(channel, message) }
         }
 
         func closed() {
-            asking.value?.deliver(["t": "e"] as JSONObject) // the version wait ends with the channel
-            listing.value?.deliver(["t": "e"] as JSONObject)
+            listing.value?.deliver(["t": "e"] as JSONObject) // the list wait ends with the channel
             if let channel = channel { owner?.proxyValue()?.channelClosed(channel); owner?.forget(channel) }
             owner?.nudge()
             channel = nil
@@ -355,11 +359,13 @@ public final class PhoneConnection: Channels, RelayEvents {
         paired.pcs.first(where: { $0.fingerprint == fp })?.addresses ?? []
     }
 
-    /// F29: the page's PC, reached through the tunnel, tried directly once; true when a direct channel took its place.
+    /// F29: the page's PC, reached through the tunnel, tried directly once; true when a direct channel took its place – the tunnel's
+    /// open streams run to their end there, then it closes (StreamProxy.drain); only new streams take the direct channel.
     private func tryDirect() -> Bool {
         guard let fp = links.usedPc(), let used = links.usedChannel(), !used.direct, !addressesOf(fp).isEmpty else { return false }
         do { try openChannel(fp, directOnly: true) } catch { return false } // it stays on the tunnel
-        used.close() // its streams end, the page hears 'resume' on the direct channel
+        if let better = links.usedChannel(), better !== used { shown = better } // the page's way changed, not its PC: the drained tunnel ending is no "back"
+        proxyValue()?.drain(used)
         return true
     }
 
@@ -371,7 +377,7 @@ public final class PhoneConnection: Channels, RelayEvents {
         guard let target = listener else { return }
         let question = PcList(send: { channel.send($0) })
         target.listing.value = question
-        let told = question.fetch(token: token, timeoutMs: PhoneConnection.versionMs)
+        let told = question.fetch(token: token, timeoutMs: PhoneConnection.listMs)
         target.listing.value = nil
         if let told = told { apply(told: told, reached: fp) }
     }
@@ -380,17 +386,16 @@ public final class PhoneConnection: Channels, RelayEvents {
         state.lock()
         let before = pairedValue
         let merged = PcList.merged(known: before.pcs, told: told, reached: reached)
-        let next = PhonePairing.first(merged, preferred)
-        if merged.isEmpty || before.pcsJson == before.withPcs(next).pcsJson { state.unlock(); return }
-        pairedValue = before.withPcs(next)
+        if merged.isEmpty || before.pcsJson == before.withPcs(merged).pcsJson { state.unlock(); return }
+        pairedValue = before.withPcs(merged)
         let current = link
         let handler = pcsHandler
         let oldAddresses = before.pcs.first(where: { $0.fingerprint == reached })?.addresses ?? []
-        let newAddresses = next.first(where: { $0.fingerprint == reached })?.addresses ?? []
+        let newAddresses = merged.first(where: { $0.fingerprint == reached })?.addresses ?? []
         if newAddresses != oldAddresses && !newAddresses.isEmpty { directNow = true } // addresses the page's PC did not have: try them now
         state.unlock()
-        if let current = current, !PhonePairing.samePins(before.pcs, next) { current.close() } // a new or removed pin: the server learns it
-        handler?(next)
+        if let current = current, !PhonePairing.samePins(before.pcs, merged) { current.close() } // a new or removed pin: the server learns it
+        handler?(merged)
         nudge()
     }
 
@@ -415,12 +420,8 @@ public final class PhoneConnection: Channels, RelayEvents {
         listener.channel = next
         state.lock(); listeners[ObjectIdentifier(next)] = listener; state.unlock()
         if next.isClosed { forget(next) }
-        let question = PcVersion(send: { next.send($0) })
-        listener.asking.value = question
-        let version = question.fetch(token: info.token, timeoutMs: PhoneConnection.versionMs) // one small request: which Autark this PC runs
-        listener.asking.value = nil
         if next.isClosed { throw AutarkError("\(nameOf(fp)) closed the connection.") } // waits its backoff, never a tight loop
-        condition.lock(); links.put(fp, next, version: version); condition.unlock()
+        condition.lock(); links.put(fp, next); condition.unlock()
         if next.isClosed { proxyValue()?.channelClosed(next) }
     }
 

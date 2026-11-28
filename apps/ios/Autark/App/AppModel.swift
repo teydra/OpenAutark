@@ -491,6 +491,7 @@ final class AppModel: ObservableObject {
     // MARK: lifecycle
 
     func scenePhaseChanged(_ phase: ScenePhase) {
+        connection?.front(phase == .active) // in front the link's tries stay at most 2 s apart (Android's onResume/onPause)
         if phase == .active {
             connection?.check()
             useLink?.nudge()

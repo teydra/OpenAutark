@@ -4,7 +4,7 @@
 // The WebView therefore shows the PC's unchanged phone UI at http://127.0.0.1:<port>, a secure context like https.
 // A request whose channel dies before the PC answered gets a 503 instead of hanging; one that hears nothing for 4 s has the
 // link probed once, so a dead link is found within seconds. The phone holds channels to several PCs; a new stream takes
-// the page's one (Channels.waitChannel) and retire() ends the streams left on the others. Ported from relay/StreamProxy.java.
+// the page's one (Channels.waitChannel) and retire() – the page moved to another PC – ends the streams left on the others (a stream that raced that move ends at once too: one PC answers the page). Owner 27.11.2026: a better way to the same PC cuts nothing – drain() lets the old channel's streams run to their end and closes it after the last. Ported from relay/StreamProxy.java.
 // Owner 27.11.2026: the interface is the app's own – a GET or HEAD outside the PC's data paths (UiFiles.dataPaths) is answered
 // here from the app's copy (UiFiles over UiUpdate), at once and with no channel; only the PC's data paths (RPC, events, files,
 // sockets, uploads) are streams, sent with Connection: close so the WebView never asks a PC for an interface file on a kept-alive
@@ -49,6 +49,10 @@ public final class StreamProxy {
     private var live = [ObjectIdentifier: (channel: PeerChannel, streams: [Int: Stream])]()
     private var nextId = 1
     private var closedFlag = false
+    /// Moves of the page to another PC (retire), so a stream that raced one ends.
+    private var moves = 0
+    /// Channels that gave way to a better one to the same PC: they close after their last stream.
+    private var draining = Set<ObjectIdentifier>()
     /// How long a new request waits for a channel before it gets its 503 (a slow PC is still being opened meanwhile).
     public var channelWaitMs = 20_000
     /// The same for the page's own socket: below the page's open limit (OPEN_LIMIT_MS, 5 s), so no stream opens for a socket the page gave up.
@@ -97,6 +101,7 @@ public final class StreamProxy {
     /// The channel ended: its streams end (503 where the PC had not answered yet), the WebView reconnects on its own.
     public func channelClosed(_ channel: PeerChannel) {
         lock.lock()
+        draining.remove(ObjectIdentifier(channel))
         let entry = live.removeValue(forKey: ObjectIdentifier(channel))
         lock.unlock()
         if let streams = entry?.streams.values { for stream in streams { stream.toLocal.offer(.dead) } }
@@ -106,10 +111,25 @@ public final class StreamProxy {
     /// sockets come back through `keep`; the other channels stay open.
     public func retire(keep: PeerChannel) {
         lock.lock()
+        moves += 1
         var others = [Stream]()
         for (key, entry) in live where key != ObjectIdentifier(keep) { others.append(contentsOf: entry.streams.values) }
         lock.unlock()
         for stream in others { stream.toLocal.offer(.dead); finish(stream, tell: true) }
+    }
+
+    /// old gave way to a better channel to the same PC: its open streams run to their end, then it closes.
+    public func drain(_ old: PeerChannel) {
+        lock.lock(); draining.insert(ObjectIdentifier(old)); lock.unlock()
+        closeIfDrained(old)
+    }
+
+    private func closeIfDrained(_ channel: PeerChannel) {
+        let key = ObjectIdentifier(channel)
+        lock.lock()
+        let idle = (live[key]?.streams.isEmpty ?? true) && draining.remove(key) != nil
+        lock.unlock()
+        if idle { channel.close() }
     }
 
     /// For a test or the status line: open streams over all channels.
@@ -139,6 +159,7 @@ public final class StreamProxy {
             if UiFiles.isUpgrade(text) { wait = min(wait, socketWaitMs) }
             else { forward = (UiFiles.closing(text).data(using: .isoLatin1).map { Bytes($0) } ?? head.header) + Bytes(head.all[head.header.count...]) }
         }
+        lock.lock(); let moved = moves; lock.unlock()
         guard let channel = channels?.waitChannel(timeoutMs: wait), !channel.isClosed else {
             unavailable(conn)
             conn.shutdown()
@@ -154,7 +175,8 @@ public final class StreamProxy {
         live[key] = entry
         lock.unlock()
         if channel.isClosed { channelClosed(channel) }
-        if channels?.usedChannel() !== channel { unavailable(conn); finish(stream, tell: false); return } // the page moved meanwhile: one PC per page
+        lock.lock(); let movedMeanwhile = moves != moved; lock.unlock()
+        if movedMeanwhile && channels?.usedChannel() !== channel { unavailable(conn); finish(stream, tell: false); return } // the page moved to another PC meanwhile: one PC per page
         channel.send(["t": "o", "s": id] as JSONObject)
         startWriter(stream)
         later(milliseconds: StreamProxy.quietMs) { [weak self] in
@@ -261,5 +283,6 @@ public final class StreamProxy {
         if tell && mine { stream.channel.send(["t": "e", "s": stream.id] as JSONObject) }
         stream.toLocal.offer(.end)
         stream.conn.shutdown()
+        if mine { closeIfDrained(stream.channel) }
     }
 }
