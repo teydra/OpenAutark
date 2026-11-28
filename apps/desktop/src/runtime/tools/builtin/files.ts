@@ -10,6 +10,8 @@
 // (defaultShell: the engines' PowerShell 7 where found, else Windows PowerShell 5.1; the command as one -Command
 // argument, UTF-8 out of and into programs, no progress records); macOS and Linux keep sh. A miss of files.read /
 // files.list shows what is there (file-miss.ts missText); files.list counts the entries past its first 500.
+// task_7ja3mcr6 (28.11.2026): files.delete (files-delete.ts) is the structured way to delete; shell.exec refuses a command
+// whose recognizable recursive delete reaches a kept folder before it starts (files/shell-deletes.ts) – a layer, no sandbox.
 // Owns: files.read, files.write, files.list, shell.exec, the path rule (resolvePath) and the resource of a workspace
 // path (workspaceResource: one spelling per file); isInside / realInside for the worktrees (git/).
 // Never: lets a command run unbounded (timeout + output cap; killed on run abort).
@@ -28,6 +30,9 @@ import { missText } from './file-miss.ts'; // B-080: a miss shows what is there
 import { LINE_READ_BYTES, lineWindow } from './file-window.ts';
 import { drainJobOutput, shellJobArgs, shellJobBroker } from '../../system/shell-job.ts';
 import { pwshDir } from '../../engines/wf-shim.ts'; // B-080 wave 3: the engines' PowerShell 7
+import { deleteTool, zonesFor } from './files-delete.ts'; // task_7ja3mcr6: files.delete and the kept folders
+import { shellDeleteRefusal } from '../../files/shell-deletes.ts';
+import os from 'node:os';
 
 const MAX_READ = 256 * 1024;
 const PATH = { type: 'string', minLength: 1, maxLength: 1024 };
@@ -282,10 +287,14 @@ export function fileTools(deps: { shell?: ShellSpawn } = {}): ToolDef[] {
     describe: (args, ctx) => commandAction(ctx, { summary: `Run: ${clip(args.command, 200)}`, resource: shellResource(args.command, args.cwd), reversible: false, external: false }, args.env),
     async run(args, ctx) {
       const cwd = commandCwd(ctx, args.cwd);
+      // task_7ja3mcr6: a recognizable recursive delete that reaches a kept folder does not start (files/shell-deletes.ts)
+      let refused: string | undefined;
+      try { refused = shellDeleteRefusal(args.command, { platform: process.platform, cwd, env: { ...process.env, ...args.env }, home: os.homedir() }, zonesFor(ctx)); } catch { refused = undefined; } // a layer, not a gate: when the zones cannot be known the command runs as before
+      if (refused) return failure(refused);
       return runCommand(shell, ctx, { command: args.command, cwd, timeoutSeconds: args.timeoutSeconds, env: args.env });
     },
   });
 
-  return [readFileTool, writeFileTool, listDir, shellExec, searchTool({ resolve: readPath })];
+  return [readFileTool, writeFileTool, listDir, shellExec, deleteTool, searchTool({ resolve: readPath })];
 }
 

@@ -164,6 +164,7 @@ export function environmentSection(services: RuntimeServices, input: { agent: Ag
     workspaceLine(workspace),
     homeLine(tools, os.homedir(), own),
     dataLine(services, tools, own),
+    deleteLine(tools),
     memoryLine(services, tools),
     webLine(tools, input.route?.engine, own), // E1: the engine's own search first
     screenLine(tools),
@@ -196,6 +197,15 @@ function dataLine(services: RuntimeServices, offered: ReadonlySet<string>, own: 
   const data = safe(() => services.paths.data, '');
   if (!data || !(own || fileTools(offered))) return '';
   return `Data folder: ${data} – the Autark system's own files (settings.json, theme.css, agents' SYSTEM.md, skills, prompts); ${path.join(data, ROOT_README)} maps them.`;
+}
+
+/**
+ * task_7ja3mcr6 (24.11. and 27.11.2026: an unquoted `cmd /c rd /s /q` split at a space and deleted a company's data
+ * folder): the way to delete, as a fact – where files.delete is offered.
+ */
+export function deleteLine(offered: ReadonlySet<string>): string {
+  if (!offered.has('files.delete')) return '';
+  return 'Deleting: files.delete takes each exact path as it is, shows with dryRun what would go and refuses company data, browser profiles and the app; a shell\'s rd /s, del /s, Remove-Item -Recurse or rm -rf splits an unquoted path at its spaces.';
 }
 
 /**

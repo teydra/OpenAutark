@@ -64,6 +64,7 @@ const KEYWORDS: Readonly<Record<string, string>> = {
   'spend.': 'money budget purchase payment receipt invoice cost',
   'files.': 'file folder read write directory path',
   'files.write': 'save create append binary bytes base64 image screenshot',
+  'files.delete': 'delete remove erase clean cleanup rmdir rd rm recursive worktree node_modules dist folder', // task_7ja3mcr6
   'shell.': 'terminal command run script bash powershell cmd console linked pc remote secret env environment',
   'web.': 'web internet search url page online',
   'models.': 'model llm compare stronger cheaper',
