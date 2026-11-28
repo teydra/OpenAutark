@@ -81,7 +81,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
   runSicher1119Files(paths.data, paths.resources, log);
 
   let port = 0;
-  const core = await createCore({ host: options.host, paths, log, version: options.version, fakeEngine: options.fakeEngine, baseUrl: () => `http://127.0.0.1:${port}` });
+  const core = await createCore({ host: options.host, paths, log, version: options.version, fakeEngine: options.fakeEngine, launchToken: options.launchToken, baseUrl: () => `http://127.0.0.1:${port}` });
   const s = core.services;
   runEineId1122(s); // 22.11.2026: a seat's own code becomes its My ID, before the network opens the IDs (deleted with the bridge)
   const network = createNetwork({ core, staticDir: options.staticDir, launchToken: options.launchToken, personToken: options.personToken, startedAt, port: options.port, peer: options.peer });

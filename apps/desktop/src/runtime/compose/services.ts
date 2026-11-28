@@ -112,6 +112,8 @@ export interface CoreOptions {
   log: Logger;
   version: string;
   fakeEngine?: boolean;
+  /** This runtime's owner token (RuntimeOptions.launchToken): masked in every tool output from the first call on. */
+  launchToken?: string;
   /** Base URL of the runtime HTTP server once it listens (MCP leases, peer addresses). */
   baseUrl: () => string;
 }
@@ -169,6 +171,8 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   watchRemovedChats({ dataDir: paths.data, bus, log }); // a deleted chat's space leaves <data>/side-tabs.json (root/side-tabs.ts)
   const secrets = new SecretVault({ db, host, clock, log, refuse: (entry, agentId) => vaultRefusal(s.security.current(), entry, agentId, settings.get().profile.name?.trim() || undefined) }); // Secure mode: no card data for agents
   await secrets.init();
+  // 28.11.2026: this runtime's owner token, every company's runtime.json token and wake key on this PC are masked like stored values (secrets/runtime-values.ts)
+  secrets.maskRuntimeValues({ dataDir: paths.data, companies: host.app.companies, launchToken: options.launchToken });
   s.secrets = secrets;
   // B-044: the vault's metadata files (secrets/files.ts): missing ones written, disk edits of name/purpose taken over. Stop step 'secret files'.
   s.secretFiles = new SecretFiles({ dataDir: paths.data, vault: secrets, clock, log, bus, root: s.rootWatcher });
