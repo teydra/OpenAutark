@@ -118,8 +118,9 @@ test('compact desktop windows keep caption controls beside the draggable top row
   const palette = css.match(/:root\[data-platform=desktop\] body:has\(\.mobile-shell\) dialog\.dialog\.palette\s*\{([^}]*)\}/);
   assert.ok(palette, 'the palette stays below the native controls on every desktop OS');
   assert.match(palette[1], /margin-top:\s*var\(--header-h\)/);
-  // the status line lies over the body's top under the top row: it reserves no line and never pushes the body
-  assert.match(css, /\.mobile-shell > \.status-host\s*\{[^}]*top:\s*calc\(/);
+  // the status line takes its own place in the flow between the top row and the body (28.11.2026): no overlay, its text wraps
+  assert.match(css, /\.mobile-shell > \.status-host\s*\{[^}]*position:\s*static/);
+  assert.match(css, /\.mobile-shell > \.status-host \.status-text\s*\{[^}]*white-space:\s*normal/);
   assert.doesNotMatch(css, /--notice-h/, 'no reserved notice line in the stack');
 });
 

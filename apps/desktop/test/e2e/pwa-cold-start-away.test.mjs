@@ -54,6 +54,23 @@ test('a cold start without the PC says so within 2 s and claims no empty lists',
   assert.match(await line.innerText(), /not reachable · reconnecting by itself/);
   const forYou = page.locator('.mobile-shell .tasks-page');
   assert.doesNotMatch(await forYou.innerText(), /Nothing for you here/, 'no empty list is claimed while nothing was ever loaded');
+  // 28.11.2026 (Juri's iPhone run): the line has its own place – it overlaps nothing below it and its text is whole
+  const box = await line.boundingBox();
+  const below = await page.evaluate(() => {
+    const host = document.querySelector('.mobile-shell > .status-host');
+    const main = document.querySelector('.mobile-shell > .mobile-main');
+    const first = main?.querySelector(':scope > * > *, :scope > *');
+    const r = (el) => { const b = el?.getBoundingClientRect(); return b ? { top: b.top, bottom: b.bottom, right: b.right } : null; };
+    const text = document.querySelector('.status-note[data-notice="connection"] .status-text');
+    return { host: r(host), main: r(main), first: r(first), cut: text ? text.scrollWidth > text.clientWidth || text.scrollHeight > text.clientHeight : true,
+      pos: host ? getComputedStyle(host).position : '' };
+  });
+  assert.ok(box, 'the line has a box');
+  assert.notEqual(below.pos, 'absolute', 'the line is not an overlay');
+  assert.ok(below.host.bottom <= below.main.top + 0.5, `the line (bottom ${below.host.bottom}) ends above the body (top ${below.main.top})`);
+  assert.ok(below.first.top >= box.y + box.height - 0.5, 'the first element below starts under the line');
+  assert.ok(box.x >= 0 && box.x + box.width <= 360, 'the line lies inside 360 px');
+  assert.equal(below.cut, false, 'the line\'s text is not cut');
   if (shots) await page.screenshot({ path: path.join(shots, 'cold-start-away-360.png') });
   t.diagnostic(`line after ${after} ms`);
 

@@ -18,7 +18,7 @@
 // global opens it (Watch on a to-do, say); so does the row's Browser cell – in the desktop app's narrow window, where
 // websites live, and on the phone, whose pane is its PC's (B-076, workspace/phone-tabs.ts) – the frame's cell of the
 // wide window (its dot: an agent's new tab waits there). Back or any navigation closes it.
-// The status line (StatusLine.tsx) overlays the body's first line and never pushes it. The three destination tabs are always there
+// The status line (StatusLine.tsx) takes its own place between the top row and the body (it pushes the body down, covers nothing). The three destination tabs are always there
 // (19.11.2026, D2: a failed reconnect filtered them down to Team and every tab moved); a tab whose list this connection
 // may not read shows its empty body.
 // B-055 Q4: the feedback cell (feedback/cell.tsx: tap opens the feedback sheet, hold talks where this page can dictate)

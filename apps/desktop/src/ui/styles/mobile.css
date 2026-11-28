@@ -44,8 +44,12 @@
   :root[data-platform=desktop] .mobile-shell .frame-header-cell > .icon-button:not(.small),
   :root[data-platform=desktop] .mobile-shell .frame-header-cell.slot > .profile-button { width: 32px; height: 32px; }
 }
-/* the status line: over the body's top, under the top row (a pushed screen's own row too) */
-.mobile-shell > .status-host { top: calc(env(safe-area-inset-top) + var(--header-h) + 8px); left: 12px; right: 12px; width: auto; }
+/* the status line: in the flow between the top row (a pushed screen's own row too) and the body – it takes its own
+   height, pushes the body down and covers nothing; its text wraps instead of being cut (owner 28.11.2026, Juri's run) */
+.mobile-shell > .status-host { position: static; flex: none; width: auto; align-items: stretch; gap: 6px; padding: 6px 12px 0; }
+.mobile-shell > .status-host:empty { display: none; }
+.mobile-shell > .status-host > .status-note { box-shadow: none; padding-block: 6px; }
+.mobile-shell > .status-host .status-text { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
 /* A bottom sheet and its scrim start at the top row's lower edge. */
 .mobile-shell { --band-end: calc(env(safe-area-inset-top) + var(--header-h)); }
 .mobile-main { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
