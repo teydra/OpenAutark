@@ -89,7 +89,7 @@ function useCaptionLayout(compact: boolean): void {
 }
 
 function Overlays() {
-  // Feedback 16.11.2026 (F15): the iPhone web app plays the feedback video once, on its first start after pairing.
+  // Feedback 16.11.2026 (F15): the iPhone web app plays the feedback video once, on its second start after pairing (28.11.2026: not over the first screen).
   useEffect(() => { if (firstVideoHere()) openTour({ autoplay: true }); }, []);
   return (
     <>

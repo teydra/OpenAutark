@@ -230,8 +230,21 @@ export function phoneLinkHint(link: PhoneLink, now: number, clock: (at: number) 
 /** The iPhone web app's connection row (18.11.2026, F25 P3: the web app goes direct over WebRTC too, ui/hosted/rtc.ts). */
 export const IPHONE_LINK = 'Directly to the PC when the network allows, else via the meeting server – encrypted end to end either way';
 
-/** 18.11.2026: the one line on how devices connect, over the Connection rows, and where the privacy notice is. */
-export const CONNECTION_LINE = 'End-to-end encrypted, directly device to device. The meeting server only helps your devices find each other.';
+/**
+ * 18.11.2026: the one line on how devices connect, over the Connection rows. 28.11.2026 (Mac test of 0.3.22: it said
+ * "directly device to device" while the link ran through the meeting server): it names the way the links run now, from
+ * what RelayState already knows – a phone's `via` ('direct'/'rtc' are direct, 'relay' is the server) and the PCs whose
+ * link is a tunnel there (`relayed`). Both ways: partly; neither known (not connected, no state yet): either.
+ */
+export function connectionLine(relay: Pick<RelayState, 'relayed' | 'phones'> | undefined): string {
+  const phones = relay?.phones ?? [];
+  const direct = phones.some((phone) => phone.via === 'direct' || phone.via === 'rtc');
+  const server = (relay?.relayed.length ?? 0) > 0 || phones.some((phone) => phone.via === 'relay');
+  if (direct && server) return 'End-to-end encrypted, directly device to device where the network allows – right now partly through the meeting server, which only passes sealed data on.';
+  if (server) return 'End-to-end encrypted. Right now your devices connect through the meeting server, which only passes sealed data on and cannot read it.';
+  if (direct) return 'End-to-end encrypted, directly device to device. The meeting server only helps your devices find each other.';
+  return 'End-to-end encrypted, directly device to device or through the meeting server when no direct way works. The meeting server cannot read it.';
+}
 export const PRIVACY_URL = 'https://openautark.com/privacy/#meeting-server';
 
 /** The meeting server's fallback today: its daily limit is used up, or its operator paused it (RelayState.held). */

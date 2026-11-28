@@ -12,7 +12,7 @@
 // – shell/connection-line.ts). The interface is the app's own (owner 27.11.2026): the Android app ("AutarkAndroid/") and
 // the iPhone app ("AutarkIOS/") serve it from their files, so the page and its app are always one version. The feedback video
 // (F15, "so ein Video …, was einem zeigt, wie man da Feedback macht") plays once on a new phone: the Android app shows it
-// before its pairing screens, the iPhone web app on its first start after pairing (firstVideoHere).
+// before its pairing screens, the iPhone web app on its second start after pairing (firstVideoHere).
 // Owns: those facts. Never: talks to the Android app other than through the port or an autark-app: address the person
 // taps (no JavaScript bridge object).
 
@@ -50,14 +50,24 @@ export const VIDEO_SEEN_KEY = 'autark.feedbackVideoSeen';
 type SeenStore = Pick<Storage, 'getItem' | 'setItem'>;
 const pageStorage = (): SeenStore | null => { try { return globalThis.localStorage ?? null; } catch { return null; } };
 
+/** How many page loads the iPhone web app has counted (its origin's storage), up to the one that plays the video. */
+export const STARTS_KEY = 'autark.appStarts';
+
+const counted = new WeakSet<object>();
+
 /**
- * True exactly once on an iPhone web app – its first start after pairing plays the feedback video (the Android app plays
+ * True exactly once on an iPhone web app – its second start after pairing plays the feedback video (the Android app plays
  * it before its own pairing screens); false everywhere else, and when the phone's storage cannot keep that it was shown.
+ * 28.11.2026 (Mac test of 0.3.22: the dialog covered the very first screen, before anything was seen): the first start
+ * only counts – the person has used the app once when the video comes. A start counts once per page load: the shell
+ * mounts its overlays afresh when the layout changes (shell/Shell.tsx), which is no new start.
  */
 export function firstVideoHere(hosted: boolean = inHostedApp(), storage: SeenStore | null = pageStorage()): boolean {
   if (!hosted || !storage) return false;
   try {
-    if (storage.getItem(VIDEO_SEEN_KEY)) return false;
+    if (storage.getItem(VIDEO_SEEN_KEY) || counted.has(storage)) return false;
+    counted.add(storage);
+    if (!storage.getItem(STARTS_KEY)) { storage.setItem(STARTS_KEY, '1'); return false; }
     storage.setItem(VIDEO_SEEN_KEY, '1');
     return true;
   } catch {
