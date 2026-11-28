@@ -12,9 +12,9 @@
 // the command run as before).
 
 import { Buffer } from 'node:buffer';
-import { cmdStatements, FILTER_STAGES, powershellStatements, shStatements, type Part, type Statement, type Word } from './shell-words.ts';
+import { cmdStatements, commandName, FILTER_STAGES, powershellStatements, shStatements, type Part, type Statement, type Word } from './shell-words.ts';
 import { hasWildcard, pathOf, refusalOf, stripDevicePrefix, zoneRefusal, type DeleteZones } from './delete-zones.ts';
-import { lstatSync } from 'node:fs';
+import { cmdArgs, cmdLoop, cmdPeel, CMD_SWITCH, isLoopVariable, splitOperands, type CmdLoop } from './shell-cmd.ts';
 
 export interface ShellDelete {
   target: string;
@@ -39,12 +39,6 @@ const POWERSHELL = new Set(['pwsh', 'powershell']);
 const SH = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 const SH_PREFIX = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', '!', '{', '}', 'time', 'sudo', 'command', 'builtin', 'exec', 'nohup', 'nice', 'doas']);
 const MAX_DEPTH = 4;
-
-/** A command's name as typed: without its folder, `.exe` and a module prefix (Microsoft.PowerShell.Management\Remove-Item), lower case. */
-function commandName(text: string): string {
-  const base = text.replace(/^@/, '').split(/[\\/]/).pop() ?? '';
-  return base.toLowerCase().replace(/\.(exe|cmd|bat|com)$/, '');
-}
 
 const envLookup = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv, name: string): string | undefined => {
   if (platform !== 'win32') return env[name];
@@ -237,95 +231,13 @@ function cmdLine(args: Word[], scope: ShellScope, state: State): string | undefi
   return line;
 }
 
-const CMD_SWITCH = /^\/[a-z](?::.*)?$/i;
-/** `/s/q`: cmd takes switches glued together. */
-const CMD_SWITCHES = /^(?:\/[a-z]){2,}$/i;
-/** Commands whose name cmd ends at a slash (`rd/s/q X`, `cmd/c …`). */
-const CMD_SLASH_NAMES = new Set(['rd', 'rmdir', 'del', 'erase', 'cmd', 'cd', 'chdir', 'pushd', 'pwsh', 'powershell', 'if', 'for']);
-
-/** A word of a cmd statement as cmd reads it: `at` is the index of the word it comes from, `word` is missing for a switch cut out of a glued one. */
-interface CmdArg { text: string; word: Word | undefined; at: number }
-
-function cmdArgs(words: Word[], scope: ShellScope, state: State): CmdArg[] {
-  const out: CmdArg[] = [];
-  const push = (text: string, word: Word | undefined, at: number) => {
-    if (CMD_SWITCHES.test(text)) for (const one of text.match(/\/[a-z]/gi) ?? []) out.push({ text: one, word: undefined, at });
-    else out.push({ text, word, at });
-  };
-  words.forEach((w, at) => {
-    const text = textOf(w, scope, state, 'cmd') ?? '';
-    const slash = at === 0 ? text.indexOf('/') : -1;
-    if (slash > 0 && CMD_SLASH_NAMES.has(commandName(text.slice(0, slash)))) { out.push({ text: text.slice(0, slash), word: w, at }); push(text.slice(slash), undefined, at); } // rd/s/q
-    else push(text, w, at);
-  });
-  return out;
-}
-
-/** What leads a command in cmd without being it: `if [/i] [not] exist|defined|errorlevel X`, `if a==b`, `else`, `do`, `call`. */
-function cmdPeel(args: CmdArg[]): CmdArg[] {
-  for (;;) {
-    const head = args[0]?.text.replace(/^@/, '').toLowerCase();
-    if (head === 'do' || head === 'else' || head === 'call') { args = args.slice(1); continue; }
-    if (head !== 'if') return args;
-    let n = 1;
-    if (args[n]?.text.toLowerCase() === '/i') n++;
-    if (args[n]?.text.toLowerCase() === 'not') n++;
-    const kind = args[n]?.text.toLowerCase();
-    if (kind === 'exist' || kind === 'defined' || kind === 'errorlevel' || kind === 'cmdextversion') n += 2;
-    else n += /^(?:equ|neq|lss|leq|gtr|geq)$/i.test(args[n + 1]?.text ?? '') ? 3 : 2; // `a==b`: cmdStatements reads `=` as a space, so two words
-    args = args.slice(n);
-  }
-}
-
-/** `for [/d | /r [dir] | /l | /f …] %v in (items) do …`: what the loop variable stands for in the `do` part. */
-interface CmdLoop { variable: string; mode: string | undefined; dir: string | undefined; items: string[]; collecting: boolean; /** The items cannot be known (/f, /l). */ unknown: boolean }
-
-function cmdLoop(args: CmdArg[]): CmdLoop {
-  const modeAt = args.findIndex((a, i) => i > 0 && /^\/[drlf]$/i.test(a.text));
-  const varAt = args.findIndex((a, i) => i > 0 && a.text.startsWith('%'));
-  const mode = modeAt > 0 ? args[modeAt].text.toLowerCase() : undefined;
-  const dir = mode === '/r' && varAt > modeAt + 1 ? args[modeAt + 1].text : undefined;
-  return { variable: varAt > 0 ? args[varAt].text.slice(-1) : '', mode, dir, items: [], collecting: true, unknown: varAt < 0 || mode === '/f' || mode === '/l' };
-}
-
-const isLoopVariable = (loop: CmdLoop | undefined, text: string): loop is CmdLoop =>
-  loop !== undefined && !loop.collecting && loop.variable !== '' && new RegExp(`^%%?(?:~[a-z]*)?${loop.variable.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`).test(text);
-
-/**
- * Operands that cmd got from one unquoted path with spaces: `rd /s /q C:\a b\c` deletes C:\a, b and c. Suspect when the
- * words joined with spaces name an existing path (or its folder exists), or an absolute operand is followed by a relative
- * one. Quoted operands are one path each. Returns the line for the refusal; undefined when the operands look separate.
- */
-function splitOperands(operands: CmdArg[], scope: ShellScope, state: State, name: string): string | undefined {
-  const m = pathOf(scope.platform);
-  const exists = scope.exists ?? ((path: string) => { try { lstatSync(path); return true; } catch { return false; } });
-  const plain = (a: CmdArg) => a.word !== undefined && !a.word.quoted;
-  for (let from = 0; from < operands.length - 1; from++) {
-    if (!plain(operands[from])) continue;
-    let end = from;
-    while (end + 1 < operands.length && plain(operands[end + 1])) end++;
-    for (let to = end; to > from; to--) { // the longest run first: it is the whole path
-      const run = operands.slice(from, to + 1).map((a) => a.text);
-      const joined = run.join(' ');
-      const full = absolute(scope, state.cwd, joined);
-      const parent = joined.includes('\\') || joined.includes('/') ? absolute(scope, state.cwd, m.dirname(joined)) : undefined;
-      const relativeLast = !m.isAbsolute(run[run.length - 1]);
-      const why = full && exists(full) ? `\`${joined}\` exists as one path`
-        : parent && m.dirname(joined) !== '.' && relativeLast && exists(parent) ? `the folder \`${m.dirname(joined)}\` exists`
-          : m.isAbsolute(run[0]) && relativeLast ? 'a relative word follows an absolute path' : undefined;
-      if (why) return `cmd reads \`${name} /s … ${joined}\` as ${run.length} targets (${run.join(' | ')}): ${why}, so it is one path with spaces that was not put in quotes. Write the path in quotes: ${name} /s /q "${joined}"`;
-    }
-  }
-  return undefined;
-}
-
 function cmdDeletes(line: string | undefined, scope: ShellScope, state: State): ShellDelete[] {
   if (line === undefined || state.depth >= MAX_DEPTH) return [];
   const hits: ShellDelete[] = [];
   const inner: State = { ...state, depth: state.depth + 1 };
   let loop: CmdLoop | undefined;
   for (const statement of cmdStatements(line, scope.env)) {
-    let args = cmdArgs(statement.words, scope, inner);
+    let args = cmdArgs(statement.words, statement.words.map((w) => textOf(w, scope, inner, 'cmd') ?? ''));
     if (loop?.collecting) { // the items of a `for … in (…)` come as statements of their own, up to `do`
       if (args[0]?.text.toLowerCase() !== 'do') { loop.items.push(...args.map((a) => a.text)); continue; }
       loop.collecting = false;
@@ -365,7 +277,7 @@ function cmdDeletes(line: string | undefined, scope: ShellScope, state: State): 
       }
       add(operand.text, operand.word?.glob === true || (operand.word === undefined && hasWildcard(operand.text)), del);
     }
-    const split = several && !(loop && operands.some((o) => isLoopVariable(loop, o.text))) ? splitOperands(operands, scope, inner, name) : undefined;
+    const split = several && !(loop && operands.some((o) => isLoopVariable(loop, o.text))) ? splitOperands(operands, scope.platform, (text) => absolute(scope, inner.cwd, text), name, scope.exists) : undefined;
     if (split && found.length) found[0] = { ...found[0], split };
     hits.push(...found);
   }

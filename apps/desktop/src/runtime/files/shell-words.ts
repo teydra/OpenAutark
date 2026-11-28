@@ -9,6 +9,12 @@
 
 import { hasWildcard } from './delete-zones.ts';
 
+/** A command's name as typed: without its folder, `.exe` and a module prefix (Microsoft.PowerShell.Management\Remove-Item), lower case. */
+export function commandName(text: string): string {
+  const base = text.replace(/^@/, '').split(/[\\/]/).pop() ?? '';
+  return base.toLowerCase().replace(/\.(exe|cmd|bat|com)$/, '');
+}
+
 /** One part of a word: literal text, or text whose `$…` expands (PowerShell double quotes and bare words; sh likewise). */
 export interface Part { text: string; expand: boolean }
 export interface Word { parts: Part[]; /** Something the reader cannot know ($(…), backticks in sh). */ opaque: boolean; /** A wildcard outside quotes. */ glob: boolean; quoted: boolean; raw: string }

@@ -23,7 +23,8 @@ The innermost zone around a path decides. A filesystem root never goes. Paths ar
 and, where they exist, as real paths too (links followed). On Windows and macOS the comparison ignores case.
 
 **Data marks.** A folder anywhere that holds `workforce.db`, `Local State` or `profiles.ini` counts as a company or a
-browser profile, even when it is a copy or a backup. files.delete refuses the whole folder before anything goes.
+browser profile, even when it is a copy or a backup. files.delete refuses the whole folder before anything goes, unless
+the call sets `dataCopy: true` for a throwaway copy inside the temp folder or a workspace (below).
 
 ## The structured way: files.delete (tools/builtin/files-delete.ts)
 
@@ -31,8 +32,12 @@ browser profile, even when it is a copy or a backup. files.delete refuses the wh
   quotes. Relative paths, wildcards and leading or trailing spaces are refused.
 - `dryRun: true` answers `WOULD DELETE <path> – N files in M folders, size, K links removed as links` and deletes nothing.
 - Links: a link inside the target (a junction or symlink) is removed as the link alone and is never entered. A target
-  that is itself a link loses only the link. A path that passes a link on its way is refused, so the agent has to name
+  that is itself a link loses only the link, even when it points to a kept folder. A path that passes a link on its way is refused, so the agent has to name
   the real path. Links above the home folder, temp, the workspace or the data folder are allowed, such as macOS `/var`.
+- `dataCopy: true` lets a folder with a data mark go when it lies inside the temp folder or a workspace or scratch folder
+  (a test's `workforce.db`, a copied browser profile). The refusal and the dry run name the switch. It never lifts a kept
+  folder, a subfolder of one, the app, a real browser profile, or anything outside temp and the workspaces.
+- A `\\?\` or `\\.\` prefix is taken off first: the same file, no wildcard.
 - Each path gets its own result line: `DELETED`, `WOULD DELETE`, `REFUSED <why>` or `FAILED`. The call is an error when
   any path did not go.
 - Category `delete`. Secure mode asks the `write` switch for each path (security/tool-gate.ts).
@@ -45,11 +50,15 @@ Before a command starts, the guard reads its recognizable recursive deletes the 
 
 - **PowerShell** (shell.exec's shell on Windows): Remove-Item and its aliases (`rm ri rmdir rd del erase`) with
   `-Recurse` or any prefix of it. `rm -rf` and `rd /s` count too.
-- **PowerShell pipelines:** Remove-Item after Get-ChildItem or Get-Item in a pipeline.
+- **PowerShell pipelines:** Remove-Item after Get-ChildItem or Get-Item in a pipeline, also through `Where-Object { … }`, `Select-Object` or `Sort-Object`.
 - **.NET:** `[IO.Directory]::Delete(…, $true)`.
 - **cmd.exe** (`cmd /c` or `cmd /k`): `rd`/`rmdir /s` and `del`/`erase /s`. The line cmd receives is rebuilt the way
   PowerShell passes it, cmd's outer quotes are stripped, then the line is split at spaces, `, ; =` and `& && || |`.
-  This is how the incident line becomes the targets `…\Roaming\Autark`, `Companies\…` and so on.
+  This is how the incident line becomes the targets `…\Roaming\Autark`, `Companies\…` and so on. Glued switches
+  (`rd /s/q X`, `rd/s/q X`) and a leading `if [/i] [not] exist|defined|errorlevel …`, `else`, `do`, `call` or
+  `for … %i in (…) do rd /s /q %i` are read too. A cmd line whose unquoted path with spaces would split into wrong targets
+  (the words joined with spaces name an existing path or folder, or a relative word follows an absolute one) is blocked
+  whatever it reaches; the answer says to put the path in quotes.
 - **sh** (macOS, Linux): `rm` with `-r`, `-R` or `--recursive`, and `find … -delete`. Prefixes such as `sudo` and
   `command` and variable assignments are skipped.
 - **Nested shells:** `pwsh -Command`, `-EncodedCommand`, `cmd /c` inside cmd, and `sh`/`bash -c`.
@@ -68,6 +77,9 @@ Everyday cleanups still run unchanged: deleting `node_modules`, `dist` or a work
 
 The guard sees only what it recognizes in the command text. It does **not** stop:
 
+- bracket classes (`a[1]`, `[a-z]*`): read as a wildcard, so a workspace's whole contents count – a false alarm for a
+  name with brackets, kept on purpose because `Auta[r]k` would match a kept folder;
+- more than 64 targets in one command: only the first 64 are followed through links, the rest are compared as written;
 - deletes through values the command computes (`Join-Path`, `$(…)`, loop variables, script blocks passed around);
 - script files (`pwsh -File x.ps1`, `bash x.sh`) and aliases or functions defined along the way;
 - other programs: python `shutil.rmtree`, node `fs.rm`, `robocopy /mir`, `git clean -fdx`, `Start-Process`, `bash -c`

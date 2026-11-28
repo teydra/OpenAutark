@@ -12,6 +12,9 @@ import path from 'node:path';
 import { fileTools } from '../../../src/runtime/tools/builtin/files.ts';
 import type { ToolContext, ToolOutput } from '../../../src/runtime/tools/types.ts';
 import { deleteLine } from '../../../src/runtime/context/environment.ts';
+import { runDelete } from '../../../src/runtime/tools/builtin/files-delete.ts';
+import { deleteZones } from '../../../src/runtime/files/delete-zones.ts';
+import { planTree, removeTree } from '../../../src/runtime/files/delete-tree.ts';
 
 const link = (target: string, at: string) => symlinkSync(target, at, process.platform === 'win32' ? 'junction' : 'dir');
 
@@ -151,4 +154,119 @@ test('files.delete: a data copy inside a folder stops the whole folder; wildcard
   const mixed = await w.run({ paths: [good, w.first] });
   assert.equal(mixed.error, true);
   assert.ok(!existsSync(good) && existsSync(path.join(w.first, 'sentinel.txt')));
+});
+
+// ---- review of PR #49 (28.11.2026): the findings, one test each
+
+test('M1 (files.delete): a `\\\\?\\` prefix is the same file – refused where the plain path is, no wildcard where it is allowed', { skip: process.platform !== 'win32' }, async (t) => {
+  const w = world(t);
+  const tree = path.join(w.workspace, 'prefixed tree');
+  mkdirSync(tree);
+  writeFileSync(path.join(tree, 'a.txt'), 'x');
+  const kept = await w.run({ path: `\\\\?\\${w.first}` });
+  assert.match(kept.text, /^REFUSED .* is the first company's data folder/);
+  assert.equal(readFileSync(path.join(w.first, 'sentinel.txt'), 'utf8'), 'stays');
+  const r = await w.run({ path: `\\\\?\\${tree}` });
+  assert.equal(r.error, false, r.text);
+  assert.ok(!existsSync(tree));
+  assert.match((await w.run({ path: `\\\\?\\${path.join(w.workspace, '*')}` })).text, /wildcard/, 'a real wildcard behind the prefix is still one');
+});
+
+test('M5: a throwaway copy with a data mark in the temp folder or a workspace goes with dataCopy: true; real data never does', async (t) => {
+  const w = world(t);
+  const copy = path.join(w.workspace, 'copy of data');
+  mkdirSync(path.join(copy, 'inner'), { recursive: true });
+  writeFileSync(path.join(copy, 'inner', 'workforce.db'), 'x');
+  writeFileSync(path.join(copy, 'notes.txt'), 'x');
+  const refused = await w.run({ path: copy });
+  assert.match(refused.text, /holds a data folder/);
+  assert.match(refused.text, /dataCopy: true/, 'the refusal names the way');
+  const dry = await w.run({ path: copy, dryRun: true, dataCopy: true });
+  assert.match(dry.text, /^WOULD DELETE .*holds a data copy: .*inner.*workforce\.db/);
+  assert.ok(existsSync(path.join(copy, 'notes.txt')));
+  const done = await w.run({ path: copy, dataCopy: true });
+  assert.equal(done.error, false, done.text);
+  assert.ok(!existsSync(copy));
+
+  // the temp folder: an e2e run's workforce.db and a browser profile copy
+  const e2e = mkdtempSync(path.join(os.tmpdir(), 'workforce-e2e delete test-'));
+  t.after(() => rmSync(e2e, { recursive: true, force: true }));
+  writeFileSync(path.join(e2e, 'workforce.db'), 'x');
+  mkdirSync(path.join(e2e, 'profile'));
+  writeFileSync(path.join(e2e, 'profile', 'Local State'), '{}');
+  assert.match((await w.run({ path: e2e })).text, /REFUSED .*holds a data folder.*dataCopy: true/);
+  assert.match((await w.run({ path: path.join(e2e, 'profile'), dataCopy: false })).text, /REFUSED/);
+  const gone = await w.run({ paths: [path.join(e2e, 'profile'), e2e], dataCopy: true });
+  assert.equal(gone.error, false, gone.text);
+  assert.ok(!existsSync(e2e));
+
+  // never: the real data, whatever the flag says
+  for (const target of [w.first, w.data, path.join(w.companies, 'another company'), w.companies, w.base]) {
+    mkdirSync(target, { recursive: true });
+    const r = await w.run({ path: target, dataCopy: true });
+    assert.equal(r.error, true, target);
+    assert.match(r.text, /^REFUSED/, target);
+  }
+  assert.equal(readFileSync(path.join(w.first, 'sentinel.txt'), 'utf8'), 'stays');
+  assert.ok(existsSync(path.join(w.data, 'workforce.db')));
+  const sub = path.join(w.data, 'real subfolder');
+  mkdirSync(sub);
+  writeFileSync(path.join(sub, 'workforce.db'), 'x');
+  assert.match((await w.run({ path: sub, dataCopy: true })).text, /^REFUSED .* lies inside this company's data folder/, 'a subfolder of the data folder stays');
+  assert.ok(existsSync(sub));
+});
+
+test('M5: dataCopy lifts nothing outside the temp folder and the workspaces (the person\'s home, a real profile place)', async (t) => {
+  const w = world(t);
+  const elsewhere = path.join(w.base, 'elsewhere');
+  const profile = path.join(elsewhere, 'a profile');
+  mkdirSync(profile, { recursive: true });
+  writeFileSync(path.join(profile, 'Local State'), '{}');
+  const zones = deleteZones({ platform: process.platform, data: w.data, workspace: w.workspace, temp: path.join(w.data, 'tmp'), companies: { first: w.first, dir: w.companies }, home: elsewhere, env: {}, tmp: path.join(w.base, 'only-temp') });
+  const out = await runDelete([profile], false, zones, new AbortController().signal, true);
+  const text = out.content[0].type === 'text' ? out.content[0].text : '';
+  assert.match(text, /^REFUSED .* dataCopy only lifts this inside the temp folder or a workspace/);
+  assert.ok(existsSync(path.join(profile, 'Local State')));
+  const dry = await runDelete([profile], true, zones, new AbortController().signal, false);
+  assert.match(dry.content[0].type === 'text' ? dry.content[0].text : '', /does not go this way/);
+});
+
+test('L4: a junction to a kept folder goes as a link alone, by its own path; the folder it points to stays whole', async (t) => {
+  const w = world(t);
+  const intoFirst = path.join(w.workspace, 'to first');
+  const intoData = path.join(w.workspace, 'to data');
+  link(w.first, intoFirst);
+  link(w.data, intoData);
+  const dry = await w.run({ path: intoFirst, dryRun: true });
+  assert.match(dry.text, /^WOULD DELETE .*a link: the link alone/);
+  const r = await w.run({ paths: [intoFirst, intoData] });
+  assert.equal(r.error, false, r.text);
+  assert.equal(r.text.split('\n').filter((line) => /^DELETED .* the link alone/.test(line)).length, 2, r.text);
+  assert.ok(!existsSync(intoFirst) && !existsSync(intoData));
+  assert.equal(readFileSync(path.join(w.first, 'sentinel.txt'), 'utf8'), 'stays');
+  assert.ok(existsSync(path.join(w.data, 'workforce.db')));
+  // a link that itself lies in a kept folder still does not go
+  const inside = path.join(w.data, 'kept link');
+  link(w.outside, inside);
+  assert.match((await w.run({ path: inside })).text, /^REFUSED .* lies inside this company's data folder/);
+  assert.ok(existsSync(inside));
+});
+
+test('L5: a stopped call leaves the rest alone; the walk counts and deletes whole trees', async (t) => {
+  const w = world(t);
+  const tree = path.join(w.workspace, 'big tree');
+  for (let i = 0; i < 30; i++) { mkdirSync(path.join(tree, `d ${i}`), { recursive: true }); for (let j = 0; j < 20; j++) writeFileSync(path.join(tree, `d ${i}`, `f${j}.txt`), 'abc'); }
+  const plan = await planTree(tree);
+  assert.deepEqual([plan.files, plan.folders, plan.bytes], [600, 31, 1800]);
+  const stopped = new AbortController();
+  stopped.abort();
+  const early = await removeTree(tree, stopped.signal);
+  assert.equal(early.failed?.code, 'ABORTED');
+  assert.ok(existsSync(path.join(tree, 'd 0', 'f0.txt')), 'nothing went once the signal was set');
+  const out = await runDelete([tree], false, deleteZones({ platform: process.platform, data: w.data, workspace: w.workspace, companies: { first: w.first, dir: w.companies } }), stopped.signal);
+  assert.match(out.content[0].type === 'text' ? out.content[0].text : '', /^STOPPED/);
+  assert.ok(existsSync(tree));
+  const done = await removeTree(tree);
+  assert.deepEqual([done.failed, done.removed], [undefined, 631]);
+  assert.ok(!existsSync(tree));
 });
