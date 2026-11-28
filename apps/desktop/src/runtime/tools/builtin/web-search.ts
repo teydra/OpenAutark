@@ -1,6 +1,6 @@
 // web.search (B-047 D6): finds web pages for a query – title, link, snippet – provider-agnostic, so every agent
 // can search on its own. Provider: a search API the person stored in the vault, used by handle (a Brave key named
-// "Brave …" or saved from api.search.brave.com, a Tavily key named "Tavily …" or saved from api.tavily.com – owner
+// "Brave …" or saved from api.search.brave.com, a Tavily key named "Tavily …" or saved from api.tavily.com, a Keenable key named "Keenable …" or saved from api.keenable.ai – owner
 // 29.10.2026: no secret is tied to sites any more, so a name or the source finds it –, or a SearXNG instance whose secret's
 // name contains "searxng" and whose value is its base URL – the vault's agent and domain checks apply); else the
 // keyless pages, parsed into results: DuckDuckGo's HTML page, then – E1 (01.11.2026: DuckDuckGo, Mojeek, Startpage and
@@ -22,7 +22,7 @@ export type SearchFetch = (url: string, init: { signal: AbortSignal; headers: Re
 
 export type SearchArgs = { query: string; limit?: number };
 export interface SearchResult { title: string; url: string; snippet: string }
-type ProviderKind = 'brave' | 'tavily' | 'searxng';
+type ProviderKind = 'brave' | 'tavily' | 'keenable' | 'searxng';
 interface Provider { kind: ProviderKind; secretId: string; domain?: string; label: string }
 
 export const SEARCH_TIMEOUT_MS = 15_000;
@@ -33,7 +33,7 @@ const SNIPPET_CHARS = 300;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 export const SEARCH_LABEL = '[untrusted web search results';
 const CHALLENGE = /anomaly-modal|bots use duckduckgo|captcha|challenge-form/i;
-const PROVIDER_NAMES: Record<ProviderKind | 'duckduckgo' | 'bing', string> = { brave: 'Brave Search', tavily: 'Tavily', searxng: 'SearXNG', duckduckgo: 'DuckDuckGo', bing: 'Bing' };
+const PROVIDER_NAMES: Record<ProviderKind | 'duckduckgo' | 'bing', string> = { brave: 'Brave Search', tavily: 'Tavily', keenable: 'Keenable', searxng: 'SearXNG', duckduckgo: 'DuckDuckGo', bing: 'Bing' };
 /** The search page named when every source failed (web.fetch or browser.open reads it). */
 export const searchPage = (query: string): string => `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
 
@@ -125,7 +125,7 @@ export function parseBing(html: string, limit = MAX_LIMIT): SearchResult[] {
   return out;
 }
 
-/** Results of a provider's JSON answer (Brave web.results[].description, Tavily/SearXNG results[].content). */
+/** Results of a provider's JSON answer (Brave web.results[].description, Tavily/SearXNG results[].content, Keenable results[].snippet). */
 export function parseProviderJson(kind: ProviderKind, body: unknown, limit = MAX_LIMIT): SearchResult[] {
   const record = (body ?? {}) as { web?: { results?: unknown[] }; results?: unknown[] };
   const items = (kind === 'brave' ? record.web?.results : record.results) ?? [];
@@ -135,7 +135,8 @@ export function parseProviderJson(kind: ProviderKind, body: unknown, limit = MAX
     const item = (raw ?? {}) as Record<string, unknown>;
     const url = typeof item.url === 'string' ? item.url : '';
     if (!/^https?:\/\//i.test(url)) continue;
-    const text = typeof item.description === 'string' ? item.description : typeof item.content === 'string' ? item.content : '';
+    // First non-empty field (Keenable answers with an empty, deprecated description next to the snippet).
+    const text = [item.description, item.content, item.snippet].find((field): field is string => typeof field === 'string' && field !== '') ?? '';
     out.push({ title: clip(plain(typeof item.title === 'string' ? item.title : url), 200) || url, url, snippet: clip(plain(text), SNIPPET_CHARS) });
   }
   return out;
@@ -146,15 +147,15 @@ const usable = (secret: SecretInfo, _agentId: string): boolean => !secret.group;
 const boundTo = (secret: SecretInfo, host: string, name: RegExp): boolean => name.test(secret.label) || (secret.source ? [secret.source] : [])
   .some((domain) => domain.toLowerCase() === host || host.endsWith(`.${domain.toLowerCase()}`));
 
-/** The search API the person stored for this agent (Brave, then Tavily, then SearXNG); undefined → keyless. */
+/** The search API the person stored for this agent (Brave, then Tavily, then Keenable, then SearXNG); undefined → keyless. */
 export function configuredProvider(secrets: readonly SecretInfo[], agentId: string): Provider | undefined {
   const mine = secrets.filter((secret) => usable(secret, agentId));
-  const keyed = (kind: 'brave' | 'tavily', host: string): Provider | undefined => {
+  const keyed = (kind: 'brave' | 'tavily' | 'keenable', host: string): Provider | undefined => {
     const found = mine.find((secret) => (secret.kind === 'api_key' || secret.kind === 'token') && boundTo(secret, host, new RegExp(`\\b${kind}\\b`, 'i')));
     return found ? { kind, secretId: found.id, domain: host, label: PROVIDER_NAMES[kind] } : undefined;
   };
   const searx = mine.find((secret) => /searx/i.test(secret.label) && secret.kind !== 'card' && secret.kind !== 'password' && secret.kind !== 'totp');
-  return keyed('brave', 'api.search.brave.com') ?? keyed('tavily', 'api.tavily.com')
+  return keyed('brave', 'api.search.brave.com') ?? keyed('tavily', 'api.tavily.com') ?? keyed('keenable', 'api.keenable.ai')
     ?? (searx ? { kind: 'searxng', secretId: searx.id, domain: searx.source, label: PROVIDER_NAMES.searxng } : undefined);
 }
 
@@ -182,6 +183,9 @@ async function viaProvider(doFetch: SearchFetch, provider: Provider, key: string
     response = await doFetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}`, { signal, redirect: 'follow', headers: { accept: 'application/json', 'x-subscription-token': key } });
   } else if (provider.kind === 'tavily') {
     response = await doFetch('https://api.tavily.com/search', { signal, redirect: 'follow', method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: JSON.stringify({ query, max_results: limit }) });
+  } else if (provider.kind === 'keenable') {
+    // Keyed endpoint only (POST /v1/search, X-API-Key); the keyless /public endpoint is never used here.
+    response = await doFetch('https://api.keenable.ai/v1/search', { signal, redirect: 'follow', method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key }, body: JSON.stringify({ query, max_results: limit, snippet_max_length: SNIPPET_CHARS }) });
   } else {
     let base: URL;
     try { base = new URL(key.trim()); } catch { throw new SearchProblem('the stored SearXNG address is not a URL'); }
@@ -278,7 +282,7 @@ export function webSearchTool(deps: { fetch: SearchFetch }): ToolDef {
         return { content: [{ type: 'text', text: resultsText(query, found.source, found.results, notes.length ? notes.join('; ') : undefined) }] };
       } catch (error) {
         const why = controller.signal.aborted ? (ctx.signal.aborted ? 'it was stopped' : 'it timed out') : problemText(error);
-        return failure(`The web search did not answer: ${why}. Read a search page instead – web.fetch ${searchPage(query)} – or open it in a browser (browser.open, or a colleague in browser mode); my engine's own web search works too where I have one. A search API key in the vault (Brave or Tavily) makes this search more reliable.`);
+        return failure(`The web search did not answer: ${why}. Read a search page instead – web.fetch ${searchPage(query)} – or open it in a browser (browser.open, or a colleague in browser mode); my engine's own web search works too where I have one. A search API key in the vault (Brave, Tavily or Keenable) makes this search more reliable.`);
       } finally {
         clearTimeout(timer);
         ctx.signal.removeEventListener('abort', abort);
