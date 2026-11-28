@@ -240,7 +240,7 @@ export function connectionLine(relay: Pick<RelayState, 'relayed' | 'phones'> | u
   const phones = relay?.phones ?? [];
   const direct = phones.some((phone) => phone.via === 'direct' || phone.via === 'rtc');
   const server = (relay?.relayed.length ?? 0) > 0 || phones.some((phone) => phone.via === 'relay');
-  if (direct && server) return 'End-to-end encrypted, directly device to device where the network allows – right now partly through the meeting server, which only passes sealed data on.';
+  if (direct && server) return 'End-to-end encrypted, directly device to device where the network allows – right now partly through the meeting server, which only passes sealed data on';
   if (server) return 'End-to-end encrypted. Right now your devices connect through the meeting server, which only passes sealed data on and cannot read it.';
   if (direct) return 'End-to-end encrypted, directly device to device. The meeting server only helps your devices find each other.';
   return 'End-to-end encrypted, directly device to device or through the meeting server when no direct way works. The meeting server cannot read it.';

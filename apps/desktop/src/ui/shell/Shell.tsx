@@ -50,8 +50,6 @@ import { FeedbackMenu } from '../feedback/FeedbackMenu.tsx'; // B-055 Q4: the me
 import { ColumnResize } from './ColumnResize.tsx';
 import { desktopBubble } from './DesktopBubbleHandle.tsx';
 import { TourDialog } from '../tour/TourDialog.tsx'; // B-055: the feedback tour (replay)
-import { openTour } from '../tour/open.ts';
-import { firstVideoHere } from '../pwa/native.ts';
 
 function useGlobalHotkeys(): void {
   useEffect(() => {
@@ -89,8 +87,7 @@ function useCaptionLayout(compact: boolean): void {
 }
 
 function Overlays() {
-  // Feedback 16.11.2026 (F15): the iPhone web app plays the feedback video once, on its second start after pairing (28.11.2026: not over the first screen).
-  useEffect(() => { if (firstVideoHere()) openTour({ autoplay: true }); }, []);
+  // Feedback 16.11.2026 (F15) played the feedback video here on a phone's first start; owner 26.11.2026: the feedback bubble is explained in the PC's introduction, not on the phone – no automatic start (28.11.2026).
   return (
     <>
       <CommandPalette />

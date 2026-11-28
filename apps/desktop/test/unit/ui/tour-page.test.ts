@@ -2,16 +2,14 @@
 // Feedback macht"): the phone's feedback video. The Android app's own page (scripts/tour-page.mjs bundles
 // src/ui/tour/phone-page.tsx and src/ui/tour/phone-page.css with esbuild into one tour.html; apps/android/build.ps1
 // puts it into the APK) is one self-contained page that plays the phone's tour at once, with Skip, and opens the
-// address the app takes as done; the iPhone web app plays the same tour once on its first start after pairing
-// (src/ui/pwa/native.ts firstVideoHere, src/ui/shell/Shell.tsx); the replay dialog plays the phone's tour in the phone
-// layout and keeps the variant it opened with.
+// address the app takes as done; the replay dialog plays the phone's tour in the phone
+// layout and keeps the variant it opened with. Owner 26.11.2026: no phone starts the video by itself.
 // Owns: these assertions (one in-memory esbuild run, source checks for the .tsx/.java wiring). Never: a WebView or a phone.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { bundleTourPage } from '../../../scripts/tour-page.mjs';
-import { VIDEO_SEEN_KEY, firstVideoHere } from '../../../src/ui/pwa/native.ts';
 
 const source = (file: string) => readFileSync(new URL(`../../../${file}`, import.meta.url), 'utf8');
 
@@ -31,20 +29,19 @@ test('the Android app\'s page: one self-contained page with the phone tour; Skip
   assert.match(app, /DONE = "autark-tour:done"/, 'the app takes the same address');
 });
 
-test('the iPhone web app plays it once, on its first start after pairing; elsewhere never', () => {
-  const kept = new Map<string, string>();
-  const storage = { getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => { kept.set(key, value); } };
-  assert.equal(firstVideoHere(false, storage), false, 'not the iPhone web app');
-  assert.equal(kept.size, 0);
-  assert.equal(firstVideoHere(true, storage), true, 'the first start');
-  assert.equal(kept.get(VIDEO_SEEN_KEY), '1');
-  assert.equal(firstVideoHere(true, storage), false, 'never again');
-  assert.equal(firstVideoHere(true, null), false, 'without storage no video, rather than on every start');
-  assert.equal(firstVideoHere(true, { getItem: () => { throw new Error('denied'); }, setItem: () => undefined }), false);
+// 28.11.2026 (Mac test of 0.3.22: the dialog covered the very first screen of the phone UI; owner 26.11.2026: the feedback
+// bubble is explained in the PC's introduction, never on the phone): no phone UI opens the tour by itself. The replay paths stay.
+test('no phone opens the feedback tour on its own; the replay and the PC\'s own openings stay', () => {
   const shell = source('src/ui/shell/Shell.tsx');
-  assert.match(shell, /useEffect\(\(\) => \{ if \(firstVideoHere\(\)\) openTour\(\{ autoplay: true \}\); \}, \[\]\);/);
-  assert.match(shell, /<TourDialog phone=\{isMobile\.value\} desktopBubble=\{desktopBubble\.value\.available\} \/>/, 'the phone layout plays the phone\'s tour');
+  assert.doesNotMatch(shell, /openTour|firstVideoHere/, 'the shell opens no tour by itself');
+  assert.doesNotMatch(source('src/ui/pwa/native.ts'), /firstVideoHere|VIDEO_SEEN_KEY|feedbackVideoSeen/, 'no "seen" mark: nothing plays on a first start');
+  assert.match(shell, /<TourDialog phone=\{isMobile\.value\} desktopBubble=\{desktopBubble\.value\.available\} \/>/, 'the phone layout plays the phone\'s tour when a person opens it');
   const dialog = source('src/ui/tour/TourDialog.tsx');
   assert.match(dialog, /<TourModal variant=\{tourVariant\(Boolean\(props\.phone\)\)\} desktopBubble=\{props\.desktopBubble\} \/>/, 'the opening\'s variant stays while it plays (open.ts tourVariant – tour-variant.test.ts)');
   assert.match(dialog, /<TourPlayer onDone=\{closeTour\} autoplay=\{tourAutoplay\.peek\(\)\} variant=\{variant\} desktopBubble=\{showDesktopBubble\.current\} \/>/);
+  // the PC's openings: the first run's card and "Set up a new company", Settings › Feedback, the palette
+  assert.match(source('src/ui/onboarding/ChoiceCard.tsx'), /openTour\(\{ autoplay: true \}\)/);
+  assert.match(source('src/ui/settings/FeedbackPage.tsx'), /onClick=\{\(\) => openTour\(\)\}/);
+  assert.match(source('src/ui/shell/CommandPalette.tsx'), /run: \(\) => openTour\(\)/);
+  assert.doesNotMatch(source('../android/app/src/main/java/com/teydralab/autark/android/MainActivity.java'), /IntroTour\.due/, 'the Android app does not start it either');
 });

@@ -120,8 +120,8 @@ test('the iPhone web app pairs by Remote ID and shows the PC\'s own UI through t
   assert.deepEqual({ metas: frame.metas, media: frame.media }, { metas: 1, media: '' }, 'one theme-color the PC UI\'s theme drives');
   assert.equal(frame.html, 'rgba(0, 0, 0, 0)', 'the shell colours nothing outside its frame: the PC UI\'s body colours the page');
 
-  // F15 (16.11.2026): the feedback video plays once, in a modal sheet; the person closes it. 28.11.2026 (Mac test of 0.3.22):
-  // not over the first screen – the first start after pairing only counts, the second one plays it.
+  // F15 (16.11.2026) played the feedback video here on the first start; owner 26.11.2026: the phone explains nothing of the
+  // feedback bubble on its own (the PC's introduction does), so no dialog on the first screen and none on a later start.
   const tour = phone.locator('dialog.tour-dialog[open]');
   await phone.waitForTimeout(1_500);
   assert.equal(await tour.count(), 0, 'no feedback video over the first screen');
@@ -133,20 +133,12 @@ test('the iPhone web app pairs by Remote ID and shows the PC\'s own UI through t
   await phone.locator('.send-button[aria-label="Send"]').tap();
   await until(async () => (await owner.call('messages.list', { conversationId: chat.id })).some((message) => message.body === 'Hello from the iPhone'), 'the line on the PC');
 
-  // A reload: the key and token come back from IndexedDB, no pairing – the second start plays the video.
+  // A reload: the key and token come back from IndexedDB, no pairing – and still no video on this second start.
   await phone.reload();
   await phone.locator('.mobile-shell').waitFor({ timeout: 90_000 });
   assert.equal(await phone.locator('.hs-title', { hasText: 'Connect to your PC' }).count(), 0);
-  await tour.waitFor({ timeout: 30_000 });
-  await phone.keyboard.press('Escape');
-  await tour.waitFor({ state: 'detached' });
-
-  // The third start: it played only once.
-  await phone.reload();
-  await phone.locator('.mobile-shell').waitFor({ timeout: 90_000 });
   await phone.waitForTimeout(1_500);
-  assert.equal(await tour.count(), 0, 'the feedback video plays only once');
-
+  assert.equal(await tour.count(), 0, 'the feedback video never starts by itself on the phone');
   // F29: the PC's list of its UI files is kept; a tampered copy in the phone's cache never runs (the worker fetches the
   // PC's own file again), and a script the PC does not list is refused with the shell's screen.
   const copyOf = (file) => phone.evaluate(async (name) => (await (await caches.open('autark-pc')).match(new URL(name, location.href).href))?.text(), file);
