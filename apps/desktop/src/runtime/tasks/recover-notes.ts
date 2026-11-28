@@ -11,7 +11,7 @@
 // window kept its drafts, a refused pause) arrives as system.prepareRestart {cancel}: dropInstall answers it at once.
 // Owns: the note texts, the start notice and the install record. Never: repeats, cancels or judges an action.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { RuntimeServices } from '../contracts.ts';
 import { KvRepo } from '../store/kv.ts';
@@ -38,9 +38,12 @@ export interface InstallBy { agentId: string; conversationId?: string; taskId?: 
 export interface InstallRecord { to?: string; from: string; installer?: string; by?: InstallBy; pid?: number; at: number }
 
 /** The start notice for this start (undefined when nothing happened worth saying); `install`: an install this start answers. */
-export function startNotice(input: { previous?: string; version: string; interrupted: number; continued: number; at: number; install?: InstallRecord; blocked?: boolean }): StartNotice | undefined {
+export function startNotice(input: { previous?: string; version: string; interrupted: number; continued: number; at: number; install?: InstallRecord; blocked?: boolean; reinstalled?: boolean }): StartNotice | undefined {
   const tasks = `${input.continued} task${input.continued === 1 ? '' : 's'} continued`;
   const notice = (text: string): StartNotice => ({ id: `start:${input.at}`, text, at: input.at });
+  // 28.11.2026: a build of the same version (an app.install of the running version – no latest.yml, so no `to`) that the
+  // helper's installer ran without an error is a reinstall, not a failed update (the S9 showed "did not install · still on 0.3.21").
+  if (input.install && input.reinstalled && !input.blocked && !input.install.to && input.version === input.install.from) return notice(`Reinstalled ${input.version} · ${tasks}`);
   if (input.install && !landed(input.install, input.version)) {
     const update = `The update${input.install.to ? ` to ${input.install.to}` : ''}`;
     return { ...notice(input.blocked
@@ -69,7 +72,8 @@ export function recordStart(s: Pick<RuntimeServices, 'db' | 'clock'> & Partial<P
   const kept = kv.get<InstallRecord>(KV, INSTALL_KEY) ?? undefined;
   const install = kept && endedSince(kept, s.host?.app.pid) ? kept : undefined; // the same app process: nothing installed
   const blocked = install !== undefined && blockedByWindows(helperLog(s.paths?.logs));
-  const notice = startNotice({ ...input, previous: kv.get<string>(KV, VERSION_KEY), at: now, ...(install ? { install } : {}), ...(blocked ? { blocked } : {}) });
+  const reinstalled = install !== undefined && reinstallRan(install, s.paths?.logs);
+  const notice = startNotice({ ...input, previous: kv.get<string>(KV, VERSION_KEY), at: now, ...(install ? { install } : {}), ...(blocked ? { blocked } : {}), ...(reinstalled ? { reinstalled } : {}) });
   if (notice) kv.set(KV, NOTICE_KEY, notice, now);
   else kv.delete(KV, NOTICE_KEY);
   kv.set(KV, VERSION_KEY, input.version, now);
@@ -99,6 +103,8 @@ export function installReceipt(s: Pick<RuntimeServices, 'db' | 'clock'> & Partia
     ? `At ${now} Autark still runs ${version} – the install I started at ${at} did not start.`
     : landed(record, version)
       ? `Autark started again at ${now} on ${version} – the install I started at ${at} landed.`
+      : reinstallRan(record, s.paths?.logs) && version === record.from && !blockedByWindows(helperLog(s.paths?.logs))
+        ? `Autark started again at ${now} on ${version} – the install I started at ${at} was this same version, installed again without an error.`
       : `Autark started again at ${now}, still on ${version} – the install I started at ${at} did not land; update-helper.log ends with: ${helperTail(s.paths?.logs) ?? '(no line)'}.`;
   let open = false;
   try { open = record.by.taskId !== undefined && !['done', 'dropped'].includes(s.tasks?.get(record.by.taskId)?.status ?? 'done'); } catch { open = false; }
@@ -116,6 +122,20 @@ export const SMART_APP_CONTROL_EXIT = 1073751882;
 export function blockedByWindows(log: string | undefined): boolean {
   const ended = log?.split(/\r?\n/).filter((line) => line.includes('installer ended')).pop();
   return Boolean(ended?.includes(`(exit code ${SMART_APP_CONTROL_EXIT})`));
+}
+
+/**
+ * Whether the helper's installer ran for this install and ended without an error ("installer ended (exit code 0)"): the
+ * log must have been written since the install began (its mtime – the lines' times follow the PC's locale), so a line of an
+ * earlier install says nothing. Only for an install without a known target version, which cannot say more.
+ */
+export function reinstallRan(record: InstallRecord, logs: string | undefined): boolean {
+  if (record.to || !logs) return false;
+  try {
+    if (statSync(path.join(logs, HELPER_LOG)).mtimeMs < record.at) return false;
+  } catch { return false; }
+  const ended = helperLog(logs)?.split(/\r?\n/).filter((line) => line.includes('installer ended')).pop();
+  return Boolean(ended?.includes('(exit code 0)'));
 }
 
 /** The end of the helper's log (the last 4 KB), for blockedByWindows. */

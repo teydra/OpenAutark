@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { agent, harness } from '../chat/harness.ts';
@@ -99,6 +99,35 @@ test('without a known target version an install landed when the version changed'
   new KvRepo(moved.h.db).set('system', 'install', { from: '0.3.4', at: 0 }, 0);
   assert.equal(recordStart(moved.h.services, { version: '0.3.5-local.2', interrupted: 1, continued: 1 })?.text, 'Updated to 0.3.5-local.2 · 1 task continued');
   assert.deepEqual(notes(moved.h), [], 'no agent named: no note');
+});
+
+test('28.11.2026: a build of the running version (app.install, no latest.yml) that the installer ran without an error is "Reinstalled", not a failed update', () => {
+  const log = '28.11.2026  2:47:07,76 helper started; waiting for the app (pid 22584) to end\r\n28.11.2026  2:47:09,19 app ended; installer starts\r\n28.11.2026  2:48:10,98 installer ended (exit code 0)\r\n28.11.2026  2:48:14,64 new version started\r\n';
+  const { h, chat, logs } = team('0.3.21');
+  const file = path.join(logs, 'update-helper.log');
+  writeFileSync(file, log);
+  new KvRepo(h.db).set('system', 'install', { from: '0.3.21', installer, by: { agentId: 'ag_jonas', conversationId: chat.id }, at: h.clock.now() - 60_000 }, 0);
+  h.ownership.recover({ interruptedRuns: [] });
+  assert.deepEqual(notes(h), ['Autark started again at 09:00 on 0.3.21 – the install I started at 08:59 was this same version, installed again without an error.']);
+  const notice = recordStart(h.services, { version: '0.3.21', interrupted: 0, continued: 3 });
+  assert.equal(notice?.text, 'Reinstalled 0.3.21 · 3 tasks continued');
+  assert.equal(notice?.failed, undefined, 'no failure: the phone shows this notice to a person');
+  // a log line of an earlier install (the file older than the record) proves nothing: still "did not install"
+  const stale = team('0.3.21');
+  const old = path.join(stale.logs, 'update-helper.log');
+  writeFileSync(old, log);
+  utimesSync(old, new Date(Date.now() - 86_400_000), new Date(Date.now() - 86_400_000));
+  new KvRepo(stale.h.db).set('system', 'install', { from: '0.3.21', at: Date.now() }, 0);
+  assert.equal(recordStart(stale.h.services, { version: '0.3.21', interrupted: 0, continued: 0 })?.text, 'The update did not install · still on 0.3.21');
+  // an installer that failed (exit code 2) or one with a known target that did not arrive stays a failure
+  const failed = team('0.3.21');
+  writeFileSync(path.join(failed.logs, 'update-helper.log'), '28.11.2026  2:48:10,98 installer ended (exit code 2)\r\n');
+  new KvRepo(failed.h.db).set('system', 'install', { from: '0.3.21', at: 0 }, 0);
+  assert.equal(recordStart(failed.h.services, { version: '0.3.21', interrupted: 0, continued: 0 })?.text, 'The update did not install · still on 0.3.21');
+  const target = team('0.3.21');
+  writeFileSync(path.join(target.logs, 'update-helper.log'), log);
+  new KvRepo(target.h.db).set('system', 'install', { to: '0.3.22', from: '0.3.21', at: 0 }, 0);
+  assert.equal(recordStart(target.h.services, { version: '0.3.21', interrupted: 0, continued: 0 })?.text, 'The update to 0.3.22 did not install · still on 0.3.21');
 });
 
 test("the updater's own install keeps its version in a record of its own; a cancel drops it without a note", () => {
